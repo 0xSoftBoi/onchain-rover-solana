@@ -106,6 +106,7 @@ after a restart.
 
 - `GET /chain/config`: public local chain metadata and contract addresses.
 - `GET /chain/health`: RPC and deployed-code check.
+- `POST /race/round/:id/join` or `POST /race/:id/join`: x402-gated fixed fleet fee for one driver slot; records source, payer, amount, treasury, network, and payment proof in the fee ledger.
 - `POST /race/round/:id/chain/open`: open a race escrow for an existing round.
 - `POST /race/round/:id/chain/authorization-request`: build race entry and permit typed data for one driver slot.
 - `POST /race/round/:id/chain/join`: submit signed typed data through the facilitator.
@@ -267,15 +268,16 @@ laptop LAN address so mobile wallets can reach it.
 
 1. `challenge`: challenger creates the round in sidecar.
 2. `accepted`: opponent joins the round in sidecar.
-3. `opened`: sidecar opens the escrow on the local chain.
-4. `joined`: each phone signs entry; facilitator submits both joins.
-5. `locked`: escrow locks; sidecar can authorize robot sessions.
-6. `started`: chain race starts when the local race starts.
-7. `finished`: local finish records the winner, telemetry evidence, and immutable SHA-256 `proofHash`.
-8. `settled`: facilitator pays the winner and leaves fees in treasury.
+3. `fee paid`: each driver pays the fixed fleet fee through the x402 join route, or the local chain harness records the treasury fee during local rehearsal.
+4. `opened`: sidecar opens the escrow on the local chain.
+5. `joined`: each phone signs entry; facilitator submits both joins.
+6. `locked`: escrow locks; sidecar can authorize robot sessions.
+7. `started`: chain race starts when the local race starts.
+8. `finished`: local finish records the winner, telemetry evidence, and immutable SHA-256 `proofHash`.
+9. `settled`: facilitator pays the winner and leaves fees in treasury.
 
 For local rehearsal, `POST /race/round/:id/dev/join-local-wallets` can replace
-steps 2 through 5 with the known Hardhat wallets. It is gated by
+steps 2 through 6 with the known Hardhat wallets. It is gated by
 `ALLOW_LOCAL_DEV_WALLETS=1` or `ALLOW_FREE_PILOT=1` and never returns private
 keys to the browser.
 

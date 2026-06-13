@@ -43,6 +43,8 @@ const gateway = createGatewayMiddleware({
   facilitatorUrl: ARC.facilitatorUrl,              // testnet! default is mainnet
   networks: [ARC.caip2],
 });
+const RACE_NETWORK_FEE_USDC = normalizeUsdcAmount(process.env.RACE_NETWORK_FEE_USDC ?? "0.25");
+const raceJoinFeeGate = gateway.require(`$${RACE_NETWORK_FEE_USDC}`);
 
 // Live robot registry — robots heartbeat their current IP here, so venue DHCP
 // drift never breaks the demo. Falls back to the static .env URL if stale.
@@ -99,6 +101,11 @@ app.post("/pilot/:robot/start", gateway.require("$1.00"), async (req, res) => {
   const payer = (req as any).payment?.payer ?? "anon";
   res.json(await race.startPilotSession(req.params.robot as RobotName, payer));
 });
+
+// Race entry fleet fee. This is separate from the matched stake: x402 pays the
+// network/treasury fee, while stake authorization stays in the race adapter.
+app.post("/race/:id/join", preflightRaceJoinFee, raceJoinFeeGate, recordRaceJoinFee);
+app.post("/race/round/:id/join", preflightRaceJoinFee, raceJoinFeeGate, recordRaceJoinFee);
 
 // ---------- FREE routes (LAN/demo/web) --------------------------------------
 app.post("/pilot/drive", async (req, res) => {
@@ -772,6 +779,115 @@ function localDevWalletsEnabled() {
   return process.env.ALLOW_LOCAL_DEV_WALLETS === "1" || process.env.ALLOW_FREE_PILOT === "1";
 }
 
+function preflightRaceJoinFee(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    const slot = requireDriverSlot(req.body?.slot);
+    const wallet = requireWalletAddress(req.body?.wallet);
+    const displayName = optionalString(req.body?.displayName);
+    const round = rounds.getRound(req.params.id);
+    validateRaceJoinFeePreflight(round, slot, wallet);
+    (req as any).raceJoinFee = { slot, wallet, displayName };
+    next();
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+}
+
+function recordRaceJoinFee(req: express.Request, res: express.Response) {
+  try {
+    const join = (req as any).raceJoinFee as {
+      slot: rounds.DriverSlot;
+      wallet: string;
+      displayName?: string;
+    };
+    if (!join) throw new Error("missing race join preflight");
+
+    let round = rounds.getRound(req.params.id);
+    if (!round.drivers[join.slot]?.wallet) {
+      round = rounds.claimSlot(req.params.id, join.slot, {
+        wallet: join.wallet,
+        displayName: join.displayName,
+      });
+    }
+
+    const payment = x402RaceFeePayment(req, join.wallet, join.displayName);
+    round = rounds.markFeePaid(req.params.id, join.slot, payment);
+    res.json({
+      round,
+      slot: join.slot,
+      feePayment: round.drivers[join.slot]?.feePayment,
+      payment: (req as any).payment,
+      ready: round.status === "ready",
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+}
+
+function validateRaceJoinFeePreflight(
+  round: rounds.Round,
+  slot: rounds.DriverSlot,
+  wallet: string,
+) {
+  if (!isWalletAddress(process.env.TREASURY_ADDRESS)) {
+    throw new Error("TREASURY_ADDRESS required for x402 race join fee");
+  }
+  if (round.status !== "accepted" && round.status !== "ready") {
+    throw new Error(`round is not joinable in ${round.status}`);
+  }
+  if (normalizeUsdcAmount(round.feeUsdc) !== RACE_NETWORK_FEE_USDC) {
+    throw new Error(`round fee must match fixed x402 fleet fee ${RACE_NETWORK_FEE_USDC}`);
+  }
+
+  const driver = round.drivers[slot];
+  if (driver?.feePaid) throw new Error(`${slot} fee already paid`);
+  if (driver?.wallet && driver.wallet.toLowerCase() !== wallet) {
+    throw new Error(`${slot} is claimed by a different wallet`);
+  }
+
+  const otherSlot: rounds.DriverSlot = slot === "challenger" ? "opponent" : "challenger";
+  if (round.drivers[otherSlot]?.wallet.toLowerCase() === wallet) {
+    throw new Error("wallet already claimed the other slot");
+  }
+}
+
+function x402RaceFeePayment(
+  req: express.Request,
+  wallet: string,
+  displayName?: string,
+): Record<string, unknown> {
+  const payment = (req as any).payment as {
+    payer?: string;
+    amount?: string;
+    network?: string;
+    transaction?: string;
+  } | undefined;
+  const payer = payment?.payer ? requireWalletAddress(payment.payer) : wallet;
+  if (payer !== wallet) throw new Error("x402 payer does not match joined wallet");
+
+  const expectedUnits = parseUsdcUnits(RACE_NETWORK_FEE_USDC).toString();
+  const amountUnits = String(payment?.amount ?? expectedUnits);
+  if (amountUnits !== expectedUnits) {
+    throw new Error(`x402 amount mismatch: expected ${expectedUnits}, got ${amountUnits}`);
+  }
+  const network = optionalString(payment?.network) ?? ARC.caip2;
+  const transaction = optionalString(payment?.transaction);
+
+  return {
+    status: "paid",
+    source: "x402",
+    amountUsdc: RACE_NETWORK_FEE_USDC,
+    amountUnits,
+    recipientTreasury: process.env.TREASURY_ADDRESS,
+    paymentId: transaction ? `${network}:${transaction}` : undefined,
+    txHash: transaction,
+    payer,
+    paidAt: Date.now(),
+    reconciliationStatus: transaction ? "reconciled" : "needs-proof",
+    displayName,
+  };
+}
+
 function ensureLocalDevDriver(roundId: string, slot: rounds.DriverSlot): rounds.Round {
   const devWallet = localDevWallets.localDevWallet(slot);
   let round = rounds.getRound(roundId);
@@ -791,6 +907,41 @@ function ensureLocalDevDriver(roundId: string, slot: rounds.DriverSlot): rounds.
 function requireDriverSlot(value: unknown): rounds.DriverSlot {
   if (value === "challenger" || value === "opponent") return value;
   throw new Error("slot must be challenger or opponent");
+}
+
+function requireWalletAddress(value: unknown): string {
+  const wallet = optionalString(value);
+  if (!isWalletAddress(wallet)) throw new Error("valid EVM wallet required");
+  return wallet.toLowerCase();
+}
+
+function isWalletAddress(value: unknown): value is string {
+  return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeUsdcAmount(value: unknown): string {
+  return formatUsdcUnits(parseUsdcUnits(value));
+}
+
+function parseUsdcUnits(value: unknown): bigint {
+  const input = String(value ?? "").trim().replace(/^\$/, "");
+  if (!/^\d+(\.\d{1,6})?$/.test(input)) {
+    throw new Error(`invalid USDC amount: ${String(value)}`);
+  }
+  const [whole, fraction = ""] = input.split(".");
+  const units = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"));
+  if (units <= 0n) throw new Error(`invalid USDC amount: ${String(value)}`);
+  return units;
+}
+
+function formatUsdcUnits(units: bigint): string {
+  const whole = units / 1_000_000n;
+  const fraction = (units % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
+  return `${whole.toString()}${fraction ? `.${fraction}` : ""}`;
 }
 
 function ensureResultEvidence(round: rounds.Round): rounds.Round {

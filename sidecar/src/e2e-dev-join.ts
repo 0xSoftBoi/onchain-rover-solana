@@ -12,6 +12,9 @@ async function main() {
     durationSecs: 10,
     countdownSecs: 1,
   });
+  if (process.env.E2E_ASSERT_X402_FEE_GATE === "1") {
+    await assertRaceJoinFeeRequiresPayment(round.id);
+  }
 
   const prepared = await postJson(`/race/round/${round.id}/dev/join-local-wallets`, {
     amount: "20",
@@ -82,6 +85,24 @@ async function postJson(path: string, body: Record<string, unknown> = {}) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.error) throw new Error(json.error || `${path} failed ${res.status}`);
   return json;
+}
+
+async function assertRaceJoinFeeRequiresPayment(roundId: string) {
+  const res = await fetch(`${sidecarHttp}/race/round/${roundId}/join`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      slot: "challenger",
+      wallet: "0x1000000000000000000000000000000000000001",
+      displayName: "challenger",
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (res.status !== 402) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`race join fee route should require x402 payment, got ${res.status}: ${body}`);
+  }
+  assert(res.headers.has("payment-required"), "x402 payment-required header missing");
 }
 
 function normalizeHttpUrl(value: string) {

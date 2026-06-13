@@ -329,6 +329,13 @@ The pilot HUD renders camera health in two compact fields: state (`healthy`,
 `stale`, `missing`, or `degraded`) and detail (`fps`, frame age, resolution, or
 reconnect state). The same camera status is preserved in telemetry traces.
 
+The pilot minimap is derived from the saved stage calibration plus live
+telemetry. Progress comes from wheel odometry, lane placement from the
+challenger/opponent assignment, heading from yaw when present, and confidence
+degrades when camera/lidar/yaw/odometry signals are stale or missing. The same
+lane-aware stage estimate is summarized under each driver in
+`GET /race/round/:id/telemetry-trace`.
+
 ## Operator Lobby
 
 Open the lobby from a laptop on the same network:

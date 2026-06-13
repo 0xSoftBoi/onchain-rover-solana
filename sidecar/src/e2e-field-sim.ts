@@ -288,6 +288,12 @@ function assertTelemetryTrace(round: any, trace: any) {
   if (!(challenger?.frameCount > 0)) throw new Error("challenger trace missing frames");
   if (!(Number(challenger?.odometry?.last ?? 0) > 0)) throw new Error("challenger trace missing odometry");
   if (challenger?.camera?.health !== "healthy") throw new Error("challenger trace missing healthy camera summary");
+  if (challenger?.stage?.lane !== "left") throw new Error("challenger trace missing lane-aware stage summary");
+  if (!(Number(challenger?.stage?.progressFt ?? 0) > 0)) throw new Error("challenger trace missing stage progress");
+  if (challenger?.stage?.configured?.laneLengthFt !== 60) throw new Error("challenger trace missing configured stage length");
+  if (!["ok", "degraded"].includes(String(challenger?.stage?.state))) {
+    throw new Error(`challenger trace has unusable stage state: ${challenger?.stage?.state}`);
+  }
   if (!trace.notableEvents?.some((event: { type?: string }) => event.type === "round-start")) {
     throw new Error("trace missing round-start event");
   }

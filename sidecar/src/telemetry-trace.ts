@@ -1,5 +1,6 @@
 import type { DriverSlot, Round } from "./rounds.js";
 import * as raceStore from "./race-store.js";
+import { estimateStagePosition } from "./stage-estimator.js";
 
 type TraceFrame = raceStore.TelemetryTraceEvent & { type: "frame"; frame: Record<string, unknown> };
 
@@ -52,6 +53,7 @@ function summarizeDriverFrames(
     speedModes: [...new Set(frames.map((event) => String(event.frame.speed_mode ?? "")).filter(Boolean))],
     battery: numberRange(frames, "battery_v"),
     camera: cameraSummary(frames),
+    stage: stageSummary(slot, robot, frames, round),
     wheelCommand: {
       lastLeft: numberField(last?.frame.left_cmd),
       lastRight: numberField(last?.frame.right_cmd),
@@ -67,6 +69,36 @@ function summarizeDriverFrames(
       stoppedByDeadmanCount: frames.filter((event) => event.frame.stopped_by_deadman === true).length,
       estopCount: frames.filter((event) => event.frame.estop === true).length,
     },
+  };
+}
+
+function stageSummary(slot: DriverSlot, robot: string | null, frames: TraceFrame[], round: Round) {
+  const estimates = frames.map((event) => estimateStagePosition({
+    calibration: round.stageCalibration,
+    slot,
+    robot,
+    frame: event.frame,
+  }));
+  const last = estimates.at(-1);
+  return {
+    lane: last?.lane ?? round.stageCalibration.robotAssignments[slot]?.lane ?? null,
+    state: last?.state ?? "missing",
+    confidence: last?.confidence ?? 0,
+    progress: last?.progress ?? null,
+    progressFt: last?.progressFt ?? null,
+    lateralFt: last?.lateralFt ?? null,
+    headingDeg: last?.headingDeg ?? null,
+    sources: last?.sources ?? [],
+    reasons: last?.reasons ?? ["telemetry missing"],
+    configured: {
+      laneLengthFt: round.stageCalibration.laneLengthFt,
+      laneWidthFt: round.stageCalibration.laneWidthFt,
+      startLineFt: round.stageCalibration.startLineFt,
+      finishLineFt: round.stageCalibration.finishLineFt,
+    },
+    okCount: estimates.filter((estimate) => estimate.state === "ok").length,
+    degradedCount: estimates.filter((estimate) => estimate.state === "degraded").length,
+    missingCount: estimates.filter((estimate) => estimate.state === "missing").length,
   };
 }
 

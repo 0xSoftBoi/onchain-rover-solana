@@ -3,6 +3,7 @@ import {
   walletDisplayName,
   type RaceAuthorizationRequest,
 } from "./signer.js";
+import { estimateStagePosition } from "../src/stage-estimator.js";
 
 type SpeedMode = "low" | "medium" | "high";
 
@@ -45,6 +46,12 @@ type StageCalibration = {
   startLineFt: number;
   finishLineFt: number;
   robotAssignments: Record<DriverSlot, { robot: string; lane: "left" | "right" }>;
+  sensorOffsets?: Record<string, {
+    cameraForwardFt?: number;
+    cameraRightFt?: number;
+    lidarForwardFt?: number;
+    lidarRightFt?: number;
+  }>;
   speedDefaults: { defaultSpeedMode: SpeedMode; maxSpeedMode: SpeedMode };
   safetyDefaults: { obstacleStopDistanceFt: number; warningDistanceFt: number };
 };
@@ -164,9 +171,12 @@ const els = {
   lidar: byId("lidar"),
   yaw: byId("yaw"),
   odo: byId("odo"),
+  minimap: byId("minimap"),
   stageLabel: byId("stageLabel"),
   stageProgress: byId("stageProgress"),
   stageMarker: byId("stageMarker"),
+  stageLane: byId("stageLane"),
+  stageConfidence: byId("stageConfidence"),
   left: byId("left"),
   right: byId("right"),
   estop: byId("estop") as HTMLButtonElement,
@@ -746,25 +756,39 @@ function renderStageProgress(frame?: TelemetryFrame) {
   if (!calibration) {
     els.stageLabel.textContent = "stage";
     els.stageProgress.textContent = "--";
-    (els.stageMarker as HTMLElement).style.left = "0%";
+    els.stageLane.textContent = "--";
+    els.stageConfidence.textContent = "--";
+    els.minimap.className = "minimap missing";
+    setStageMarker(0, 50, 0);
     return;
   }
-  const runFt = Math.max(1, calibration.finishLineFt - calibration.startLineFt);
-  const odometryFt = odometryMeters(frame) * 3.28084;
-  const progress = Math.max(0, Math.min(1, (odometryFt - calibration.startLineFt) / runFt));
-  const traveledFt = Math.max(0, Math.min(runFt, odometryFt - calibration.startLineFt));
   const slotAssignment = calibration.robotAssignments[driverSlot];
-  els.stageLabel.textContent = `${runFt.toFixed(0)}ft / ${calibration.laneWidthFt.toFixed(1)}ft ${slotAssignment?.lane ?? ""}`.trim();
-  els.stageProgress.textContent = `${traveledFt.toFixed(1)}ft`;
-  (els.stageMarker as HTMLElement).style.left = `${(progress * 100).toFixed(1)}%`;
+  const estimate = estimateStagePosition({
+    calibration,
+    slot: driverSlot,
+    robot: frame?.robot ?? slotAssignment?.robot ?? robotName,
+    frame,
+  });
+  const x = estimate.progress === null ? 0 : estimate.progress * 100;
+  const y = estimate.lanePositionPct ?? 50;
+  const heading = estimate.headingDeg ?? 0;
+  const lane = estimate.lane ?? slotAssignment?.lane;
+
+  els.minimap.className = `minimap ${estimate.state}`;
+  els.stageLabel.textContent = `${estimate.runFt.toFixed(0)}ft x ${estimate.laneWidthFt.toFixed(1)}ft`;
+  els.stageProgress.textContent = estimate.progressFt === null ? "--" : `${estimate.progressFt.toFixed(1)}ft`;
+  els.stageLane.textContent = `${lane ?? "lane"} ${estimate.headingDeg === null ? "no yaw" : `${estimate.headingDeg.toFixed(0)}deg`}`;
+  els.stageConfidence.textContent = estimate.state === "missing"
+    ? "missing"
+    : `${Math.round(estimate.confidence * 100)}%`;
+  setStageMarker(x, y, heading);
 }
 
-function odometryMeters(frame?: TelemetryFrame): number {
-  if (!frame) return 0;
-  const left = frame.odometry_left;
-  const right = frame.odometry_right;
-  if (left !== undefined && right !== undefined) return (left + right) / 2;
-  return left ?? right ?? 0;
+function setStageMarker(xPercent: number, yPercent: number, headingDeg: number) {
+  const marker = els.stageMarker as HTMLElement;
+  marker.style.left = `${xPercent.toFixed(1)}%`;
+  marker.style.top = `${yPercent.toFixed(1)}%`;
+  marker.style.transform = `translate(-50%, -50%) rotate(${headingDeg.toFixed(1)}deg)`;
 }
 
 function setupJoystick() {

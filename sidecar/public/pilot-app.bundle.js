@@ -937,6 +937,146 @@ function stringValue(value) {
   return typeof value === "string" ? value : void 0;
 }
 
+// src/stage-estimator.ts
+var METERS_TO_FEET = 3.28084;
+function estimateStagePosition(opts) {
+  const { calibration, slot, frame } = opts;
+  const assignment = calibration.robotAssignments[slot];
+  const robot = opts.robot ?? frame?.robot ?? assignment?.robot ?? null;
+  const lane = assignment?.lane ?? null;
+  const runFt = Math.max(1, calibration.finishLineFt - calibration.startLineFt);
+  const reasons = [];
+  const sources = [];
+  let confidence = 0;
+  const odometry = odometryMeters(frame);
+  const odometryFt = odometry === null ? null : odometry * METERS_TO_FEET;
+  const progressFt = odometryFt === null ? null : clamp(odometryFt - calibration.startLineFt, 0, runFt);
+  const progress = progressFt === null ? null : progressFt / runFt;
+  if (progress !== null) {
+    confidence += 0.42;
+    sources.push("odometry");
+  } else {
+    reasons.push("odometry missing");
+  }
+  const laneIndex = lane === "left" ? 0 : lane === "right" ? 1 : null;
+  if (laneIndex !== null) {
+    confidence += 0.22;
+    sources.push("stage-calibration");
+  } else {
+    reasons.push("lane assignment missing");
+  }
+  const offsets = robot ? calibration.sensorOffsets?.[robot] : void 0;
+  const lateralFt = laneIndex === null ? null : (laneIndex === 0 ? -0.5 : 0.5) * calibration.laneWidthFt;
+  const lanePositionPct = laneIndex === null ? null : laneIndex === 0 ? 25 : 75;
+  const headingDeg = headingFromFrame(frame);
+  if (headingDeg !== null) {
+    confidence += 0.16;
+    sources.push("imu-yaw");
+  } else if (frame?.left_cmd !== void 0 || frame?.right_cmd !== void 0) {
+    confidence += 0.05;
+    sources.push("wheel-command");
+    reasons.push("yaw missing");
+  } else {
+    reasons.push("heading missing");
+  }
+  const camera = frame?.camera ?? frame?.sensors?.camera;
+  const cameraHealth2 = deriveCameraHealth(camera, frame?.sensors?.raw_frame?.age_ms);
+  if (cameraHealth2 === "healthy") {
+    confidence += 0.1;
+    sources.push(offsets ? "camera-offset" : "camera");
+  } else if (cameraHealth2 === "stale") {
+    confidence += 0.03;
+    sources.push("camera-stale");
+    reasons.push("camera stale");
+  } else if (cameraHealth2 === "degraded") {
+    confidence += 0.05;
+    sources.push("camera-degraded");
+    reasons.push("camera degraded");
+  } else {
+    reasons.push("camera missing");
+  }
+  const lidar = frame?.lidar ?? frame?.sensors?.lidar;
+  const lidarStatus = deriveLidarStatus(lidar);
+  if (lidarStatus === "available") {
+    confidence += 0.1;
+    sources.push(offsets ? "lidar-offset" : "lidar");
+  } else if (lidarStatus === "blocked") {
+    confidence += 0.06;
+    sources.push("lidar-blocked");
+  } else if (lidarStatus === "stale") {
+    confidence += 0.03;
+    sources.push("lidar-stale");
+    reasons.push("lidar stale");
+  } else {
+    reasons.push("lidar missing");
+  }
+  confidence = Number(clamp(confidence, 0, 1).toFixed(2));
+  const hasPosition = progress !== null && laneIndex !== null;
+  const state = hasPosition ? confidence >= 0.72 ? "ok" : "degraded" : "missing";
+  return {
+    state,
+    confidence,
+    lane,
+    robot,
+    progress: progress === null ? null : Number(progress.toFixed(4)),
+    progressFt: progressFt === null ? null : Number(progressFt.toFixed(2)),
+    lateralFt: lateralFt === null ? null : Number(lateralFt.toFixed(2)),
+    lanePositionPct,
+    headingDeg,
+    runFt,
+    laneWidthFt: calibration.laneWidthFt,
+    sources: [...new Set(sources)],
+    reasons: [...new Set(reasons)].slice(0, 5)
+  };
+}
+function odometryMeters(frame) {
+  if (!frame) return null;
+  const left = numberField(frame.odometry_left);
+  const right = numberField(frame.odometry_right);
+  if (left === null && right === null) return null;
+  if (left === null) return right;
+  if (right === null) return left;
+  return (left + right) / 2;
+}
+function headingFromFrame(frame) {
+  const yaw = numberField(frame?.yaw);
+  if (yaw === null) return null;
+  return Number(normalizeDegrees(yaw).toFixed(1));
+}
+function deriveCameraHealth(camera, rawFrameAgeMs) {
+  const health = camera?.health;
+  if (health === "healthy" || health === "stale" || health === "degraded" || health === "missing") return health;
+  const age = numberField(camera?.last_frame_age_ms ?? rawFrameAgeMs);
+  if (age !== null && age > 1500) return "stale";
+  const status = camera?.status;
+  if (status === "simulated" || status === "proxy" || status === "e2e" || status === "harness") return "healthy";
+  if (status === "configured") return "degraded";
+  if (status === "unavailable" || status === "missing" || status === "error") return "missing";
+  return "";
+}
+function deriveLidarStatus(lidar) {
+  if (!lidar) return "";
+  if (lidar.blocked) return "blocked";
+  const status = lidar.status;
+  if (status === "stale") return "stale";
+  if (status === "unavailable" || status === "missing" || status === "error") return "missing";
+  if (numberField(lidar.front_m) !== null || numberField(lidar.min_m) !== null || status === "available") return "available";
+  return "";
+}
+function numberField(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+function normalizeDegrees(value) {
+  let degrees = value % 360;
+  if (degrees > 180) degrees -= 360;
+  if (degrees < -180) degrees += 360;
+  return degrees;
+}
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 // web-src/pilot-app.ts
 var params = new URLSearchParams(location.search);
 var robotName = params.get("robot") || "courier";
@@ -989,9 +1129,12 @@ var els = {
   lidar: byId("lidar"),
   yaw: byId("yaw"),
   odo: byId("odo"),
+  minimap: byId("minimap"),
   stageLabel: byId("stageLabel"),
   stageProgress: byId("stageProgress"),
   stageMarker: byId("stageMarker"),
+  stageLane: byId("stageLane"),
+  stageConfidence: byId("stageConfidence"),
   left: byId("left"),
   right: byId("right"),
   estop: byId("estop"),
@@ -1461,7 +1604,7 @@ function cameraHealth(frame) {
   if (videoState === "reconnecting") return { label: "reconnect", detail, tone: "warn" };
   if (videoState === "fallback") return { label: "missing", detail, tone: "bad" };
   const age = camera?.last_frame_age_ms ?? frame.raw_frame_age_ms ?? frame.sensors?.raw_frame?.age_ms;
-  const health = camera?.health ?? deriveCameraHealth(camera?.status, age);
+  const health = camera?.health ?? deriveCameraHealth2(camera?.status, age);
   if (age !== void 0 && age > 1500) return { label: "stale", detail, tone: "warn" };
   if (health === "healthy") {
     return { label: camera?.status || "ok", detail, tone: "ok" };
@@ -1470,7 +1613,7 @@ function cameraHealth(frame) {
   if (health === "missing") return { label: camera?.status || "missing", detail, tone: "bad" };
   return { label: camera?.status || "--", detail, tone: "" };
 }
-function deriveCameraHealth(status, age) {
+function deriveCameraHealth2(status, age) {
   if (age !== void 0 && age > 1500) return "stale";
   if (status === "simulated" || status === "proxy") return "healthy";
   if (status === "configured") return "degraded";
@@ -1507,24 +1650,35 @@ function renderStageProgress(frame) {
   if (!calibration) {
     els.stageLabel.textContent = "stage";
     els.stageProgress.textContent = "--";
-    els.stageMarker.style.left = "0%";
+    els.stageLane.textContent = "--";
+    els.stageConfidence.textContent = "--";
+    els.minimap.className = "minimap missing";
+    setStageMarker(0, 50, 0);
     return;
   }
-  const runFt = Math.max(1, calibration.finishLineFt - calibration.startLineFt);
-  const odometryFt = odometryMeters(frame) * 3.28084;
-  const progress = Math.max(0, Math.min(1, (odometryFt - calibration.startLineFt) / runFt));
-  const traveledFt = Math.max(0, Math.min(runFt, odometryFt - calibration.startLineFt));
   const slotAssignment = calibration.robotAssignments[driverSlot];
-  els.stageLabel.textContent = `${runFt.toFixed(0)}ft / ${calibration.laneWidthFt.toFixed(1)}ft ${slotAssignment?.lane ?? ""}`.trim();
-  els.stageProgress.textContent = `${traveledFt.toFixed(1)}ft`;
-  els.stageMarker.style.left = `${(progress * 100).toFixed(1)}%`;
+  const estimate = estimateStagePosition({
+    calibration,
+    slot: driverSlot,
+    robot: frame?.robot ?? slotAssignment?.robot ?? robotName,
+    frame
+  });
+  const x = estimate.progress === null ? 0 : estimate.progress * 100;
+  const y = estimate.lanePositionPct ?? 50;
+  const heading = estimate.headingDeg ?? 0;
+  const lane = estimate.lane ?? slotAssignment?.lane;
+  els.minimap.className = `minimap ${estimate.state}`;
+  els.stageLabel.textContent = `${estimate.runFt.toFixed(0)}ft x ${estimate.laneWidthFt.toFixed(1)}ft`;
+  els.stageProgress.textContent = estimate.progressFt === null ? "--" : `${estimate.progressFt.toFixed(1)}ft`;
+  els.stageLane.textContent = `${lane ?? "lane"} ${estimate.headingDeg === null ? "no yaw" : `${estimate.headingDeg.toFixed(0)}deg`}`;
+  els.stageConfidence.textContent = estimate.state === "missing" ? "missing" : `${Math.round(estimate.confidence * 100)}%`;
+  setStageMarker(x, y, heading);
 }
-function odometryMeters(frame) {
-  if (!frame) return 0;
-  const left = frame.odometry_left;
-  const right = frame.odometry_right;
-  if (left !== void 0 && right !== void 0) return (left + right) / 2;
-  return left ?? right ?? 0;
+function setStageMarker(xPercent, yPercent, headingDeg) {
+  const marker = els.stageMarker;
+  marker.style.left = `${xPercent.toFixed(1)}%`;
+  marker.style.top = `${yPercent.toFixed(1)}%`;
+  marker.style.transform = `translate(-50%, -50%) rotate(${headingDeg.toFixed(1)}deg)`;
 }
 function setupJoystick() {
   if (!window.nipplejs) {

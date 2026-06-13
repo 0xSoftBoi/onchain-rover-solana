@@ -87,23 +87,39 @@
     border:1px solid var(--line); border-radius:8px; background:var(--glass);
     backdrop-filter:blur(10px); text-shadow:0 1px 2px #000;
   }
+  .minimap.ok { border-color:rgba(73,209,125,.55); }
+  .minimap.degraded { border-color:rgba(255,201,92,.62); }
+  .minimap.missing { border-color:rgba(255,93,93,.5); }
   .minimap-head {
     display:flex; justify-content:space-between; gap:8px; margin-bottom:7px;
     color:var(--muted); font-size:11px;
   }
   .minimap-head span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .stage-track {
-    position:relative; height:18px; border:1px solid rgba(223,235,255,.24);
+    position:relative; height:44px; border:1px solid rgba(223,235,255,.24);
     border-radius:6px; background:rgba(5,8,12,.72); overflow:hidden;
   }
   .stage-track::before {
-    content:""; position:absolute; inset:7px 8px; height:2px; background:rgba(223,235,255,.32);
+    content:""; position:absolute; left:8px; right:8px; top:50%; height:1px;
+    background:rgba(223,235,255,.32);
+  }
+  .stage-track::after {
+    content:""; position:absolute; top:6px; bottom:6px; right:8px; width:2px;
+    background:rgba(223,235,255,.42);
   }
   .stage-marker {
-    position:absolute; top:3px; left:0%; width:10px; height:10px; border-radius:50%;
+    position:absolute; top:50%; left:0%; width:13px; height:13px; border-radius:3px 8px 8px 3px;
     background:var(--ok); box-shadow:0 0 12px rgba(73,209,125,.8);
-    transform:translateX(-50%);
+    transform:translate(-50%, -50%); transform-origin:center;
+    clip-path:polygon(100% 50%, 0 0, 0 100%);
   }
+  .minimap.degraded .stage-marker { background:var(--warn); box-shadow:0 0 12px rgba(255,201,92,.65); }
+  .minimap.missing .stage-marker { background:var(--bad); box-shadow:0 0 12px rgba(255,93,93,.55); }
+  .minimap-foot {
+    display:flex; justify-content:space-between; gap:8px; margin-top:7px;
+    color:var(--muted); font-size:11px;
+  }
+  .minimap-foot span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .throttle {
     pointer-events:auto; position:absolute; left:12px; bottom:14px; display:flex; gap:6px;
     padding:6px; border:1px solid var(--line); border-radius:9px;
@@ -196,6 +212,7 @@
     <div class="minimap" id="minimap">
       <div class="minimap-head"><span id="stageLabel">stage</span><span id="stageProgress">--</span></div>
       <div class="stage-track"><i class="stage-marker" id="stageMarker"></i></div>
+      <div class="minimap-foot"><span id="stageLane">--</span><span id="stageConfidence">--</span></div>
     </div>
     <div class="wheel-readout">L <span id="left">0.00</span> / R <span id="right">0.00</span></div>
     <div class="throttle" id="throttle">

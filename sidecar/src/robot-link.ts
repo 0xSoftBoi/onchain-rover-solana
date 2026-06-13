@@ -424,6 +424,10 @@ export function latestTelemetry(robot: RobotName): RobotTelemetry | null {
   return latest ? structuredClone(latest) : null;
 }
 
+export function robotLinkState() {
+  return robotLinkSnapshot();
+}
+
 function recordTelemetry(runtime: RobotRuntime, frame: RobotTelemetry) {
   const last = runtime.telemetryHistory.at(-1);
   if (last && last.ts_ms === frame.ts_ms && last.source === frame.source) return;

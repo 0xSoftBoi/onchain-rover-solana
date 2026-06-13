@@ -10,6 +10,7 @@
     "start": "tsx src/index.ts",
     "e2e:local-round": "tsx src/e2e-local-round.ts",
     "e2e:harness-bridge": "tsx src/e2e-harness-bridge.ts",
+    "e2e:field-sim": "tsx src/e2e-field-sim.ts",
     "bridge:harness": "tsx src/harness-bridge.ts",
     "sim:robot": "tsx src/sim-robot.ts",
     "sim:finish": "tsx src/sim-finish-detector.ts",

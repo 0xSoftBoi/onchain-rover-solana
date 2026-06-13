@@ -26,6 +26,7 @@ npm run chain:test
 npm run e2e:local-race
 npm run e2e:sidecar-round
 npm run e2e:harness-bridge
+npm run e2e:field-sim
 ```
 
 For manual sidecar development:
@@ -67,6 +68,14 @@ To prove the sidecar bridge against the Rust `robot-harness` simulator:
 
 ```bash
 SIDECAR_URL=http://127.0.0.1:4021 npm run e2e:harness-bridge
+```
+
+To prove the closest no-hardware field path, including two Rust rover
+simulators, two bridge adapters, two delegated pilot sessions, finish evidence,
+settlement, and persisted proof:
+
+```bash
+SIDECAR_URL=http://127.0.0.1:4021 npm run e2e:field-sim
 ```
 
 The deploy step writes `sidecar/src/generated/contracts.local.json`. Re-run it
@@ -279,6 +288,21 @@ Open the lobby from a laptop on the same network:
 ```text
 http://<laptop-ip>:4021/lobby.html
 ```
+
+Open the field checklist before bringing phones and robots online:
+
+```text
+http://<laptop-ip>:4021/field.html
+```
+
+`/field/preflight` is the machine-readable version. It reports:
+
+- local chain health
+- treasury fee accounting
+- guard/courier sidecar bridge attachment state
+- latest persisted rounds
+- operator URLs for lobby, pilot links, and finish camera
+- local harness env values that matter for field setup
 
 `/lobby.html` redirects to `/round.html`, which now handles:
 

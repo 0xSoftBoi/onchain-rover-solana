@@ -1,4 +1,8 @@
-import { injectedWalletSigner, type WalletChain } from "./signer.js";
+import {
+  createWalletSigner,
+  walletDisplayName,
+  type RaceAuthorizationRequest,
+} from "./signer.js";
 
 type SpeedMode = "low" | "medium" | "high";
 
@@ -306,15 +310,22 @@ async function connect() {
 
 async function completeRaceEntryIfNeeded() {
   if (!roundId || raceEntryComplete) return;
-  const signer = injectedWalletSigner();
+  const signer = createWalletSigner();
 
   setModalStatus(`Connecting ${signer.label}...`);
-  const wallet = await signer.connect();
+  const session = await signer.connect();
 
   setModalStatus("Claiming driver slot...");
   await postJson(`/race/round/${roundId}/claim-slot`, {
     slot: driverSlot,
-    wallet,
+    wallet: session.address,
+    displayName: walletDisplayName(session),
+  });
+
+  setModalStatus("Authorizing matched stake...");
+  await signer.authorizeStake(session, {
+    roundId,
+    slot: driverSlot,
   });
 
   setModalStatus("Opening race escrow...");
@@ -323,28 +334,22 @@ async function completeRaceEntryIfNeeded() {
   setModalStatus("Preparing typed authorization...");
   const request = await postJson(`/race/round/${roundId}/chain/authorization-request`, {
     slot: driverSlot,
-    wallet,
-  }) as {
-    chain: WalletChain;
-    entry: { message: { deadline: string } };
-    permit: { message: { deadline: string } };
-  };
+    wallet: session.address,
+  }) as RaceAuthorizationRequest;
 
-  await signer.ensureChain(request.chain);
-
-  setModalStatus("Sign race entry...");
-  const entrySignature = await signer.signTypedData(wallet, request.entry);
-
-  setModalStatus("Sign token permit...");
-  const permitSignature = await signer.signTypedData(wallet, request.permit);
+  setModalStatus("Sign race entry and permit...");
+  const signed = await signer.signRaceIntent(session, request);
+  if (!signed.entryDeadline || !signed.permitDeadline) {
+    throw new Error("race authorization deadlines missing");
+  }
 
   setModalStatus("Submitting race entry...");
   await postJson(`/race/round/${roundId}/chain/join`, {
     slot: driverSlot,
-    entrySignature,
-    permitSignature,
-    entryDeadline: request.entry.message.deadline,
-    permitDeadline: request.permit.message.deadline,
+    entrySignature: signed.entrySignature,
+    permitSignature: signed.permitSignature,
+    entryDeadline: signed.entryDeadline,
+    permitDeadline: signed.permitDeadline,
   });
   raceEntryComplete = true;
   setModalStatus("Race entry confirmed", "ok");

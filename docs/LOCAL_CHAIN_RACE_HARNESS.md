@@ -365,12 +365,28 @@ The phone links are still camera-first:
 ## Signers And Delegated Pilot Sessions
 
 `sidecar/web-src/signer.ts` defines the browser wallet signer boundary. The
-pilot app currently uses an injected EIP-1193 wallet for:
+pilot app now creates a wallet session with:
+
+- canonical EVM address
+- wallet kind (`base-account` or `injected-eip1193`)
+- wallet label
+- display-name fallback from the address
+
+Base Account is preferred when the browser exposes a Base provider. Other
+browser wallets use the generic EIP-1193 path. Name resolution stays
+display-only; the address is still the canonical driver identity.
+
+The pilot app uses the signer for:
 
 - wallet connect
 - local chain switch/add
+- delegated stake typed data
 - race-entry typed data
 - token permit typed data
+
+The signer boundary also exposes a `payRaceFee` capability so browser x402 fee
+payment can be added without changing the pilot app. Today the authoritative
+x402 fee path remains the server-gated `POST /race/round/:id/join` route.
 
 After a slot joins the race, the pilot page asks the sidecar for a delegated
 round pilot session:

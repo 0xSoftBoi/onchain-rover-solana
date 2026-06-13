@@ -64,6 +64,7 @@ var raceEntryComplete = false;
 var controlUrls = {};
 var stageCalibration = null;
 var stageCalibrationLoaded = false;
+var videoState = "idle";
 var els = {
   robotName: byId("robotName"),
   conn: byId("conn"),
@@ -299,6 +300,7 @@ function configureVideo(driveUrl, streamUrl) {
   els.videoFallback.textContent = "camera feed unavailable";
   els.video.src = streamUrl || `${base}/stream`;
   els.video.onload = () => {
+    videoState = "streaming";
     els.video.classList.remove("off");
     els.video.style.display = "block";
     els.localVideo.classList.add("off");
@@ -306,6 +308,7 @@ function configureVideo(driveUrl, streamUrl) {
     els.videoFallback.style.display = "none";
   };
   els.video.onerror = () => {
+    videoState = started ? "local" : "fallback";
     els.video.classList.add("off");
     if (started) {
       startLocalCamera();
@@ -329,12 +332,14 @@ async function startLocalCamera() {
       },
       audio: false
     });
+    videoState = "local";
     els.localVideo.srcObject = localStream;
     els.localVideo.style.display = "block";
     els.localVideo.classList.remove("off");
     els.video.style.display = "none";
     els.videoFallback.style.display = "none";
   } catch {
+    videoState = "fallback";
     els.videoFallback.textContent = "camera permission needed";
     els.videoFallback.style.display = "grid";
   }
@@ -411,7 +416,9 @@ function renderTelemetry(frame) {
   els.source.textContent = frame.source || "bridge";
   els.battery.textContent = frame.battery_v !== void 0 ? `${frame.battery_v.toFixed(2)}V` : "--";
   els.cap.textContent = frame.max_speed !== void 0 ? frame.max_speed.toFixed(2) : "--";
-  els.cameraState.textContent = cameraLabel(frame);
+  const camera = cameraHealth(frame);
+  els.cameraState.textContent = camera.label;
+  els.cameraState.className = camera.tone;
   els.lidar.textContent = lidarLabel(frame);
   els.yaw.textContent = frame.yaw !== void 0 ? `${frame.yaw.toFixed(0)}deg` : "--";
   els.odo.textContent = odometryLabel(frame);
@@ -433,9 +440,29 @@ function renderTelemetry(frame) {
     els.direction.textContent = "Tap start to drive";
   }
 }
-function cameraLabel(frame) {
-  if (forceLocalCamera) return frame.camera?.status ? `local/${frame.camera.status}` : "local";
-  return frame.camera?.status || "--";
+function cameraHealth(frame) {
+  const camera = frame.camera ?? frame.sensors?.camera;
+  if (forceLocalCamera || videoState === "local") {
+    return { label: camera?.status ? `local/${camera.status}` : "local", tone: "ok" };
+  }
+  if (videoState === "fallback") return { label: "missing", tone: "bad" };
+  const age = camera?.last_frame_age_ms ?? frame.raw_frame_age_ms ?? frame.sensors?.raw_frame?.age_ms;
+  const health = camera?.health ?? deriveCameraHealth(camera?.status, age);
+  if (age !== void 0 && age > 1500) return { label: `stale ${age.toFixed(0)}ms`, tone: "warn" };
+  if (health === "healthy") {
+    const fps = camera?.fps !== void 0 ? ` ${camera.fps.toFixed(0)}fps` : "";
+    return { label: `${camera?.status || "ok"}${fps}`, tone: "ok" };
+  }
+  if (health === "degraded") return { label: camera?.reconnect_state || camera?.status || "degraded", tone: "warn" };
+  if (health === "missing") return { label: camera?.status || "missing", tone: "bad" };
+  return { label: camera?.status || "--", tone: "" };
+}
+function deriveCameraHealth(status, age) {
+  if (age !== void 0 && age > 1500) return "stale";
+  if (status === "simulated" || status === "proxy") return "healthy";
+  if (status === "configured") return "degraded";
+  if (status === "unavailable" || status === "missing" || status === "error") return "missing";
+  return "";
 }
 function lidarLabel(frame) {
   const lidar = frame.lidar;
@@ -546,6 +573,8 @@ setInterval(() => {
     els.latency.textContent = "stale";
     els.latency.className = "warn";
     els.source.textContent = "stale";
+    els.cameraState.textContent = "stale";
+    els.cameraState.className = "warn";
   }
 }, 500);
 els.robotName.textContent = `/ ${robotName}`;

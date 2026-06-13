@@ -31,6 +31,16 @@ type DriveCommand = {
   deadman_ms: number;
 };
 
+type CameraTelemetry = {
+  status: string;
+  health?: string;
+  fps?: number;
+  last_frame_age_ms?: number;
+  resolution?: string;
+  brightness?: number;
+  reconnect_state?: string;
+};
+
 export type RobotTelemetry = {
   ts_ms: number;
   robot: RobotName;
@@ -49,14 +59,14 @@ export type RobotTelemetry = {
   last_raw_frame_ms?: number;
   raw_frame_age_ms?: number;
   source: "bridge" | "robot" | "sim";
-  camera?: { status: string };
+  camera?: CameraTelemetry;
   lidar?: { status?: string; front_m?: number; min_m?: number; blocked?: boolean };
   sensors?: {
     battery?: { status?: string; voltage_v?: number };
     odometry?: { status?: string; left?: number; right?: number };
     imu?: { status?: string };
     lidar?: { status?: string; front_m?: number; min_m?: number; blocked?: boolean };
-    camera?: { status?: string };
+    camera?: Partial<CameraTelemetry>;
     raw_frame?: { status?: string; source?: string; last_ms?: number; age_ms?: number };
   };
 };
@@ -427,7 +437,7 @@ function normalizeTelemetry(runtime: RobotRuntime, body: Record<string, any>): R
     last_raw_frame_ms: finiteNumber(body.last_raw_frame_ms) ?? current.last_raw_frame_ms,
     raw_frame_age_ms: finiteNumber(body.raw_frame_age_ms) ?? current.raw_frame_age_ms,
     source: body.source === "sim" ? "sim" : "robot",
-    camera: normalizeCamera(body.camera) ?? current.camera,
+    camera: normalizeCamera(body.camera) ?? normalizeCamera(body.sensors?.camera) ?? current.camera,
     lidar: normalizeLidar(body.lidar) ?? current.lidar,
     sensors: normalizeSensors(body.sensors) ?? current.sensors,
   };
@@ -545,10 +555,20 @@ function finiteNumber(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-function normalizeCamera(value: unknown): { status: string } | undefined {
+function normalizeCamera(value: unknown): CameraTelemetry | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const status = (value as { status?: unknown }).status;
-  return typeof status === "string" ? { status } : undefined;
+  const camera = value as Record<string, unknown>;
+  const status = stringField(camera.status);
+  if (!status) return undefined;
+  return {
+    status,
+    health: stringField(camera.health),
+    fps: finiteNumber(camera.fps),
+    last_frame_age_ms: finiteNumber(camera.last_frame_age_ms) ?? finiteNumber(camera.age_ms),
+    resolution: stringField(camera.resolution),
+    brightness: finiteNumber(camera.brightness),
+    reconnect_state: stringField(camera.reconnect_state),
+  };
 }
 
 function normalizeLidar(value: unknown): RobotTelemetry["lidar"] | undefined {

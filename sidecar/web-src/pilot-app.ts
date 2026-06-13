@@ -40,9 +40,24 @@ type TelemetryFrame = {
   speed_mode?: SpeedMode;
   max_speed?: number;
   last_raw_frame_ms?: number;
+  raw_frame_age_ms?: number;
   source?: string;
-  camera?: { status?: string };
+  camera?: CameraTelemetry;
   lidar?: { front_m?: number; min_m?: number; blocked?: boolean };
+  sensors?: {
+    camera?: CameraTelemetry;
+    raw_frame?: { age_ms?: number };
+  };
+};
+
+type CameraTelemetry = {
+  status?: string;
+  health?: string;
+  fps?: number;
+  last_frame_age_ms?: number;
+  resolution?: string;
+  brightness?: number;
+  reconnect_state?: string;
 };
 
 type NippleMove = {
@@ -94,6 +109,7 @@ let raceEntryComplete = false;
 let controlUrls: { speedMode?: string; stop?: string } = {};
 let stageCalibration: StageCalibration | null = null;
 let stageCalibrationLoaded = false;
+let videoState: "idle" | "streaming" | "fallback" | "local" = "idle";
 
 const els = {
   robotName: byId("robotName"),
@@ -361,6 +377,7 @@ function configureVideo(driveUrl: string, streamUrl?: string) {
   els.videoFallback.textContent = "camera feed unavailable";
   els.video.src = streamUrl || `${base}/stream`;
   els.video.onload = () => {
+    videoState = "streaming";
     els.video.classList.remove("off");
     els.video.style.display = "block";
     els.localVideo.classList.add("off");
@@ -368,6 +385,7 @@ function configureVideo(driveUrl: string, streamUrl?: string) {
     els.videoFallback.style.display = "none";
   };
   els.video.onerror = () => {
+    videoState = started ? "local" : "fallback";
     els.video.classList.add("off");
     if (started) {
       startLocalCamera();
@@ -392,12 +410,14 @@ async function startLocalCamera() {
       },
       audio: false,
     });
+    videoState = "local";
     els.localVideo.srcObject = localStream;
     els.localVideo.style.display = "block";
     els.localVideo.classList.remove("off");
     els.video.style.display = "none";
     els.videoFallback.style.display = "none";
   } catch {
+    videoState = "fallback";
     els.videoFallback.textContent = "camera permission needed";
     els.videoFallback.style.display = "grid";
   }
@@ -484,7 +504,9 @@ function renderTelemetry(frame: TelemetryFrame) {
   els.source.textContent = frame.source || "bridge";
   els.battery.textContent = frame.battery_v !== undefined ? `${frame.battery_v.toFixed(2)}V` : "--";
   els.cap.textContent = frame.max_speed !== undefined ? frame.max_speed.toFixed(2) : "--";
-  els.cameraState.textContent = cameraLabel(frame);
+  const camera = cameraHealth(frame);
+  els.cameraState.textContent = camera.label;
+  els.cameraState.className = camera.tone;
   els.lidar.textContent = lidarLabel(frame);
   els.yaw.textContent = frame.yaw !== undefined ? `${frame.yaw.toFixed(0)}deg` : "--";
   els.odo.textContent = odometryLabel(frame);
@@ -516,9 +538,31 @@ function renderTelemetry(frame: TelemetryFrame) {
   }
 }
 
-function cameraLabel(frame: TelemetryFrame): string {
-  if (forceLocalCamera) return frame.camera?.status ? `local/${frame.camera.status}` : "local";
-  return frame.camera?.status || "--";
+function cameraHealth(frame: TelemetryFrame): { label: string; tone: "" | "ok" | "warn" | "bad" } {
+  const camera = frame.camera ?? frame.sensors?.camera;
+  if (forceLocalCamera || videoState === "local") {
+    return { label: camera?.status ? `local/${camera.status}` : "local", tone: "ok" };
+  }
+  if (videoState === "fallback") return { label: "missing", tone: "bad" };
+
+  const age = camera?.last_frame_age_ms ?? frame.raw_frame_age_ms ?? frame.sensors?.raw_frame?.age_ms;
+  const health = camera?.health ?? deriveCameraHealth(camera?.status, age);
+  if (age !== undefined && age > 1500) return { label: `stale ${age.toFixed(0)}ms`, tone: "warn" };
+  if (health === "healthy") {
+    const fps = camera?.fps !== undefined ? ` ${camera.fps.toFixed(0)}fps` : "";
+    return { label: `${camera?.status || "ok"}${fps}`, tone: "ok" };
+  }
+  if (health === "degraded") return { label: camera?.reconnect_state || camera?.status || "degraded", tone: "warn" };
+  if (health === "missing") return { label: camera?.status || "missing", tone: "bad" };
+  return { label: camera?.status || "--", tone: "" };
+}
+
+function deriveCameraHealth(status?: string, age?: number): string {
+  if (age !== undefined && age > 1500) return "stale";
+  if (status === "simulated" || status === "proxy") return "healthy";
+  if (status === "configured") return "degraded";
+  if (status === "unavailable" || status === "missing" || status === "error") return "missing";
+  return "";
 }
 
 function lidarLabel(frame: TelemetryFrame): string {
@@ -640,6 +684,8 @@ setInterval(() => {
     els.latency.textContent = "stale";
     els.latency.className = "warn";
     els.source.textContent = "stale";
+    els.cameraState.textContent = "stale";
+    els.cameraState.className = "warn";
   }
 }, 500);
 

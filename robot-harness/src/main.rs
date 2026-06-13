@@ -191,6 +191,12 @@ struct TelemetryFrame {
 #[derive(Debug, Clone, Serialize)]
 struct CameraStatus {
     status: &'static str,
+    health: &'static str,
+    fps: Option<f64>,
+    last_frame_age_ms: Option<u128>,
+    resolution: Option<&'static str>,
+    brightness: Option<f64>,
+    reconnect_state: &'static str,
     device: Option<String>,
     stream_url: Option<String>,
     snapshot_url: Option<String>,
@@ -1384,13 +1390,32 @@ fn estop_inner(state: &AppState) -> Result<(), AppError> {
 }
 
 fn camera_status_for(state: &AppState) -> CameraStatus {
+    let status = camera_status_name(
+        state.mode,
+        &state.camera_device,
+        &state.camera_stream_url,
+        &state.camera_snapshot_url,
+    );
     CameraStatus {
-        status: camera_status_name(
-            state.mode,
-            &state.camera_device,
-            &state.camera_stream_url,
-            &state.camera_snapshot_url,
-        ),
+        status,
+        health: camera_health_name(status),
+        fps: if status == "simulated" {
+            Some(10.0)
+        } else {
+            None
+        },
+        last_frame_age_ms: if status == "simulated" { Some(0) } else { None },
+        resolution: if status == "simulated" {
+            Some("640x360")
+        } else {
+            None
+        },
+        brightness: if status == "simulated" {
+            Some(0.62)
+        } else {
+            None
+        },
+        reconnect_state: camera_reconnect_state(status),
         device: state.camera_device.clone(),
         stream_url: state.camera_stream_url.clone(),
         snapshot_url: state.camera_snapshot_url.clone(),
@@ -1411,6 +1436,23 @@ fn camera_status_name(
         "configured"
     } else {
         "unavailable"
+    }
+}
+
+fn camera_health_name(status: &str) -> &'static str {
+    match status {
+        "simulated" | "proxy" => "healthy",
+        "configured" => "degraded",
+        _ => "missing",
+    }
+}
+
+fn camera_reconnect_state(status: &str) -> &'static str {
+    match status {
+        "proxy" => "proxy",
+        "simulated" => "connected",
+        "configured" => "waiting-for-source",
+        _ => "disconnected",
     }
 }
 
@@ -1940,6 +1982,10 @@ mod tests {
             camera_status_name(Mode::Serial, &None, &stream, &None),
             "proxy"
         );
+        assert_eq!(camera_health_name("simulated"), "healthy");
+        assert_eq!(camera_health_name("proxy"), "healthy");
+        assert_eq!(camera_health_name("configured"), "degraded");
+        assert_eq!(camera_health_name("unavailable"), "missing");
     }
 
     #[tokio::test]

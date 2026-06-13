@@ -35,6 +35,11 @@ const eventPassAbi = parseAbi([
   "function holds(address) view returns (bool)",
   "function balanceOf(address) view returns (uint256)",
 ]);
+const repAbi = parseAbi([
+  "function giveFeedback(uint256 agentId, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)",
+  "function setAgentOwner(uint256 agentId, address owner)",
+  "function getSummary(uint256 agentId) view returns (uint256 count, int256 avgValue)",
+]);
 
 function wallet(pk: string) {
   return createWalletClient({
@@ -101,4 +106,43 @@ export async function holdsPass(addr: string): Promise<boolean> {
     address: pass as `0x${string}`, abi: eventPassAbi,
     functionName: "holds", args: [getAddress(addr)],
   });
+}
+
+// --- ERC-8004 reputation flywheel (on Arc) ---------------------------------
+// The REQUESTER (treasury wallet) rates the agent after a completed job, tagged
+// by skill, with the Walrus proof URI + hash. Feeds the leaderboard.
+function requesterWallet() {
+  const pk = process.env.TREASURY_PRIVATE_KEY as `0x${string}`;
+  return createWalletClient({
+    account: privateKeyToAccount(pk), chain: arcTestnet, transport: http(),
+  });
+}
+
+export async function giveFeedback(opts: {
+  agentId: number; score: number; skill: string;
+  blobId?: string; sha256?: string;
+}) {
+  const reg = process.env.REPUTATION_ADDRESS;
+  if (!reg) throw new Error("REPUTATION_ADDRESS not set (deploy ReputationRegistry)");
+  const hash = await requesterWallet().writeContract({
+    address: reg as `0x${string}`, abi: repAbi, functionName: "giveFeedback",
+    args: [
+      BigInt(opts.agentId), BigInt(opts.score), 0,
+      opts.skill, "starred", "",
+      opts.blobId ? `walrus://${opts.blobId}` : "",
+      (opts.sha256 ? `0x${opts.sha256}` : `0x${"0".repeat(64)}`) as `0x${string}`,
+    ],
+  });
+  const receipt = await pub.waitForTransactionReceipt({ hash });
+  return { tx: hash, status: receipt.status, explorer: `${ARC.explorer}/tx/${hash}` };
+}
+
+export async function repSummary(agentId: number) {
+  const reg = process.env.REPUTATION_ADDRESS;
+  if (!reg) return { count: 0, avg: 0 };
+  const [count, avg] = await pub.readContract({
+    address: reg as `0x${string}`, abi: repAbi,
+    functionName: "getSummary", args: [BigInt(agentId)],
+  }) as [bigint, bigint];
+  return { count: Number(count), avg: Number(avg) };
 }

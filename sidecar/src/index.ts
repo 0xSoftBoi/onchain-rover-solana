@@ -72,6 +72,16 @@ app.post("/race/bet", (req, res) => {
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 app.get("/race/odds", (_req, res) => res.json(race.odds()));
+
+// ERC-8004 reputation summary (the leaderboard score) for each robot.
+app.get("/reputation", async (_req, res) => {
+  const out: Record<string, any> = {};
+  for (const [n, r] of Object.entries(ROBOTS)) {
+    try { out[n] = { ens: r.ens, ...(await settle.repSummary(Number(r.agentId ?? 0))) }; }
+    catch (e: any) { out[n] = { ens: r.ens, error: e.message }; }
+  }
+  res.json(out);
+});
 app.get("/race/state", (_req, res) => res.json(race.raceState()));
 app.post("/race/arm", (_req, res) => res.json(race.armRace()));
 app.post("/race/start", (_req, res) => res.json(race.startRace()));
@@ -173,7 +183,7 @@ app.get("/health", async (_req, res) => {
 // ---------- Auction orchestration (dashboard-driven) -----------------------
 type AuctionState = {
   price?: number; agreed?: boolean; buyer?: string; note?: string;
-  pay?: string; mint?: string; settle: boolean;
+  pay?: string; mint?: string; feedback?: string; settle: boolean;
 };
 const auctions = new Map<string, AuctionState>();
 
@@ -212,7 +222,15 @@ app.post("/race/auction/start", async (req, res) => {
         st.pay = pay.tx;
         const mint = await settle.mintPass("courier", String(deal.price));
         st.mint = mint.tx;
-        st.note = "settled + minted on Arc";
+        st.note = "settled + minted; recording reputation…";
+        // flywheel: requester rates the guard for the completed sale (skill=guard)
+        try {
+          const fb = await settle.giveFeedback({
+            agentId: Number(ROBOTS.guard.agentId ?? 0), score: 95, skill: "guard",
+          });
+          st.feedback = fb.tx;
+        } catch (e: any) { st.note = "minted; feedback skipped: " + e.message; }
+        st.note = "settled + minted + reputation on Arc";
       }
     } catch (e: any) { st.note = "error: " + e.message; }
   })();

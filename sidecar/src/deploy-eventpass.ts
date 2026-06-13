@@ -17,7 +17,7 @@ const guard = getAddress(process.env.GUARD_WALLET!);
 
 // forge artifact: contracts/out/EventPass.sol/EventPass.json
 const artifact = JSON.parse(
-  readFileSync(new URL("../../contracts/out/EventPass.sol/EventPass.json", import.meta.url), "utf8"));
+  readFileSync(new URL("../../out/EventPass.sol/EventPass.json", import.meta.url), "utf8"));
 const abi = artifact.abi;
 const bytecode = artifact.bytecode.object as `0x${string}`;
 

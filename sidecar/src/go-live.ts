@@ -36,7 +36,7 @@ let pass = process.env.EVENTPASS_ADDRESS;
 if (!pass) {
   console.log("deploying EventPass...");
   const art = JSON.parse(readFileSync(
-    new URL("../../contracts/out/EventPass.sol/EventPass.json", import.meta.url), "utf8"));
+    new URL("../../out/EventPass.sol/EventPass.json", import.meta.url), "utf8"));
   const account = privateKeyToAccount(process.env.GUARD_PRIVATE_KEY as `0x${string}`);
   const w = createWalletClient({ account, chain: arcTestnet, transport: http() });
   const pub = createPublicClient({ chain: arcTestnet, transport: http() });
@@ -48,6 +48,22 @@ if (!pass) {
   pass = r.contractAddress!;
   process.env.EVENTPASS_ADDRESS = pass;
   console.log(`✅ EventPass deployed: ${pass}  (add to .env: EVENTPASS_ADDRESS=${pass})`);
+}
+
+// 2b. deploy ReputationRegistry if not set
+let rep = process.env.REPUTATION_ADDRESS;
+if (!rep) {
+  console.log("deploying ReputationRegistry...");
+  const art = JSON.parse(readFileSync(
+    new URL("../../out/ReputationRegistry.sol/ReputationRegistry.json", import.meta.url), "utf8"));
+  const account = privateKeyToAccount(process.env.GUARD_PRIVATE_KEY as `0x${string}`);
+  const w = createWalletClient({ account, chain: arcTestnet, transport: http() });
+  const pub2 = createPublicClient({ chain: arcTestnet, transport: http() });
+  const hash = await w.deployContract({ abi: art.abi, bytecode: art.bytecode.object });
+  const r = await pub2.waitForTransactionReceipt({ hash });
+  rep = r.contractAddress!;
+  process.env.REPUTATION_ADDRESS = rep;
+  console.log(`✅ ReputationRegistry deployed: ${rep}  (add to .env: REPUTATION_ADDRESS=${rep})`);
 }
 
 // 3. live Dutch auction on the robots
@@ -75,6 +91,11 @@ console.log(`✅ paid: ${pay.explorer}`);
 console.log("minting EventPass...");
 const mint = await settle.mintPass("courier", price);
 console.log(`✅ minted: ${mint.explorer}`);
+console.log("recording reputation (flywheel)...");
+const fb = await settle.giveFeedback({ agentId: 0, score: 95, skill: "guard" });
+console.log(`✅ reputation: ${fb.explorer}`);
+const sum = await settle.repSummary(0);
+console.log(`✅ guard rep: ${sum.count} reviews, avg ${sum.avg}`);
 
 // 5. verify the gate now opens
 const holds = await settle.holdsPass(ROBOTS.courier.wallet);

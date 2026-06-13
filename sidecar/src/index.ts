@@ -202,6 +202,12 @@ app.get("/learning", (_req, res) => {
   if (MOCK) return res.json(mockLearning());
   res.json({ ...learnedDemand(), history: auctionHistory.slice(0, 10) });
 });
+// record an auction outcome (a standalone-robot negotiation posts here)
+app.post("/learning/outcome", (req, res) => {
+  const { price = 0, sold = false, rounds = 4 } = req.body ?? {};
+  recordOutcome({ price: Number(price), sold: !!sold, rounds: Number(rounds) });
+  res.json(learnedDemand());
+});
 
 // --- latest proof-of-action (pulled from a public Walrus aggregator) -------
 const WALRUS_AGG = process.env.WALRUS_AGGREGATOR

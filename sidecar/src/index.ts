@@ -702,7 +702,7 @@ app.get("/race/round/:id/evidence/hash", (req, res) => {
 });
 
 app.post("/race/round/:id/cancel", (req, res) => {
-  try { res.json(rounds.cancelRound(req.params.id, req.body.reason)); }
+  try { res.json(rounds.cancelRound(req.params.id, req.body)); }
   catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 

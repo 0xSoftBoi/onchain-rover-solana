@@ -118,6 +118,7 @@ after a restart.
 - `POST /race/round/:id/chain/start`: mark the on-chain race started.
 - `POST /race/round/:id/chain/settle`: finish and settle payout after the local round has a winner.
 - `POST /race/round/:id/chain/cancel`: cancel and refund stakes.
+- `POST /race/round/:id/cancel`: local cancel with explicit `code` and `reason`; stores fee policy and per-driver stake authorization status.
 - `GET /treasury/local`: local treasury fee balance.
 - `GET /race/round/:id/evidence`: canonical evidence packet, lifecycle snapshots, and telemetry windows.
 - `GET /race/round/:id/evidence/hash`: stable result proof hash plus current packet hash.
@@ -284,6 +285,11 @@ laptop LAN address so mobile wallets can reach it.
 8. `started`: chain race starts when the local race starts.
 9. `finished`: local finish records the winner, telemetry evidence, and immutable SHA-256 `proofHash`.
 10. `settled`: facilitator pays the winner and leaves fees in treasury.
+
+Canceled rounds include a `cancellation` summary with a stable code, reason,
+fee policy, stake policy, and per-driver fee/stake status. Delegated stake
+permissions remain visible as active or expired, but settlement planning rejects
+canceled rounds.
 
 For local rehearsal, `POST /race/round/:id/dev/join-local-wallets` can replace
 steps 2 through 7 with the known Hardhat wallets. It is gated by

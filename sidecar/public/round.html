@@ -235,6 +235,7 @@
         <div class="kv"><span class="k">fees collected</span><span class="v" id="fees">-</span></div>
         <div class="kv"><span class="k">winner</span><span class="v" id="winner">-</span></div>
         <div class="kv"><span class="k">txs</span><span class="v" id="txs">-</span></div>
+        <div class="kv"><span class="k">cancel policy</span><span class="v" id="cancelPolicy">-</span></div>
         <div class="kv"><span class="k">latest detection</span><span class="v" id="finishDetection">-</span></div>
         <div class="kv"><span class="k">proof hash</span><span class="v" id="proofHash">-</span></div>
         <div class="kv"><span class="k">evidence hash</span><span class="v" id="evidenceHash">-</span></div>
@@ -390,6 +391,16 @@ function detectionSummary() {
   return `${latest.slot} · ${latest.source}/${latest.method} · ${confidence}`;
 }
 
+function cancellationSummary(round) {
+  const cancellation = round?.cancellation;
+  if (!cancellation) return "-";
+  const drivers = ["challenger", "opponent"].map((slot) => {
+    const driver = cancellation.drivers?.[slot] || {};
+    return `${slot[0]} fee:${driver.feeStatus || "unpaid"} stake:${driver.stakeStatus || "none"}`;
+  }).join(" · ");
+  return `${cancellation.code} · ${drivers}`;
+}
+
 function render() {
   const round = state.round;
   const calibration = round?.stageCalibration;
@@ -402,6 +413,7 @@ function render() {
     : "-";
   $("winner").textContent = round?.winner || "-";
   $("txs").textContent = txSummary(round);
+  $("cancelPolicy").textContent = cancellationSummary(round);
   $("finishDetection").textContent = detectionSummary();
   const proofHash = state.evidence?.proofHash || round?.proofHash || "-";
   const evidenceHash = state.evidence?.evidenceHash || round?.evidenceHash || "-";
@@ -760,7 +772,12 @@ $("detectOpponent").onclick = () => step("opponent finish detected", async () =>
 });
 $("chainStart").onclick = () => step("on-chain race started", () => postJson(`/race/round/${state.round.id}/chain/start`));
 $("settle").onclick = () => step("settled race", () => postJson(`/race/round/${state.round.id}/chain/settle`));
-$("cancel").onclick = () => step("canceled race", () => postJson(`/race/round/${state.round.id}/chain/cancel`, { reason: "operator canceled" }));
+$("cancel").onclick = () => step("canceled race", () => {
+  const path = state.round.chainRaceId
+    ? `/race/round/${state.round.id}/chain/cancel`
+    : `/race/round/${state.round.id}/cancel`;
+  return postJson(path, { code: "operator_cancel", reason: "operator canceled" });
+});
 $("refresh").onclick = refresh;
 $("publicSidecar").addEventListener("input", render);
 document.querySelectorAll("[data-calibration]").forEach((field) => {

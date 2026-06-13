@@ -169,6 +169,7 @@ export const baseSpendPermissionStakeAdapter: StakeAdapter = {
   },
 
   settle(round) {
+    if (round.status === "canceled") throw new Error("canceled rounds cannot settle stake");
     if (!round.winner) throw new Error("round winner required");
     const winner = round.winner;
     const loser: DriverSlot = winner === "challenger" ? "opponent" : "challenger";

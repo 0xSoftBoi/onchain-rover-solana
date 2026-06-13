@@ -266,6 +266,9 @@ function sanitizeRound(round: Round) {
     roundStartsAt: round.roundStartsAt ?? null,
     startedAt: round.startedAt ?? null,
     finishedAt: round.finishedAt ?? null,
+    canceledAt: round.canceledAt ?? null,
+    cancelReason: round.cancelReason ?? null,
+    cancellation: round.cancellation ?? null,
     finishMs: round.finishMs ?? null,
     winner: round.winner ?? null,
     proofHash: round.proofHash ?? null,
@@ -290,6 +293,18 @@ function sanitizeDriver(round: Round, slot: DriverSlot) {
     lane: driver.lane ?? null,
     feePaid: driver.feePaid,
     stakeAuthorized: driver.stakeAuthorized,
+    feePayment: driver.feePayment ?? null,
+    stakeAuthorization: driver.stakeAuthorization
+      ? {
+          adapter: driver.stakeAuthorization.adapter,
+          status: driver.stakeAuthorization.status,
+          amountUsdc: driver.stakeAuthorization.amountUsdc,
+          amountUnits: driver.stakeAuthorization.amountUnits,
+          permissionHash: driver.stakeAuthorization.permissionHash,
+          verifiedAt: driver.stakeAuthorization.verifiedAt,
+          expiresAt: driver.stakeAuthorization.expiresAt,
+        }
+      : null,
     chainJoined: Boolean(driver.chainJoined),
     joinedTx: driver.joinedTx ?? null,
   };

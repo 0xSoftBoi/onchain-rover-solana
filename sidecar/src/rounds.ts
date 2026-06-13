@@ -64,6 +64,34 @@ export type StakeAuthorization = {
   settlement?: Record<string, unknown>;
 };
 
+export type CancelCode =
+  | "operator_cancel"
+  | "missing_second_driver"
+  | "unpaid_join"
+  | "missing_stake_authorization"
+  | "robot_health_failure"
+  | "expired_lobby"
+  | "chain_cancel"
+  | "unknown";
+
+export type Cancellation = {
+  code: CancelCode;
+  reason: string;
+  canceledAt: number;
+  feePolicy: string;
+  stakePolicy: string;
+  drivers: Record<DriverSlot, {
+    wallet?: string;
+    feePaid: boolean;
+    feeSource?: FeePayment["source"];
+    feeStatus: FeePayment["status"] | "unpaid";
+    stakeAuthorized: boolean;
+    stakeAdapter?: StakeAuthorization["adapter"];
+    stakeStatus: "none" | "active" | "expired" | "escrowed";
+    stakeExpiresAt?: number;
+  }>;
+};
+
 export type ChainRoundStatus =
   | "not-opened"
   | "opened"
@@ -117,6 +145,7 @@ export type Round = {
   settledAt?: number;
   canceledAt?: number;
   cancelReason?: string;
+  cancellation?: Cancellation;
   winner?: DriverSlot;
   finishMs?: number;
   proof?: Record<string, unknown>;
@@ -479,21 +508,20 @@ export function markChainCanceled(id: string, txHash: string, reason = "canceled
   const round = getMutableRound(id);
   round.chainStatus = "canceled";
   round.status = "canceled";
-  round.canceledAt = Date.now();
-  round.cancelReason = reason;
+  applyCancellation(round, { code: "chain_cancel", reason });
   round.txHashes ??= {};
   round.txHashes.cancel = txHash;
   return persistSnapshot(round, "round.chain_canceled");
 }
 
-export function cancelRound(id: string, reason = "canceled"): Round {
+export function cancelRound(id: string, input?: string | { reason?: string; code?: string }): Round {
   const round = getMutableRound(id);
   if (["finished", "settled", "canceled"].includes(round.status)) {
     throw new Error(`cannot cancel round in ${round.status}`);
   }
+  const cancelInput = normalizeCancelInput(round, input);
   round.status = "canceled";
-  round.canceledAt = Date.now();
-  round.cancelReason = reason;
+  applyCancellation(round, cancelInput);
   return persistSnapshot(round, "round.canceled");
 }
 
@@ -523,6 +551,105 @@ function updateReady(round: Round) {
   ) {
     round.status = "ready";
   }
+}
+
+function normalizeCancelInput(
+  round: Round,
+  input?: string | { reason?: string; code?: string },
+): { code: CancelCode; reason: string } {
+  if (typeof input === "string") {
+    return { code: inferCancelCode(round, input), reason: input || "canceled" };
+  }
+  const reason = firstString(input?.reason) ?? "canceled";
+  const code = parseCancelCode(input?.code) ?? inferCancelCode(round, reason);
+  return { code, reason };
+}
+
+function applyCancellation(round: Round, input: { code: CancelCode; reason: string }) {
+  const canceledAt = Date.now();
+  round.canceledAt = canceledAt;
+  round.cancelReason = input.reason;
+  round.cancellation = buildCancellation(round, input.code, input.reason, canceledAt);
+}
+
+function buildCancellation(
+  round: Round,
+  code: CancelCode,
+  reason: string,
+  canceledAt: number,
+): Cancellation {
+  return {
+    code,
+    reason,
+    canceledAt,
+    feePolicy: feePolicy(round),
+    stakePolicy: "canceled rounds do not settle delegated stake permissions",
+    drivers: {
+      challenger: cancelDriverSummary(round.drivers.challenger, canceledAt),
+      opponent: cancelDriverSummary(round.drivers.opponent, canceledAt),
+    },
+  };
+}
+
+function cancelDriverSummary(driver: Driver | undefined, canceledAt: number): Cancellation["drivers"][DriverSlot] {
+  const auth = driver?.stakeAuthorization;
+  return {
+    wallet: driver?.wallet || undefined,
+    feePaid: Boolean(driver?.feePaid),
+    feeSource: driver?.feePayment?.source,
+    feeStatus: driver?.feePayment?.status ?? (driver?.feePaid ? "paid" : "unpaid"),
+    stakeAuthorized: Boolean(driver?.stakeAuthorized),
+    stakeAdapter: auth?.adapter,
+    stakeStatus: stakeCancelStatus(auth, canceledAt),
+    stakeExpiresAt: auth?.expiresAt,
+  };
+}
+
+function stakeCancelStatus(
+  authorization: StakeAuthorization | undefined,
+  canceledAt: number,
+): Cancellation["drivers"][DriverSlot]["stakeStatus"] {
+  if (!authorization) return "none";
+  if (authorization.adapter === "local-chain-escrow") return "escrowed";
+  if (authorization.expiresAt && authorization.expiresAt <= canceledAt) return "expired";
+  return "active";
+}
+
+function feePolicy(round: Round): string {
+  const drivers = [round.drivers.challenger, round.drivers.opponent].filter((driver): driver is Driver => Boolean(driver));
+  if (drivers.some((driver) => driver.feePayment?.source === "x402")) {
+    return "x402 race fees stay paid to the fleet treasury; matched stake is not settled";
+  }
+  if (drivers.some((driver) => driver.feePaid)) {
+    return "recorded local or manual fees remain audit entries; matched stake is not settled";
+  }
+  return "no driver fee was paid";
+}
+
+function inferCancelCode(round: Round, reason: string): CancelCode {
+  const lowerReason = reason.toLowerCase();
+  if (lowerReason.includes("robot") || lowerReason.includes("health")) return "robot_health_failure";
+  if (round.status === "challenge") {
+    return round.challengeExpiresAt < Date.now() ? "expired_lobby" : "missing_second_driver";
+  }
+  const drivers = [round.drivers.challenger, round.drivers.opponent];
+  if (drivers.some((driver) => !driver?.feePaid)) return "unpaid_join";
+  if (drivers.some((driver) => !driver?.stakeAuthorized)) return "missing_stake_authorization";
+  return "operator_cancel";
+}
+
+function parseCancelCode(value: unknown): CancelCode | undefined {
+  if (
+    value === "operator_cancel" ||
+    value === "missing_second_driver" ||
+    value === "unpaid_join" ||
+    value === "missing_stake_authorization" ||
+    value === "robot_health_failure" ||
+    value === "expired_lobby" ||
+    value === "chain_cancel" ||
+    value === "unknown"
+  ) return value;
+  return undefined;
 }
 
 async function authorizeRobots(round: Round, robotUrl: (name: RobotName) => string) {

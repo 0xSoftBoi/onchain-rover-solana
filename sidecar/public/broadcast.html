@@ -15,10 +15,13 @@
   .top h1 { font-size:22px; letter-spacing:1px; }
   .top .thesis { color:var(--dim); font-size:13px; }
   .top .settled { text-align:right; }
-  .top .settled b { font-size:30px; color:var(--grn); display:block; line-height:1; }
+  .top .settled b { font-size:48px; color:var(--grn); display:block; line-height:1; text-shadow:0 0 18px rgba(63,185,80,.4); }
   .top .settled span { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; }
+  .badges { display:flex; gap:10px; padding:8px 26px; border-bottom:1px solid var(--line); font-size:12px; }
+  .badge { opacity:.35; padding:3px 10px; border:1px solid var(--line); border-radius:20px; transition:.4s; }
+  .badge.lit { opacity:1; border-color:var(--grn); box-shadow:0 0 10px rgba(63,185,80,.25); }
   .grid { display:grid; grid-template-columns:1.1fr 1.2fr 1.1fr; gap:14px;
-          padding:14px; height:calc(100vh - 64px); }
+          padding:14px; height:calc(100vh - 112px); }
   .col { display:flex; flex-direction:column; gap:14px; min-height:0; }
   .panel { background:var(--card); border:1px solid var(--line); border-radius:12px;
            padding:14px; min-height:0; display:flex; flex-direction:column; }
@@ -33,7 +36,8 @@
   .grow { flex:1; overflow:auto; }
   .mind { background:#080b11; border-radius:8px; padding:10px; flex:1; overflow:auto;
           display:flex; flex-direction:column-reverse; }
-  .th { font-size:14px; margin:5px 0; padding-left:9px; border-left:2px solid var(--line); animation:slide .3s; }
+  .th { font-size:14px; margin:8px 0; padding:6px 0 6px 11px; line-height:1.55; border-left:2px solid var(--line); animation:slide .3s; }
+  .cur { display:inline-block; width:7px; height:13px; background:var(--pur); animation:p 1s infinite; vertical-align:middle; margin-right:5px; }
   .th .ph { color:var(--dim); font-size:10px; text-transform:uppercase; }
   .th.decision { border-left-color:var(--grn); color:#fff; font-weight:600; }
   .th.offer { border-left-color:var(--gold); } .th.plan { border-left-color:var(--pur); color:var(--dim); }
@@ -51,17 +55,18 @@
 </head>
 <body>
 <div class="top">
-  <div><h1>🤖 THE ONCHAIN ROVER</h1>
-    <div class="thesis">a robot you hire over HTTP · reasons on-device · proves on-chain</div></div>
+  <div><h1><span class="live" style="display:inline-block;margin-right:8px"></span>🤖 THE ONCHAIN ROVER</h1>
+    <div class="thesis">reason on-device → settle on Arc → prove on Walrus → learn</div></div>
   <div class="settled"><b id="settled">$0.00</b><span>USDC settled on Arc · <span id="txcount">0</span> txs</span></div>
 </div>
+<div class="badges"><span class="badge" id="b-arc">⛓ Arc</span><span class="badge" id="b-walrus">🔐 Walrus</span><span class="badge" id="b-ens">🏷 ENS</span><span class="badge" id="b-world">🌐 World ID</span><span class="badge" id="b-gemma">🧠 gemma3</span><span class="badge" id="b-8004">🏆 ERC-8004</span></div>
 <div class="grid">
   <!-- LEFT: cams + proof -->
   <div class="col">
     <div class="panel" style="flex:none">
       <h2><span class="live"></span>Fleet · live cameras</h2>
-      <div class="camlbl" id="lbl-guard">guard.rover.eth</div><img class="cam" id="feed-guard" />
-      <div class="camlbl" id="lbl-courier">courier.rover.eth</div><img class="cam" id="feed-courier" />
+      <div class="camlbl" id="lbl-guard">guard.rover.eth</div><img class="cam" id="feed-guard" onerror="this.style.visibility='hidden'" />
+      <div class="camlbl" id="lbl-courier">courier.rover.eth</div><img class="cam" id="feed-courier" onerror="this.style.visibility='hidden'" />
     </div>
     <div class="panel proof grow">
       <h2>🔐 Proof of action · Walrus</h2>
@@ -70,8 +75,8 @@
   </div>
   <!-- CENTER: reasoning -->
   <div class="col">
-    <div class="panel" style="flex:1">
-      <h2><span class="live"></span>🧠 Live agent reasoning · on-device gemma3</h2>
+    <div class="panel" style="flex:1;border:1px solid #8957e5;box-shadow:0 0 20px rgba(137,87,229,.12)">
+      <h2><span class="live"></span>🧠 Live agent reasoning · on-device gemma3 · 0 cloud calls</h2>
       <div class="camlbl">🤠 guard · seller/auctioneer</div>
       <div class="mind" id="mind-guard"></div>
       <div class="camlbl" style="margin-top:8px">🤖 courier · buyer</div>
@@ -80,7 +85,7 @@
   </div>
   <!-- RIGHT: on-chain + learning + reputation -->
   <div class="col">
-    <div class="panel" style="flex:1.3">
+    <div class="panel" style="flex:1.3;border:1px solid #2ea043">
       <h2><span class="live"></span>⛓️ On-chain settlement · Arc</h2>
       <div class="grow" id="onchain"><span class="dim">waiting…</span></div>
     </div>
@@ -97,28 +102,32 @@
 </div>
 <script>
 const $=(id)=>document.getElementById(id), ex0="https://testnet.arcscan.app";
-let ex=ex0;
+let ex=ex0, lastCount=0;
 async function j(u){ try{ return await (await fetch(u)).json(); }catch{ return null; } }
 async function tick(){
   const s=await j("/status");
   if(s){ ex=(s.arc&&s.arc.explorer)||ex0;
     for(const n of ["guard","courier"]){ const r=s.robots&&s.robots[n]; if(!r)continue;
       const img=$("feed-"+n), src=r.feed||(r.url?r.url+"/stream":null);
-      if(img&&src&&!img.src.endsWith(src))img.src=src;
+      if(img&&src&&!img.src.endsWith(src)){img.src=src;img.style.visibility='visible';}
       $("lbl-"+n).textContent=(r.ens||n)+(r.ok?` · ${(r.battery_v||0).toFixed?r.battery_v.toFixed(1):r.battery_v}V`:" · offline"); }
-    if(s.ens){ } }
+    document.getElementById("b-ens").classList.toggle('lit', !!(s.ens&&s.ens.courier&&s.ens.courier.resolved)); }
   const f=await j("/onchain/feed");
-  if(f){ if(typeof f.settledUsdc==="number")$("settled").textContent="$"+f.settledUsdc.toFixed(2);
-    if(typeof f.count==="number")$("txcount").textContent=f.count;
+  if(f){ if(typeof f.settledUsdc==="number"){ const el=$("settled"); el.textContent="$"+f.settledUsdc.toFixed(2); el.style.color=f.settledUsdc>0?"var(--grn)":"var(--dim)"; }
+    if(typeof f.count==="number"){ $("txcount").textContent=f.count;
+      if(f.count>lastCount && lastCount>0){ try{$("settled").animate([{color:'#fff'},{color:'var(--grn)'}],{duration:600});}catch{} }
+      lastCount=f.count;
+      document.getElementById("b-arc").classList.toggle('lit', f.count>0); }
     if(f.events&&f.events.length) $("onchain").innerHTML=f.events.slice(0,12).map(e=>{
       const secs=Math.max(0,Math.round((Date.now()-e.t)/1000)), ts=secs<60?secs+"s":Math.round(secs/60)+"m";
       const c={PAY:'#3fb950',MINT:'#58a6ff',REPUTATION:'#d8a657',BET:'#bc8cff','RACE SETTLE':'#3fb950'}[e.kind]||'#7d8aa0';
       const lk=e.tx?`<a target=_blank href="${ex}/tx/${e.tx}">${e.tx.slice(0,8)}…</a>`:'<span class=dim>pending</span>';
-      return `<div class=oc><span class=tag style="color:${c};background:${c}22">${e.kind}</span><span>${e.detail}</span><span>${lk}<div class=ts>${ts} ago</div></span></div>`;}).join(""); }
+      return `<div class=oc><span class=tag style="color:${c};background:${c}33;border:1px solid currentColor">${e.kind}</span><span>${e.detail}</span><span>${lk}<div class=ts>${ts} ago</div></span></div>`;}).join(""); }
   const rz=await j("/reason/feed");
-  if(rz&&rz.events) for(const n of ["guard","courier"]){
+  if(rz&&rz.events){ for(const n of ["guard","courier"]){
     $("mind-"+n).innerHTML=rz.events.filter(e=>e.robot===n).slice(0,8).map((e,i)=>
-      `<div class="th ${e.kind}">${i===0?'▸ ':''}<span class=ph>${e.phase}</span> ${e.text}</div>`).join(""); }
+      `<div class="th ${e.kind}">${i===0?'<span class="cur"></span> ':''}<span class=ph>${e.phase}</span> ${e.text}</div>`).join(""); }
+    document.getElementById("b-gemma").classList.toggle('lit', rz.events.length>0); }
   const l=await j("/learning");
   if(l&&typeof l.demand==="number"){ const pct=Math.round(l.demand*100);
     const col=l.demand>0.6?'var(--grn)':l.demand<0.4?'var(--gold)':'var(--blu)';
@@ -126,9 +135,11 @@ async function tick(){
     $("demand-bar").style.width=pct+"%"; $("demand-bar").style.background=col;
     $("demand-note").textContent=l.note||""; }
   const rep=await j("/reputation");
-  if(rep) $("rep").innerHTML=Object.entries(rep).map(([k,v])=>
-    `<div class=kv><span>${v.ens||k}</span><span class=v>${v.count||0} reviews · avg <b style="color:var(--gold)">${v.avg||0}</b></span></div>`).join("");
+  if(rep){ document.getElementById("b-8004").classList.toggle('lit', Object.values(rep).some(v=>v&&v.count>0));
+    $("rep").innerHTML=Object.entries(rep).map(([k,v])=>
+    `<div class=kv><span>${v.ens||k}</span><span class=v>${v.count||0} reviews · avg <b style="color:var(--gold)">${v.avg||0}</b></span></div>`).join(""); }
   const p=await j("/proof/latest");
+  if(p&&p.proof)document.getElementById("b-walrus").classList.toggle('lit', !!p.proof);
   if(p&&p.url&&p.proof){ if($("proof").dataset.b!==p.proof.blobId){ $("proof").dataset.b=p.proof.blobId;
     $("proof").innerHTML=`<img src="${p.url}"/><div class=kv><span>${p.proof.label||'proof'}</span><span class=v>⛓ Walrus</span></div>
       <div class=kv><span class=dim>sha256</span><span class=v style="color:var(--grn)">${(p.proof.sha256||'').slice(0,14)}… ✓</span></div>`; } }

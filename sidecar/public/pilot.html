@@ -12,11 +12,19 @@
   .title { font-weight:700; } .conn { font-size:12px; color:#7d8aa0; }
   .conn.up { color:#3fb950; }
   #zone { position:fixed; inset:60px 0 0 0; }
+  #zone::before{content:"drag to drive";position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);width:160px;height:160px;border-radius:50%;border:1px dashed #222c3a;color:#7d8aa0;font-size:11px;display:flex;align-items:center;justify-content:center;pointer-events:none}
   #estop { position:fixed; right:18px; bottom:18px; width:90px; height:90px;
     border-radius:50%; background:#f85149; color:#fff; border:0; font:700 16px monospace;
-    box-shadow:0 4px 16px rgba(248,81,73,.5); z-index:10; }
+    box-shadow:0 4px 16px rgba(248,81,73,.5); z-index:10; transition:transform .08s, background .15s; }
+  #estop:active{transform:scale(.95)}
+  #estop.stopped{background:#fff;color:#f85149}
   #hud { position:fixed; left:16px; bottom:20px; font-size:12px; color:#7d8aa0; }
   .speed { color:#d8a657; font-size:20px; font-weight:700; }
+  #toast { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#f85149;
+    color:#fff; font:700 22px monospace; padding:18px 34px; border-radius:12px; z-index:20;
+    opacity:0; pointer-events:none; transition:opacity .15s; box-shadow:0 6px 24px rgba(0,0,0,.5); }
+  #toast.show { opacity:1; }
+  body { transition:background .2s; }
 </style>
 </head>
 <body>
@@ -26,27 +34,39 @@
 </header>
 <div id="zone"></div>
 <div id="hud">L:<span id="l">0.00</span> R:<span id="r">0.00</span><br><span class="speed" id="thr">●</span></div>
-<button id="estop">STOP</button>
+<div id="toast">STOPPED</div>
+<button id="estop" aria-label="Emergency stop">STOP</button>
 
 <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
 const robotName = params.get("robot") || "courier";
 document.getElementById("robot").textContent = robotName;
+const DEBUG = params.get("debug") === "1";
+if (!DEBUG) document.getElementById("hud").style.display = "none";
 let ws, token, alive = false, last = {l:0,r:0};
 
 async function connect() {
-  const auth = await (await fetch("/pilot/dev-authorize", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ robot: robotName }) })).json();
-  if (auth.error) { document.getElementById("conn").textContent = "err: "+auth.error; return; }
-  token = auth.token;
-  ws = new WebSocket(auth.driveWs);
-  ws.onopen = () => { alive = true;
-    document.getElementById("conn").textContent = "● connected";
-    document.getElementById("conn").className = "conn up"; };
-  ws.onclose = () => { alive = false;
-    document.getElementById("conn").textContent = "disconnected"; setTimeout(connect, 1500); };
+  try {
+    const auth = await (await fetch("/pilot/dev-authorize", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ robot: robotName }) })).json();
+    if (auth.error) { document.getElementById("conn").textContent = "err: "+auth.error; setTimeout(connect, 1500); return; }
+    token = auth.token;
+    ws = new WebSocket(auth.driveWs);
+    ws.onopen = () => { alive = true;
+      document.body.style.background = "#0a0e14";
+      document.getElementById("conn").textContent = "● connected";
+      document.getElementById("conn").className = "conn up"; };
+    ws.onerror = () => { try{ws.close();}catch{} };
+    ws.onclose = () => { alive = false;
+      document.body.style.background = "#3a0d0d";
+      document.getElementById("conn").textContent = "disconnected";
+      document.getElementById("conn").className = "conn"; setTimeout(connect, 1500); };
+  } catch (e) {
+    document.getElementById("conn").textContent = "reconnecting…";
+    setTimeout(connect, 1500);
+  }
 }
 function send(l, r) {
   if (!alive) return;
@@ -57,18 +77,27 @@ function send(l, r) {
   document.getElementById("thr").style.opacity = (Math.abs(l)+Math.abs(r))/2 + 0.2;
 }
 // joystick -> differential drive (tank mixing)
-const joy = nipplejs.create({ zone: document.getElementById("zone"),
-  mode:"static", position:{left:"50%",top:"55%"}, color:"#58a6ff", size:140 });
 let iv;
-joy.on("move", (_e, d) => {
-  const fwd = Math.sin(d.angle.radian) * (d.force>1?1:d.force);  // -1..1
-  const turn = Math.cos(d.angle.radian) * (d.force>1?1:d.force);
-  last = { l: fwd + turn*0.6, r: fwd - turn*0.6 };
-});
-joy.on("start", () => { clearInterval(iv); iv = setInterval(()=>send(last.l,last.r), 80); }); // 12.5Hz
-joy.on("end", () => { clearInterval(iv); last={l:0,r:0}; send(0,0); });
-document.getElementById("estop").onclick = () => { last={l:0,r:0}; send(0,0);
-  fetch("/estop/"+robotName, {method:"POST"}); };
+if (!window.nipplejs) {
+  document.getElementById("conn").textContent = "joystick lib failed to load";
+} else {
+  const joy = nipplejs.create({ zone: document.getElementById("zone"),
+    mode:"static", position:{left:"50%",top:"55%"}, color:"#58a6ff", size:140 });
+  joy.on("move", (_e, d) => {
+    const fwd = Math.sin(d.angle.radian) * (d.force>1?1:d.force);  // -1..1
+    const turn = Math.cos(d.angle.radian) * (d.force>1?1:d.force);
+    last = { l: fwd + turn*0.6, r: fwd - turn*0.6 };
+  });
+  joy.on("start", () => { clearInterval(iv); iv = setInterval(()=>send(last.l,last.r), 80); }); // 12.5Hz
+  joy.on("end", () => { clearInterval(iv); last={l:0,r:0}; send(0,0); });
+}
+let toastIv;
+document.getElementById("estop").onclick = () => { last={l:0,r:0}; clearInterval(iv); send(0,0);
+  fetch("/estop/"+robotName, {method:"POST"});
+  const btn = document.getElementById("estop"), toast = document.getElementById("toast");
+  btn.classList.add("stopped"); toast.classList.add("show");
+  clearTimeout(toastIv);
+  toastIv = setTimeout(()=>{ btn.classList.remove("stopped"); toast.classList.remove("show"); }, 900); };
 connect();
 </script>
 </body>

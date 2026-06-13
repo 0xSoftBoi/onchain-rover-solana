@@ -29,6 +29,13 @@ function connectSidecar() {
 }
 
 function connectRobotTelemetry() {
+  if (process.env.ROBOT_TELEMETRY_MODE === "poll") {
+    pollRobotTelemetry().catch((err) => {
+      console.error(`harness telemetry poll: ${err instanceof Error ? err.message : err}`);
+      setTimeout(connectRobotTelemetry, 1000);
+    });
+    return;
+  }
   robotTelemetry = new WebSocket(`${robotWs}/ws/telemetry`);
   robotTelemetry.on("open", () => console.log(`harness telemetry connected ${robotHttp}`));
   robotTelemetry.on("message", (raw) => {
@@ -47,6 +54,18 @@ function connectRobotTelemetry() {
   });
   robotTelemetry.on("close", () => setTimeout(connectRobotTelemetry, 1000));
   robotTelemetry.on("error", (err) => console.error(`harness telemetry: ${err.message}`));
+}
+
+async function pollRobotTelemetry() {
+  console.log(`harness telemetry polling ${robotHttp}/telemetry`);
+  while (true) {
+    await sleep(Number(process.env.ROBOT_TELEMETRY_POLL_MS ?? 100));
+    if (!sidecarSocket || sidecarSocket.readyState !== WebSocket.OPEN) continue;
+    const res = await fetch(`${robotHttp}/telemetry`, { signal: AbortSignal.timeout(1000) });
+    const frame = await res.json();
+    if (!res.ok || frame.error) throw new Error(frame.error || `robot telemetry failed ${res.status}`);
+    sidecarSocket.send(JSON.stringify(toSidecarTelemetry(frame)));
+  }
 }
 
 async function handleSidecarControl(raw: string) {
@@ -108,7 +127,38 @@ function robotName(value: string): RobotName {
   throw new Error("ROBOT must be guard or courier");
 }
 
+function toSidecarTelemetry(frame: Record<string, any>) {
+  const odom = Array.isArray(frame.odom) ? frame.odom : [];
+  return {
+    type: "telemetry",
+    source: "bridge",
+    ts_ms: Date.now(),
+    robot,
+    battery_v: finite(frame.battery_v),
+    left_cmd: 0,
+    right_cmd: 0,
+    odometry_left: finite(odom[0]),
+    odometry_right: finite(odom[1]),
+    deadman_ok: true,
+    stopped_by_deadman: false,
+    estop: false,
+    speed_mode: "medium",
+    max_speed: 0.35,
+    camera: { status: "jetson-api" },
+    lidar: { blocked: false },
+    imu: {
+      accel: Array.isArray(frame.accel) ? frame.accel : undefined,
+      gyro: Array.isArray(frame.gyro) ? frame.gyro : undefined,
+    },
+    action: frame.action,
+  };
+}
+
 function finite(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

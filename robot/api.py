@@ -12,6 +12,7 @@ import hashlib
 import os
 import time
 
+import requests
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel

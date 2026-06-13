@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import {
   createPublicClient,
   createWalletClient,
@@ -323,7 +324,7 @@ export async function startRoundOnChain(round: Round) {
 
 export async function finishRoundOnChain(round: Round) {
   if (!round.winner) throw new Error("round winner required");
-  const proofHash = proofToHash(round.proof);
+  const proofHash = round.proofHash ? normalizeHash(round.proofHash) : proofToHash(round.proof);
   return writeRaceTx(round, "finishRace", [
     BigInt(requireChainRaceId(round)),
     slotToIndex(round.winner),
@@ -469,7 +470,13 @@ function requireChainRaceId(round: Round): string {
 }
 
 function proofToHash(proof?: Record<string, unknown>): Hex {
-  const sha = String(proof?.sha256 ?? "").replace(/^0x/, "");
-  if (/^[a-fA-F0-9]{64}$/.test(sha)) return `0x${sha}`;
-  return keccak256(toBytes(JSON.stringify(proof ?? {})));
+  const explicit = String(proof?.proofHash ?? proof?.sha256 ?? "").replace(/^0x/, "");
+  if (/^[a-fA-F0-9]{64}$/.test(explicit)) return `0x${explicit}`;
+  return `0x${createHash("sha256").update(JSON.stringify(proof ?? {})).digest("hex")}`;
+}
+
+function normalizeHash(value: string): Hex {
+  const hash = value.replace(/^0x/, "");
+  if (!/^[a-fA-F0-9]{64}$/.test(hash)) throw new Error("proofHash must be bytes32");
+  return `0x${hash}`;
 }

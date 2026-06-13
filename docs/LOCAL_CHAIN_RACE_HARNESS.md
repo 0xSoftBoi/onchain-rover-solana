@@ -13,6 +13,7 @@ addresses for the sidecar, and proves the entry/fee/payout path without robots.
 - `sidecar/src/rounds.ts`: in-memory race coordinator with chain status and tx hashes.
 - `sidecar/src/robot-link.ts`: sidecar-owned robot bridge for phone controls, telemetry, and deadman stop behavior.
 - `sidecar/src/sim-robot.ts`: simulator client that connects to the sidecar bridge as `guard` or `courier`.
+- `sidecar/src/evidence.ts`: canonical race evidence packets and SHA-256 proof hashes.
 - `sidecar/web-src/pilot-app.ts`: camera-first phone UI; race payment appears only as a modal when a `round` query parameter is present.
 
 ## Commands
@@ -58,6 +59,8 @@ whenever the local chain is reset.
 - `POST /race/round/:id/chain/settle`: finish and settle payout after the local round has a winner.
 - `POST /race/round/:id/chain/cancel`: cancel and refund stakes.
 - `GET /treasury/local`: local treasury fee balance.
+- `GET /race/round/:id/evidence`: canonical evidence packet, lifecycle snapshots, and telemetry windows.
+- `GET /race/round/:id/evidence/hash`: stable result proof hash plus current packet hash.
 - `GET /robot-link/state`: current bridge sessions, attached robots, telemetry, and last command.
 - `WS /ws/drive?robot=<guard|courier>&token=<token>`: phone control socket issued by `/pilot/dev-authorize`.
 - `WS /ws/telemetry?robot=<guard|courier>`: phone telemetry stream.
@@ -169,5 +172,22 @@ laptop LAN address so mobile wallets can reach it.
 4. `joined`: each phone signs entry; facilitator submits both joins.
 5. `locked`: escrow locks; sidecar can authorize robot sessions.
 6. `started`: chain race starts when the local race starts.
-7. `finished`: local finish records the winner and proof.
+7. `finished`: local finish records the winner, telemetry evidence, and immutable SHA-256 `proofHash`.
 8. `settled`: facilitator pays the winner and leaves fees in treasury.
+
+## Evidence Packet
+
+The sidecar records round snapshots at `locked`, `started`, `finished`, and
+`settled`. At finish time it builds `onchain-rover.race-result-proof.v1` from:
+
+- sanitized round lifecycle snapshots, without pilot tokens or signatures
+- start and finish telemetry windows for both driver robots
+- the operator finish input
+- winner, finish time, chain race id, and driver assignments
+
+The canonical JSON for that result proof is hashed with SHA-256. The resulting
+`proofHash` is stored on the round and passed to `RaceEscrow.finishRace`.
+
+After settlement, the sidecar also updates the append-only evidence packet hash
+as `evidenceHash`. The on-chain race result uses `proofHash`; `evidenceHash`
+tracks the full local packet, including the later settled snapshot.

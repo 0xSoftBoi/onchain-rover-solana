@@ -54,11 +54,14 @@ export type Round = {
   roundStartsAt?: number;
   startedAt?: number;
   finishedAt?: number;
+  settledAt?: number;
   canceledAt?: number;
   cancelReason?: string;
   winner?: DriverSlot;
   finishMs?: number;
   proof?: Record<string, unknown>;
+  proofHash?: string;
+  evidenceHash?: string;
   chainRaceId?: string;
   chainStatus?: ChainRoundStatus;
   txHashes?: Partial<Record<
@@ -285,6 +288,13 @@ export function finishRound(id: string, winner: DriverSlot, proof?: Record<strin
   return snapshot(round);
 }
 
+export function markEvidenceHashes(id: string, proofHash?: string | null, evidenceHash?: string | null): Round {
+  const round = getMutableRound(id);
+  if (proofHash) round.proofHash = proofHash;
+  if (evidenceHash) round.evidenceHash = evidenceHash;
+  return snapshot(round);
+}
+
 export function attachChainRace(id: string, chainRaceId: string, txHash: string): Round {
   const round = getMutableRound(id);
   if (round.chainRaceId && round.chainRaceId !== chainRaceId) {
@@ -354,6 +364,7 @@ export function markChainSettled(id: string, txHash: string): Round {
   }
   round.chainStatus = "settled";
   round.status = "settled";
+  round.settledAt = Date.now();
   round.txHashes ??= {};
   round.txHashes.settle = txHash;
   return snapshot(round);

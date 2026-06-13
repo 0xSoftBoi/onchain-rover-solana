@@ -21,6 +21,7 @@ import * as worldid from "./worldid.js";
 import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
 import * as chain from "./chain.js";
+import * as evidence from "./evidence.js";
 import * as robotLink from "./robot-link.js";
 import * as rounds from "./rounds.js";
 import * as settle from "./settle.js";
@@ -442,11 +443,15 @@ app.post("/race/round/:id/chain/settle", async (req, res) => {
   try {
     let round = rounds.getRound(req.params.id);
     if (round.chainStatus === "started") {
+      round = ensureResultEvidence(round);
       const finished = await chain.finishRoundOnChain(round);
       round = rounds.markChainFinished(req.params.id, finished.tx);
     }
     const settled = await chain.settleRoundOnChain(round);
-    res.json(rounds.markChainSettled(req.params.id, settled.tx));
+    round = rounds.markChainSettled(req.params.id, settled.tx);
+    evidence.recordRoundSnapshot(round, "settled");
+    const hashes = evidence.getEvidenceHash(round);
+    res.json(rounds.markEvidenceHashes(req.params.id, hashes.proofHash, hashes.evidenceHash));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -497,9 +502,13 @@ app.post("/race/round/:id/lock", async (req, res) => {
       if (process.env.ALLOW_FREE_PILOT !== "1") {
         return res.status(403).json({ error: "skipRobotAuth requires ALLOW_FREE_PILOT=1" });
       }
-      return res.json(rounds.lockRoundLocal(req.params.id));
+      const round = rounds.lockRoundLocal(req.params.id);
+      evidence.recordRoundSnapshot(round, "locked");
+      return res.json(round);
     }
-    res.json(await rounds.lockRound(req.params.id, (name) => robot(name).url));
+    const round = await rounds.lockRound(req.params.id, (name) => robot(name).url);
+    evidence.recordRoundSnapshot(round, "locked");
+    res.json(round);
   }
   catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -510,13 +519,39 @@ app.post("/race/round/:id/countdown", (req, res) => {
 });
 
 app.post("/race/round/:id/start", (req, res) => {
-  try { res.json(rounds.startRace(req.params.id)); }
+  try {
+    const round = rounds.startRace(req.params.id);
+    evidence.recordRoundSnapshot(round, "started");
+    res.json(round);
+  }
   catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
 app.post("/race/round/:id/finish", (req, res) => {
-  try { res.json(rounds.finishRound(req.params.id, req.body.winner, req.body.proof)); }
+  try {
+    let round = rounds.finishRound(req.params.id, req.body.winner, req.body.proof);
+    evidence.recordRoundSnapshot(round, "finished");
+    const finalized = evidence.finalizeResultProof(round, req.body.proof);
+    round = rounds.markEvidenceHashes(req.params.id, finalized.proofHash, finalized.evidenceHash);
+    res.json(round);
+  }
   catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.get("/race/round/:id/evidence", (req, res) => {
+  try {
+    const round = rounds.getRound(req.params.id);
+    const body = evidence.getEvidence(round);
+    if (req.query.download === "1") {
+      res.setHeader("Content-Disposition", `attachment; filename=round-${round.id}-evidence.json`);
+    }
+    res.json(body);
+  } catch (e: any) { res.status(404).json({ error: e.message }); }
+});
+
+app.get("/race/round/:id/evidence/hash", (req, res) => {
+  try { res.json(evidence.getEvidenceHash(rounds.getRound(req.params.id))); }
+  catch (e: any) { res.status(404).json({ error: e.message }); }
 });
 
 app.post("/race/round/:id/cancel", (req, res) => {
@@ -580,4 +615,10 @@ server.listen(PORT, () => console.log(`sidecar on :${PORT} (Arc ${ARC.chainId})`
 function requireDriverSlot(value: unknown): rounds.DriverSlot {
   if (value === "challenger" || value === "opponent") return value;
   throw new Error("slot must be challenger or opponent");
+}
+
+function ensureResultEvidence(round: rounds.Round): rounds.Round {
+  if (round.proofHash) return round;
+  const finalized = evidence.finalizeResultProof(round, round.proof);
+  return rounds.markEvidenceHashes(round.id, finalized.proofHash, finalized.evidenceHash);
 }

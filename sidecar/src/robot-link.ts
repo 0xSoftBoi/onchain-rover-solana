@@ -28,7 +28,7 @@ type DriveCommand = {
   deadman_ms: number;
 };
 
-type RobotTelemetry = {
+export type RobotTelemetry = {
   ts_ms: number;
   robot: RobotName;
   battery_v?: number;
@@ -58,6 +58,7 @@ type RobotRuntime = {
   pilotClients: Map<WebSocket, string>;
   sessions: Map<string, PilotSession>;
   telemetry: RobotTelemetry;
+  telemetryHistory: RobotTelemetry[];
   lastCommand: DriveCommand;
   stoppedByDeadman: boolean;
 };
@@ -71,6 +72,7 @@ const SESSION_SECS = 300;
 const CMD_MIN_INTERVAL_MS = 70;
 const DEADMAN_MS = 650;
 const TELEMETRY_STALE_MS = 1600;
+const TELEMETRY_HISTORY_MAX = 900;
 
 const runtimes = new Map<RobotName, RobotRuntime>();
 let deadmanLoop: NodeJS.Timeout | undefined;
@@ -317,7 +319,9 @@ function runtimeFor(robot: RobotName): RobotRuntime {
       source: "bridge",
       camera: { status: "unavailable" },
     },
+    telemetryHistory: [],
   };
+  recordTelemetry(runtime, runtime.telemetry);
   runtimes.set(robot, runtime);
   return runtime;
 }
@@ -397,9 +401,30 @@ function broadcastTelemetry(runtime: RobotRuntime, source?: RobotTelemetry["sour
     session_id: runtime.lastCommand.token || runtime.telemetry.session_id,
     source: source ?? runtime.telemetry.source,
   };
+  recordTelemetry(runtime, runtime.telemetry);
   const frame = JSON.stringify(runtime.telemetry);
   for (const client of runtime.telemetryClients) {
     if (client.readyState === WebSocket.OPEN) client.send(frame);
+  }
+}
+
+export function telemetryWindow(robot: RobotName, fromMs: number, toMs: number): RobotTelemetry[] {
+  return runtimeFor(robot).telemetryHistory
+    .filter((frame) => frame.ts_ms >= fromMs && frame.ts_ms <= toMs)
+    .map((frame) => structuredClone(frame));
+}
+
+export function latestTelemetry(robot: RobotName): RobotTelemetry | null {
+  const latest = runtimeFor(robot).telemetryHistory.at(-1);
+  return latest ? structuredClone(latest) : null;
+}
+
+function recordTelemetry(runtime: RobotRuntime, frame: RobotTelemetry) {
+  const last = runtime.telemetryHistory.at(-1);
+  if (last && last.ts_ms === frame.ts_ms && last.source === frame.source) return;
+  runtime.telemetryHistory.push(structuredClone(frame));
+  if (runtime.telemetryHistory.length > TELEMETRY_HISTORY_MAX) {
+    runtime.telemetryHistory.splice(0, runtime.telemetryHistory.length - TELEMETRY_HISTORY_MAX);
   }
 }
 

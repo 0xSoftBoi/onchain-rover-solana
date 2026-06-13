@@ -136,6 +136,12 @@
         <div class="kv"><span class="k">fees collected</span><span class="v" id="fees">-</span></div>
         <div class="kv"><span class="k">winner</span><span class="v" id="winner">-</span></div>
         <div class="kv"><span class="k">txs</span><span class="v" id="txs">-</span></div>
+        <div class="kv"><span class="k">proof hash</span><span class="v" id="proofHash">-</span></div>
+        <div class="kv"><span class="k">evidence hash</span><span class="v" id="evidenceHash">-</span></div>
+        <div class="actions" style="margin-top:8px">
+          <a class="button secondary" id="evidenceOpen" target="_blank" rel="noreferrer">Open Evidence</a>
+          <button class="secondary" id="copyProof">Copy Proof Hash</button>
+        </div>
       </div>
     </div>
   </section>
@@ -190,7 +196,7 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { round: null, chain: null, treasury: null };
+const state = { round: null, chain: null, treasury: null, evidence: null };
 const localDefaults = {
   challenger: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   opponent: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -255,6 +261,11 @@ function render() {
   $("chainStatus").textContent = round?.chainStatus || "-";
   $("winner").textContent = round?.winner || "-";
   $("txs").textContent = txSummary(round);
+  const proofHash = state.evidence?.proofHash || round?.proofHash || "-";
+  const evidenceHash = state.evidence?.evidenceHash || round?.evidenceHash || "-";
+  $("proofHash").textContent = proofHash;
+  $("evidenceHash").textContent = evidenceHash;
+  $("evidenceOpen").href = round?.id ? `/race/round/${round.id}/evidence?download=1` : "#";
   $("treasury").textContent = state.treasury?.treasury || state.chain?.treasury || "-";
   $("fees").textContent = state.treasury ? `${state.treasury.totalFees} local units` : "-";
   if (!$("challenger").value && round?.drivers?.challenger?.wallet) $("challenger").value = round.drivers.challenger.wallet;
@@ -287,7 +298,12 @@ async function refresh() {
     state.treasury = treasury;
     if (config?.sidecarUrl && !$("publicSidecar").value.trim()) $("publicSidecar").value = config.sidecarUrl;
     if (!$("publicSidecar").value.trim()) $("publicSidecar").value = location.origin;
-    if (state.round?.id) state.round = await getJson(`/race/round/${state.round.id}`);
+    if (state.round?.id) {
+      state.round = await getJson(`/race/round/${state.round.id}`);
+      state.evidence = await getJson(`/race/round/${state.round.id}/evidence/hash`).catch(() => null);
+    } else {
+      state.evidence = null;
+    }
     render();
   } catch (err) {
     log(err.message);
@@ -379,6 +395,12 @@ $("settle").onclick = () => step("settled race", () => postJson(`/race/round/${s
 $("cancel").onclick = () => step("canceled race", () => postJson(`/race/round/${state.round.id}/chain/cancel`, { reason: "operator canceled" }));
 $("refresh").onclick = refresh;
 $("publicSidecar").addEventListener("input", render);
+$("copyProof").onclick = async () => {
+  const hash = state.evidence?.proofHash || state.round?.proofHash;
+  if (!hash) return;
+  await navigator.clipboard.writeText(hash);
+  log("copied proof hash");
+};
 
 document.querySelectorAll("[data-copy]").forEach((button) => {
   button.addEventListener("click", async () => {

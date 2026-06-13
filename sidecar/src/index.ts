@@ -395,7 +395,9 @@ app.post("/verify-agent", async (req, res) => {
 app.post("/pay", async (req, res) => {
   try {
     const { from = "courier", to = "guard", amt } = req.body;
-    res.json(await settle.pay(from, to, String(amt)));
+    const r = await settle.pay(from, to, String(amt));
+    logOnchain("PAY", `${from} → ${to} $${amt} USDC`, r?.tx, Number(amt));
+    res.json(r);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -405,7 +407,9 @@ app.post("/pay", async (req, res) => {
 app.post("/mint-pass", async (req, res) => {
   try {
     const { robot = "courier", price = "0.50" } = req.body;
-    res.json(await settle.mintPass(robot, String(price)));
+    const m = await settle.mintPass(robot, String(price));
+    logOnchain("MINT", `EventPass → ${robot} @ $${price}`, m?.tx);
+    res.json(m);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -429,11 +433,13 @@ app.post("/give-feedback", async (req, res) => {
   try {
     const r = robot(req.body.robot);
     // Arc reputation (same chain as the rest of the flywheel)
-    res.json(await settle.giveFeedback({
+    const fb = await settle.giveFeedback({
       agentId: Number(r.agentId ?? 0),
       score: req.body.score, skill: req.body.skill,
       blobId: req.body.blobId, sha256: req.body.sha256,
-    }));
+    });
+    logOnchain("REPUTATION", `${req.body.robot || "guard"} rated ${req.body.score} (skill: ${req.body.skill})`, fb?.tx);
+    res.json(fb);
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 

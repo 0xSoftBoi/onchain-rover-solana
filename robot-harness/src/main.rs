@@ -27,6 +27,7 @@ use futures_util::{SinkExt, StreamExt};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tokio::{sync::broadcast, time};
 use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info, warn};
@@ -559,6 +560,7 @@ async fn main() -> Result<()> {
         .route("/motors/stop", post(motors_stop))
         .route("/camera/status", get(camera_status))
         .route("/camera/snapshot", get(camera_snapshot))
+        .route("/capture", post(capture))
         .route("/pilot/authorize", post(pilot_authorize))
         .route("/pilot/speed-mode", post(pilot_speed_mode))
         .route("/stream", get(stream))
@@ -602,6 +604,7 @@ async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesResp> {
             "GET /sensors",
             "GET /camera/status",
             "GET /camera/snapshot",
+            "POST /capture",
             "GET /stream",
             "POST /pilot/authorize",
             "POST /pilot/speed-mode",
@@ -704,9 +707,14 @@ async fn stream(State(state): State<AppState>) -> Response {
 }
 
 fn simulated_camera_stream(state: &AppState) -> Response {
+    let svg = simulated_camera_svg(state);
+    ([(axum::http::header::CONTENT_TYPE, "image/svg+xml")], svg).into_response()
+}
+
+fn simulated_camera_svg(state: &AppState) -> String {
     let raw = state.raw.read().clone();
     let command = state.command.lock().clone();
-    let svg = format!(
+    format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
 <defs>
 <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#142033"/><stop offset="1" stop-color="#05070a"/></linearGradient>
@@ -731,8 +739,7 @@ fn simulated_camera_stream(state: &AppState) -> Response {
             .unwrap_or_else(|| "--".to_string()),
         left = format!("{:.2}", command.left_cmd),
         right = format!("{:.2}", command.right_cmd),
-    );
-    ([(axum::http::header::CONTENT_TYPE, "image/svg+xml")], svg).into_response()
+    )
 }
 
 async fn camera_status(State(state): State<AppState>) -> Json<CameraStatus> {
@@ -747,6 +754,28 @@ async fn camera_snapshot(State(state): State<AppState>) -> Response {
         return simulated_camera_stream(&state);
     }
     camera_unavailable_response(&state, "snapshot")
+}
+
+async fn capture(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    if !matches!(state.mode, Mode::Sim) {
+        return Err(AppError::service_unavailable("capture unavailable without a simulated camera"));
+    }
+    let captured_at_ms = now_ms();
+    let svg = simulated_camera_svg(&state);
+    let bytes = svg.as_bytes();
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let digest = hasher.finalize();
+    let sha256 = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    Ok(Json(json!({
+        "ok": true,
+        "role": state.role,
+        "source": "simulated-camera",
+        "content_type": "image/svg+xml",
+        "byte_length": bytes.len(),
+        "sha256": format!("0x{sha256}"),
+        "captured_at_ms": captured_at_ms,
+    })))
 }
 
 fn camera_stream_proxy_url(state: &AppState) -> Option<&str> {
@@ -1769,6 +1798,13 @@ impl AppError {
     fn forbidden(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::FORBIDDEN,
+            message: message.into(),
+        }
+    }
+
+    fn service_unavailable(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
         }
     }

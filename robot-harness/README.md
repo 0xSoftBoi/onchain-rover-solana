@@ -84,6 +84,7 @@ deferred until the Jetson camera stack is stable.
 - `GET /sensors`
 - `GET /camera/status`
 - `GET /camera/snapshot`
+- `POST /capture`
 - `GET /stream`
 - `POST /pilot/authorize`
 - `POST /pilot/speed-mode`
@@ -110,6 +111,10 @@ grouped sensor contract under `sensors`:
 The telemetry frame also keeps the older flat fields (`battery_v`,
 `odometry_left`, `odometry_right`, `last_raw_frame_ms`) for current sidecar and
 pilot UI compatibility.
+
+In `--mode sim`, `POST /capture` returns deterministic simulated camera capture
+metadata: source, content type, byte length, capture timestamp, and SHA-256 hash
+of the generated frame.
 
 Drive commands are clamped server-side by the session speed mode:
 

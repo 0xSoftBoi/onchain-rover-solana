@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { RobotName } from "./config.js";
 import * as robotLink from "./robot-link.js";
@@ -18,11 +18,41 @@ type EvidenceRecord = {
   createdAtMs: number;
   updatedAtMs: number;
   events: EvidenceEvent[];
+  finishDetections: FinishDetectionEvent[];
   operatorProof?: Record<string, unknown>;
   resultProof?: Record<string, unknown>;
   resultProofCanonical?: string;
   proofHash?: Hex32;
   packetHash?: Hex32;
+};
+
+export type FinishDetectionEvent = {
+  id: string;
+  roundId: string;
+  slot: DriverSlot;
+  robot: RobotName | null;
+  lane: "left" | "right" | null;
+  source: string;
+  method: string;
+  confidence: number;
+  detectedAtMs: number;
+  receivedAtMs: number;
+  metrics?: Record<string, unknown>;
+  frameHash?: string;
+  note?: string;
+  telemetry?: robotLink.RobotTelemetry | null;
+};
+
+type FinishDetectionInput = {
+  slot?: unknown;
+  robot?: unknown;
+  source?: unknown;
+  method?: unknown;
+  confidence?: unknown;
+  detectedAtMs?: unknown;
+  metrics?: unknown;
+  frameHash?: unknown;
+  note?: unknown;
 };
 
 const records = new Map<string, EvidenceRecord>();
@@ -59,6 +89,39 @@ export function finalizeResultProof(round: Round, operatorProof?: Record<string,
   };
 }
 
+export function recordFinishDetection(round: Round, input: FinishDetectionInput): FinishDetectionEvent {
+  const record = ensureRecord(round.id);
+  const slot = inferDetectionSlot(round, input);
+  const driver = round.drivers[slot];
+  const robot = driver?.robot ?? null;
+  const detection: FinishDetectionEvent = {
+    id: randomUUID(),
+    roundId: round.id,
+    slot,
+    robot,
+    lane: driver?.lane ?? null,
+    source: stringOr(input.source, "finish-detector"),
+    method: stringOr(input.method, "finish-line"),
+    confidence: confidence(input.confidence),
+    detectedAtMs: millisOrNow(input.detectedAtMs),
+    receivedAtMs: Date.now(),
+    metrics: input.metrics && typeof input.metrics === "object"
+      ? sortedClone(input.metrics) as Record<string, unknown>
+      : undefined,
+    frameHash: typeof input.frameHash === "string" ? input.frameHash : undefined,
+    note: typeof input.note === "string" ? input.note : undefined,
+    telemetry: robot ? robotLink.latestTelemetry(robot) : null,
+  };
+  record.updatedAtMs = detection.receivedAtMs;
+  record.finishDetections.push(detection);
+  record.packetHash = hashEvidencePacket(record);
+  return structuredClone(detection);
+}
+
+export function listFinishDetections(round: Round): FinishDetectionEvent[] {
+  return ensureRecord(round.id).finishDetections.map((event) => structuredClone(event));
+}
+
 export function getEvidence(round: Round) {
   const record = ensureRecord(round.id);
   if (!record.packetHash) record.packetHash = hashEvidencePacket(record);
@@ -88,9 +151,11 @@ function ensureRecord(roundId: string): EvidenceRecord {
       createdAtMs: now,
       updatedAtMs: now,
       events: [],
+      finishDetections: [],
     };
     records.set(roundId, record);
   }
+  record.finishDetections ??= [];
   return record;
 }
 
@@ -116,6 +181,7 @@ function buildResultProof(record: EvidenceRecord, round: Round) {
     lifecycle: record.events
       .filter((event) => event.event !== "settled")
       .map((event) => sortedClone(event)),
+    finishDetections: record.finishDetections.map((event) => sortedClone(event)),
     telemetry,
     operatorProof: record.operatorProof ?? null,
   };
@@ -141,6 +207,7 @@ function evidenceResponse(record: EvidenceRecord) {
     proofHash: record.proofHash ?? null,
     evidenceHash: record.packetHash ?? null,
     resultProof: record.resultProof ?? null,
+    finishDetections: record.finishDetections,
     lifecycle: record.events,
   };
   return {
@@ -163,6 +230,7 @@ function packetForHash(record: EvidenceRecord) {
     updatedAtMs: record.updatedAtMs,
     proofHash: record.proofHash ?? null,
     resultProof: record.resultProof ?? null,
+    finishDetections: record.finishDetections,
     lifecycle: record.events,
   };
 }
@@ -220,6 +288,58 @@ function eventTime(round: Round, event: EvidenceEventName): number | undefined {
   if (event === "finished") return round.finishedAt;
   if (event === "settled") return Date.now();
   return undefined;
+}
+
+function inferDetectionSlot(round: Round, input: FinishDetectionInput): DriverSlot {
+  const slot = parseSlot(input.slot);
+  const robot = parseRobot(input.robot);
+  if (!slot && !robot) throw new Error("finish detection requires slot or robot");
+  const inferredSlot = slot ?? slotForRobot(round, robot!);
+  const driver = round.drivers[inferredSlot];
+  if (!driver) throw new Error(`missing ${inferredSlot}`);
+  if (robot && driver.robot !== robot) {
+    throw new Error(`robot ${robot} is not assigned to ${inferredSlot}`);
+  }
+  return inferredSlot;
+}
+
+function slotForRobot(round: Round, robot: RobotName): DriverSlot {
+  for (const slot of ["challenger", "opponent"] as const) {
+    if (round.drivers[slot]?.robot === robot) return slot;
+  }
+  throw new Error(`robot ${robot} is not assigned to this round`);
+}
+
+function parseSlot(value: unknown): DriverSlot | null {
+  if (value === "challenger" || value === "opponent") return value;
+  if (value === undefined || value === null || value === "") return null;
+  throw new Error("slot must be challenger or opponent");
+}
+
+function parseRobot(value: unknown): RobotName | null {
+  if (value === "guard" || value === "courier") return value;
+  if (value === undefined || value === null || value === "") return null;
+  throw new Error("robot must be guard or courier");
+}
+
+function confidence(value: unknown): number {
+  if (value === undefined || value === null || value === "") return 1;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error("confidence must be numeric");
+  return Math.max(0, Math.min(1, number));
+}
+
+function millisOrNow(value: unknown): number {
+  if (value === undefined || value === null || value === "") return Date.now();
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) throw new Error("detectedAtMs must be a positive timestamp");
+  return Math.floor(number);
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
 }
 
 function sortedClone(value: unknown): unknown {

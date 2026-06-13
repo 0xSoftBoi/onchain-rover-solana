@@ -529,13 +529,41 @@ app.post("/race/round/:id/start", (req, res) => {
 
 app.post("/race/round/:id/finish", (req, res) => {
   try {
-    let round = rounds.finishRound(req.params.id, req.body.winner, req.body.proof);
-    evidence.recordRoundSnapshot(round, "finished");
-    const finalized = evidence.finalizeResultProof(round, req.body.proof);
-    round = rounds.markEvidenceHashes(req.params.id, finalized.proofHash, finalized.evidenceHash);
-    res.json(round);
+    res.json(finishRoundWithEvidence(req.params.id, requireDriverSlot(req.body.winner), req.body.proof));
   }
   catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/finish-detection", (req, res) => {
+  try {
+    let round = rounds.getRound(req.params.id);
+    const detection = evidence.recordFinishDetection(round, req.body);
+    if (round.status === "finished" || round.status === "settled") {
+      if (round.winner && round.winner !== detection.slot) {
+        throw new Error(`round already finished with ${round.winner}`);
+      }
+      const hashes = evidence.getEvidenceHash(round);
+      round = rounds.markEvidenceHashes(req.params.id, hashes.proofHash, hashes.evidenceHash);
+      return res.json({ round, detection, detections: evidence.listFinishDetections(round) });
+    }
+    if (req.body?.autoFinish === false) {
+      const hashes = evidence.getEvidenceHash(round);
+      round = rounds.markEvidenceHashes(req.params.id, hashes.proofHash, hashes.evidenceHash);
+      return res.json({ round, detection, detections: evidence.listFinishDetections(round) });
+    }
+    round = finishRoundWithEvidence(req.params.id, detection.slot, {
+      source: "finish-detection",
+      detectionId: detection.id,
+      detection,
+    });
+    res.json({ round, detection, detections: evidence.listFinishDetections(round) });
+  }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.get("/race/round/:id/finish-detections", (req, res) => {
+  try { res.json({ detections: evidence.listFinishDetections(rounds.getRound(req.params.id)) }); }
+  catch (e: any) { res.status(404).json({ error: e.message }); }
 });
 
 app.get("/race/round/:id/evidence", (req, res) => {
@@ -621,4 +649,15 @@ function ensureResultEvidence(round: rounds.Round): rounds.Round {
   if (round.proofHash) return round;
   const finalized = evidence.finalizeResultProof(round, round.proof);
   return rounds.markEvidenceHashes(round.id, finalized.proofHash, finalized.evidenceHash);
+}
+
+function finishRoundWithEvidence(
+  roundId: string,
+  winner: rounds.DriverSlot,
+  proof?: Record<string, unknown>,
+): rounds.Round {
+  let round = rounds.finishRound(roundId, winner, proof);
+  evidence.recordRoundSnapshot(round, "finished");
+  const finalized = evidence.finalizeResultProof(round, proof);
+  return rounds.markEvidenceHashes(roundId, finalized.proofHash, finalized.evidenceHash);
 }

@@ -136,6 +136,7 @@
         <div class="kv"><span class="k">fees collected</span><span class="v" id="fees">-</span></div>
         <div class="kv"><span class="k">winner</span><span class="v" id="winner">-</span></div>
         <div class="kv"><span class="k">txs</span><span class="v" id="txs">-</span></div>
+        <div class="kv"><span class="k">latest detection</span><span class="v" id="finishDetection">-</span></div>
         <div class="kv"><span class="k">proof hash</span><span class="v" id="proofHash">-</span></div>
         <div class="kv"><span class="k">evidence hash</span><span class="v" id="evidenceHash">-</span></div>
         <div class="actions" style="margin-top:8px">
@@ -180,6 +181,8 @@
       <button id="startRace" class="good">Start Race</button>
       <button id="finishChallenger" class="secondary">Challenger Wins</button>
       <button id="finishOpponent" class="secondary">Opponent Wins</button>
+      <button id="detectChallenger" class="warn">Detect Challenger Finish</button>
+      <button id="detectOpponent" class="warn">Detect Opponent Finish</button>
       <button id="chainStart" class="good">Start On-Chain</button>
       <button id="settle" class="good">Settle</button>
       <button id="cancel" class="bad">Cancel</button>
@@ -196,7 +199,7 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { round: null, chain: null, treasury: null, evidence: null };
+const state = { round: null, chain: null, treasury: null, evidence: null, detections: [] };
 const localDefaults = {
   challenger: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   opponent: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -253,6 +256,13 @@ function txSummary(round) {
   return names.map((name) => `${name}:${String(txs[name]).slice(0, 10)}...`).join(" · ");
 }
 
+function detectionSummary() {
+  const latest = state.detections?.at?.(-1);
+  if (!latest) return "-";
+  const confidence = latest.confidence !== undefined ? `${Math.round(latest.confidence * 100)}%` : "--";
+  return `${latest.slot} · ${latest.source}/${latest.method} · ${confidence}`;
+}
+
 function render() {
   const round = state.round;
   $("roundId").textContent = round?.id || "-";
@@ -261,6 +271,7 @@ function render() {
   $("chainStatus").textContent = round?.chainStatus || "-";
   $("winner").textContent = round?.winner || "-";
   $("txs").textContent = txSummary(round);
+  $("finishDetection").textContent = detectionSummary();
   const proofHash = state.evidence?.proofHash || round?.proofHash || "-";
   const evidenceHash = state.evidence?.evidenceHash || round?.evidenceHash || "-";
   $("proofHash").textContent = proofHash;
@@ -301,8 +312,11 @@ async function refresh() {
     if (state.round?.id) {
       state.round = await getJson(`/race/round/${state.round.id}`);
       state.evidence = await getJson(`/race/round/${state.round.id}/evidence/hash`).catch(() => null);
+      const finishDetections = await getJson(`/race/round/${state.round.id}/finish-detections`).catch(() => null);
+      state.detections = finishDetections?.detections || [];
     } else {
       state.evidence = null;
+      state.detections = [];
     }
     render();
   } catch (err) {
@@ -390,6 +404,28 @@ $("countdown").onclick = () => step("countdown started", () => postJson(`/race/r
 $("startRace").onclick = () => step("local race started", () => postJson(`/race/round/${state.round.id}/start`));
 $("finishChallenger").onclick = () => step("challenger finished", () => postJson(`/race/round/${state.round.id}/finish`, { winner: "challenger", proof: { source: "operator" } }));
 $("finishOpponent").onclick = () => step("opponent finished", () => postJson(`/race/round/${state.round.id}/finish`, { winner: "opponent", proof: { source: "operator" } }));
+$("detectChallenger").onclick = () => step("challenger finish detected", async () => {
+  const result = await postJson(`/race/round/${state.round.id}/finish-detection`, {
+    slot: "challenger",
+    source: "operator-sim",
+    method: "finish-line-button",
+    confidence: 1,
+    metrics: { surface: "round.html" },
+  });
+  state.detections = result.detections || [];
+  return result.round;
+});
+$("detectOpponent").onclick = () => step("opponent finish detected", async () => {
+  const result = await postJson(`/race/round/${state.round.id}/finish-detection`, {
+    slot: "opponent",
+    source: "operator-sim",
+    method: "finish-line-button",
+    confidence: 1,
+    metrics: { surface: "round.html" },
+  });
+  state.detections = result.detections || [];
+  return result.round;
+});
 $("chainStart").onclick = () => step("on-chain race started", () => postJson(`/race/round/${state.round.id}/chain/start`));
 $("settle").onclick = () => step("settled race", () => postJson(`/race/round/${state.round.id}/chain/settle`));
 $("cancel").onclick = () => step("canceled race", () => postJson(`/race/round/${state.round.id}/chain/cancel`, { reason: "operator canceled" }));

@@ -61,6 +61,8 @@ whenever the local chain is reset.
 - `GET /treasury/local`: local treasury fee balance.
 - `GET /race/round/:id/evidence`: canonical evidence packet, lifecycle snapshots, and telemetry windows.
 - `GET /race/round/:id/evidence/hash`: stable result proof hash plus current packet hash.
+- `POST /race/round/:id/finish-detection`: finish camera, robot, lidar, or simulator event; auto-finishes by default.
+- `GET /race/round/:id/finish-detections`: recorded finish detector events for the round.
 - `GET /robot-link/state`: current bridge sessions, attached robots, telemetry, and last command.
 - `WS /ws/drive?robot=<guard|courier>&token=<token>`: phone control socket issued by `/pilot/dev-authorize`.
 - `WS /ws/telemetry?robot=<guard|courier>`: phone telemetry stream.
@@ -139,6 +141,33 @@ Robots send telemetry back on `/ws/robot`:
 
 If the phone disconnects or command frames stop for more than `deadman_ms`, the
 sidecar forwards a zero-speed command and marks telemetry as stopped.
+
+## Finish Detection
+
+The finish detector contract is HTTP so it can be called by a camera process,
+robot-side lidar process, simulator, or the operator harness:
+
+```bash
+curl -s -X POST http://127.0.0.1:4021/race/round/<roundId>/finish-detection \
+  -H 'content-type: application/json' \
+  -d '{
+    "robot": "guard",
+    "source": "finish-camera",
+    "method": "line-crossing",
+    "confidence": 0.93,
+    "detectedAtMs": 1760000000000,
+    "metrics": { "x": 412, "line": 390 }
+  }'
+```
+
+The sidecar maps `robot` to the assigned driver slot, records the detection in
+the evidence packet, and auto-finishes the local round unless
+`"autoFinish": false` is supplied. A detector may also send `slot` directly
+instead of `robot`.
+
+Detection events are included in the result proof before the SHA-256
+`proofHash` is generated. This means settlement can reference a proof that was
+created from detector input rather than an operator winner click.
 
 ## Environment
 

@@ -253,7 +253,7 @@ function handlePilotDrive(ws: WebSocket, url: URL) {
   try {
     runtime = runtimeFor(requireRobotName(url.searchParams.get("robot")));
     token = String(url.searchParams.get("token") ?? "");
-    requireSession(runtime, token);
+    requireSession(runtime, token, { allowEarly: true });
   } catch (e: any) {
     ws.close(1008, e.message);
     return;
@@ -373,7 +373,11 @@ function runtimeFor(robot: RobotName): RobotRuntime {
   return runtime;
 }
 
-function requireSession(runtime: RobotRuntime, token: string): PilotSession {
+function requireSession(
+  runtime: RobotRuntime,
+  token: string,
+  opts: { allowEarly?: boolean } = {},
+): PilotSession {
   retireExpiredSessions(runtime);
   const session = runtime.sessions.get(token);
   if (!session) throw new Error("pilot session unavailable");
@@ -381,7 +385,7 @@ function requireSession(runtime: RobotRuntime, token: string): PilotSession {
     runtime.sessions.delete(token);
     throw new Error("pilot session expired");
   }
-  if (session.notBeforeMs && Date.now() < session.notBeforeMs) {
+  if (!opts.allowEarly && session.notBeforeMs && Date.now() < session.notBeforeMs) {
     throw new Error("round has not started");
   }
   return session;

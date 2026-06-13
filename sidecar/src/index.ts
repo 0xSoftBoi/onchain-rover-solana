@@ -692,12 +692,13 @@ app.post("/race/round/:id/pilot/session", (req, res) => {
       || `${req.protocol}://${req.get("host")}`;
     const ttlSecs = Math.max(30, round.durationSecs + round.countdownSecs + 30);
     const notBeforeMs = round.status === "racing" ? undefined : round.roundStartsAt;
-    res.json(robotLink.authorizePilotSession(driver.robot, publicBaseUrl, {
+    const session = robotLink.authorizePilotSession(driver.robot, publicBaseUrl, {
       ttlSecs,
       speedMode: calibratedSpeedMode(round, robotLink.parseSpeedMode(req.body.speed_mode)),
       maxSpeedMode: round.stageCalibration.speedDefaults.maxSpeedMode,
       notBeforeMs,
-    }));
+    });
+    res.json({ ...session, round: pilotRoundState(round, slot) });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -804,6 +805,30 @@ function calibratedSpeedMode(
   const mode = requested ?? fallback;
   const rank: Record<robotLink.SpeedMode, number> = { low: 0, medium: 1, high: 2 };
   return rank[mode] > rank[max] ? max : mode;
+}
+
+function pilotRoundState(round: rounds.Round, slot: rounds.DriverSlot) {
+  const driver = round.drivers[slot];
+  return {
+    id: round.id,
+    status: round.status,
+    stakeUsdc: round.stakeUsdc,
+    feeUsdc: round.feeUsdc,
+    durationSecs: round.durationSecs,
+    countdownSecs: round.countdownSecs,
+    roundStartsAt: round.roundStartsAt,
+    startedAt: round.startedAt,
+    driver: driver ? {
+      slot,
+      wallet: driver.wallet,
+      displayName: driver.displayName,
+      robot: driver.robot,
+      lane: driver.lane,
+      feePaid: driver.feePaid,
+      stakeAuthorized: driver.stakeAuthorized,
+      chainJoined: Boolean(driver.chainJoined),
+    } : null,
+  };
 }
 
 function finishRoundWithEvidence(

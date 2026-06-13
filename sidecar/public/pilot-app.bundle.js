@@ -65,6 +65,7 @@ var controlUrls = {};
 var stageCalibration = null;
 var stageCalibrationLoaded = false;
 var videoState = "idle";
+var roundState = null;
 var els = {
   robotName: byId("robotName"),
   conn: byId("conn"),
@@ -77,6 +78,10 @@ var els = {
   latency: byId("latency"),
   deadman: byId("deadman"),
   cap: byId("cap"),
+  slotState: byId("slotState"),
+  raceTimer: byId("raceTimer"),
+  stakeState: byId("stakeState"),
+  feeState: byId("feeState"),
   source: byId("source"),
   cameraState: byId("cameraState"),
   lidar: byId("lidar"),
@@ -194,6 +199,7 @@ async function connect() {
     const auth = await authorize();
     if (!auth.token || !auth.driveWs) throw new Error("authorization missing drive endpoint");
     token = auth.token;
+    syncRoundState(auth.round);
     controlUrls = { speedMode: auth.speedModeUrl, stop: auth.stopUrl };
     els.robotName.textContent = auth.robot ? `/ ${auth.robot}` : `/ ${robotName}`;
     configureVideo(auth.driveWs, auth.streamUrl);
@@ -257,6 +263,55 @@ async function postJson(url, body) {
   }
   return json;
 }
+function syncRoundState(next) {
+  if (next) roundState = next;
+  renderRoundState();
+}
+function renderRoundState() {
+  const driver = roundState?.driver;
+  const slotLabel = driver?.slot === "challenger" ? "chal" : driver?.slot === "opponent" ? "opp" : driverSlot;
+  const robot = driver?.robot || robotName;
+  const lane = driver?.lane ? `/${driver.lane}` : "";
+  els.slotState.textContent = roundId ? `${slotLabel}/${robot}${lane}` : "dev";
+  els.stakeState.textContent = roundState?.stakeUsdc ? `$${roundState.stakeUsdc}` : "--";
+  els.feeState.textContent = roundState?.feeUsdc ? `$${roundState.feeUsdc}` : "--";
+  updateRaceTimer();
+}
+function roundStartMs() {
+  return roundState?.startedAt ?? roundState?.roundStartsAt ?? null;
+}
+function driveUnlocked() {
+  if (!started) return false;
+  if (!roundId) return true;
+  const startMs = roundStartMs();
+  return roundState?.status === "racing" || Boolean(startMs && Date.now() >= startMs);
+}
+function updateRaceTimer() {
+  if (!roundId) {
+    els.raceTimer.textContent = "--";
+    return;
+  }
+  if (!roundState) {
+    els.raceTimer.textContent = "entry";
+    return;
+  }
+  const startMs = roundStartMs();
+  const now = Date.now();
+  if (startMs && now < startMs) {
+    const left = Math.ceil((startMs - now) / 1e3);
+    els.raceTimer.textContent = `-${left}s`;
+    if (started) els.direction.textContent = `GO in ${left}`;
+    return;
+  }
+  if (startMs) {
+    const elapsed = Math.max(0, Math.floor((now - startMs) / 1e3));
+    const remaining = Math.max(0, roundState.durationSecs - elapsed);
+    els.raceTimer.textContent = remaining > 0 ? `${remaining}s` : "done";
+    if (started && !connected) els.direction.textContent = "GO";
+    return;
+  }
+  els.raceTimer.textContent = roundState.status || "wait";
+}
 function openDriveSocket(url) {
   driveWs?.close();
   driveWs = new WebSocket(url);
@@ -264,6 +319,18 @@ function openDriveSocket(url) {
     connected = true;
     hasConnected = true;
     setConn("up", telemetryConnected ? "drive + telemetry" : "drive connected");
+    updateRaceTimer();
+  };
+  driveWs.onmessage = (event) => {
+    try {
+      const body = JSON.parse(event.data);
+      if (body?.error === "round has not started") {
+        updateRaceTimer();
+      } else if (body?.error) {
+        els.direction.textContent = body.error;
+      }
+    } catch {
+    }
   };
   driveWs.onclose = () => {
     connected = false;
@@ -346,6 +413,10 @@ async function startLocalCamera() {
 }
 function send(left, right) {
   if (!started) return;
+  if (!driveUnlocked()) {
+    updateRaceTimer();
+    return;
+  }
   if (!connected || !driveWs || driveWs.readyState !== WebSocket.OPEN) return;
   driveWs.send(JSON.stringify({ left, right, token, speed_mode: speedMode, t: Date.now() }));
   els.left.textContent = left.toFixed(2);
@@ -438,6 +509,8 @@ function renderTelemetry(frame) {
     els.direction.textContent = "Obstacle ahead";
   } else if (!started) {
     els.direction.textContent = "Tap start to drive";
+  } else if (!driveUnlocked()) {
+    updateRaceTimer();
   }
 }
 function cameraHealth(frame) {
@@ -569,6 +642,7 @@ function setupControls() {
   renderSpeedMode(speedMode);
 }
 setInterval(() => {
+  updateRaceTimer();
   if (lastTelemetryAt && Date.now() - lastTelemetryAt > 1200) {
     els.latency.textContent = "stale";
     els.latency.className = "warn";
@@ -578,6 +652,7 @@ setInterval(() => {
   }
 }, 500);
 els.robotName.textContent = `/ ${robotName}`;
+renderRoundState();
 if (roundId) {
   els.modalTitle.textContent = "Enter Race";
   els.modalCopy.textContent = `Sign entry for ${driverSlot}. Camera stays live once your entry is confirmed.`;

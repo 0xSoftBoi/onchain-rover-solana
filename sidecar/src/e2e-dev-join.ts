@@ -1,3 +1,5 @@
+import { WebSocket } from "ws";
+
 const sidecarHttp = normalizeHttpUrl(process.env.SIDECAR_URL ?? "http://127.0.0.1:4021");
 
 async function main() {
@@ -24,6 +26,13 @@ async function main() {
 
   round = await postJson(`/race/round/${round.id}/lock`, { skipRobotAuth: true });
   round = await postJson(`/race/round/${round.id}/countdown`);
+  const preGoPilot = await postJson(`/race/round/${round.id}/pilot/session`, {
+    slot: "challenger",
+    speed_mode: "high",
+  });
+  assert(preGoPilot.round?.status === "countdown", "pilot session should include countdown round state");
+  assert(preGoPilot.round?.roundStartsAt, "pilot session should include shared start time");
+  await assertPreGoDriveRejected(preGoPilot.driveWs, preGoPilot.token);
   await sleep(Math.max(0, (round.roundStartsAt ?? Date.now()) - Date.now()) + 100);
   round = await postJson(`/race/round/${round.id}/start`);
 
@@ -72,6 +81,37 @@ function normalizeHttpUrl(value: string) {
   if (value.startsWith("ws://")) return value.replace(/^ws:/, "http:");
   if (value.startsWith("wss://")) return value.replace(/^wss:/, "https:");
   return value.replace(/\/$/, "");
+}
+
+function rebaseWsUrl(value: string) {
+  const target = new URL(value);
+  const sidecar = new URL(sidecarHttp);
+  target.protocol = sidecar.protocol === "https:" ? "wss:" : "ws:";
+  target.hostname = sidecar.hostname;
+  target.port = sidecar.port;
+  return target.toString();
+}
+
+async function assertPreGoDriveRejected(value: string, token: string) {
+  const ws = new WebSocket(rebaseWsUrl(value));
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", resolve);
+    ws.once("error", reject);
+  });
+  const error = new Promise<Record<string, unknown>>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("pre-GO drive command was not rejected")), 2000);
+    ws.on("message", (raw) => {
+      const body = JSON.parse(String(raw));
+      if (body?.error) {
+        clearTimeout(timeout);
+        resolve(body);
+      }
+    });
+  });
+  ws.send(JSON.stringify({ token, left: 1, right: 1, speed_mode: "high", t: Date.now() }));
+  const body = await error;
+  ws.close();
+  assert(body.error === "round has not started", `unexpected pre-GO response: ${String(body.error)}`);
 }
 
 function assert(condition: unknown, message: string): asserts condition {

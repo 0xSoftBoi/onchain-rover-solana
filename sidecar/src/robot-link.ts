@@ -54,6 +54,8 @@ export type RobotTelemetry = {
   deadman_ok: boolean;
   estop: boolean;
   stopped_by_deadman: boolean;
+  soft_odometry_limited?: boolean;
+  soft_odometry_limit_m?: number;
   speed_mode: SpeedMode;
   max_speed: number;
   last_raw_frame_ms?: number;
@@ -436,6 +438,8 @@ function normalizeTelemetry(runtime: RobotRuntime, body: Record<string, any>): R
     deadman_ok: Boolean(body.deadman_ok ?? runtime.pilotClients.size > 0),
     estop: Boolean(body.estop ?? false),
     stopped_by_deadman: Boolean(body.stopped_by_deadman ?? runtime.stoppedByDeadman),
+    soft_odometry_limited: Boolean(body.soft_odometry_limited ?? current.soft_odometry_limited ?? false),
+    soft_odometry_limit_m: finiteNumber(body.soft_odometry_limit_m) ?? current.soft_odometry_limit_m,
     speed_mode: speedMode,
     max_speed: maxSpeed,
     last_raw_frame_ms: finiteNumber(body.last_raw_frame_ms) ?? current.last_raw_frame_ms,
@@ -457,6 +461,8 @@ function broadcastTelemetry(runtime: RobotRuntime, source?: RobotTelemetry["sour
     right_cmd: runtime.lastCommand.right,
     deadman_ok: runtime.pilotClients.size > 0 && !runtime.stoppedByDeadman,
     stopped_by_deadman: runtime.stoppedByDeadman,
+    soft_odometry_limited: runtime.telemetry.soft_odometry_limited,
+    soft_odometry_limit_m: runtime.telemetry.soft_odometry_limit_m,
     speed_mode: runtime.lastCommand.speed_mode,
     max_speed: runtime.lastCommand.max_speed,
     session_id: runtime.lastCommand.token || runtime.telemetry.session_id,

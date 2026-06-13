@@ -535,6 +535,8 @@ function renderTelemetry(frame) {
   els.lidar.className = frame.lidar?.blocked ? "bad" : "";
   if (frame.estop) {
     els.direction.textContent = "Emergency stop";
+  } else if (frame.soft_odometry_limited) {
+    els.direction.textContent = "Stage limit";
   } else if (frame.lidar?.blocked) {
     els.direction.textContent = "Obstacle ahead";
   } else if (!started) {

@@ -58,6 +58,8 @@ type TelemetryFrame = {
   deadman_ok?: boolean;
   estop?: boolean;
   stopped_by_deadman?: boolean;
+  soft_odometry_limited?: boolean;
+  soft_odometry_limit_m?: number;
   speed_mode?: SpeedMode;
   max_speed?: number;
   last_raw_frame_ms?: number;
@@ -664,6 +666,8 @@ function renderTelemetry(frame: TelemetryFrame) {
 
   if (frame.estop) {
     els.direction.textContent = "Emergency stop";
+  } else if (frame.soft_odometry_limited) {
+    els.direction.textContent = "Stage limit";
   } else if (frame.lidar?.blocked) {
     els.direction.textContent = "Obstacle ahead";
   } else if (!started) {

@@ -66,6 +66,9 @@ struct Opts {
     #[arg(long, env = "ROVER_DEADMAN_MS", default_value_t = DEFAULT_DEADMAN_MS)]
     deadman_ms: u64,
 
+    #[arg(long, env = "ROVER_SOFT_ODOMETRY_LIMIT_M", default_value_t = 20.0)]
+    soft_odometry_limit_m: f64,
+
     #[arg(long, env = "ROVER_CAMERA_DEVICE")]
     camera_device: Option<String>,
 
@@ -147,6 +150,7 @@ struct CommandState {
     speed_mode: SpeedMode,
     estop: bool,
     stopped_by_deadman: bool,
+    soft_odometry_limited: bool,
 }
 
 impl Default for CommandState {
@@ -159,6 +163,7 @@ impl Default for CommandState {
             speed_mode: SpeedMode::default(),
             estop: false,
             stopped_by_deadman: false,
+            soft_odometry_limited: false,
         }
     }
 }
@@ -177,6 +182,8 @@ struct TelemetryFrame {
     deadman_ok: bool,
     estop: bool,
     stopped_by_deadman: bool,
+    soft_odometry_limited: bool,
+    soft_odometry_limit_m: f64,
     speed_mode: SpeedMode,
     max_speed: f64,
     last_raw_frame_ms: Option<u128>,
@@ -380,6 +387,7 @@ struct AppState {
     telemetry_tx: broadcast::Sender<TelemetryFrame>,
     allow_untokened_drive: bool,
     deadman_ms: u64,
+    soft_odometry_limit_m: f64,
     camera_client: reqwest::Client,
     camera_device: Option<String>,
     camera_stream_url: Option<String>,
@@ -437,6 +445,8 @@ struct HealthResp {
     active_session: Option<String>,
     estop: bool,
     deadman_ms: u64,
+    soft_odometry_limit_m: f64,
+    soft_odometry_limited: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -446,6 +456,7 @@ struct CapabilitiesResp {
     mode: String,
     serial_port: String,
     deadman_ms: u64,
+    soft_odometry_limit_m: f64,
     allow_untokened_drive: bool,
     camera: CameraStatus,
     endpoints: Vec<&'static str>,
@@ -511,6 +522,7 @@ async fn main() -> Result<()> {
         telemetry_tx,
         allow_untokened_drive: opts.allow_untokened_drive,
         deadman_ms: opts.deadman_ms,
+        soft_odometry_limit_m: opts.soft_odometry_limit_m,
         camera_client,
         camera_device: opts.camera_device,
         camera_stream_url: opts.camera_stream_url,
@@ -578,6 +590,7 @@ async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesResp> {
         mode: mode_name(state.mode).to_string(),
         serial_port: state.serial_port.clone(),
         deadman_ms: state.deadman_ms,
+        soft_odometry_limit_m: state.soft_odometry_limit_m,
         allow_untokened_drive: state.allow_untokened_drive,
         camera: camera_status_for(&state),
         endpoints: vec![
@@ -614,6 +627,8 @@ async fn health(State(state): State<AppState>) -> Json<HealthResp> {
         active_session: command.active_session_id,
         estop: command.estop,
         deadman_ms: state.deadman_ms,
+        soft_odometry_limit_m: state.soft_odometry_limit_m,
+        soft_odometry_limited: command.soft_odometry_limited,
     })
 }
 
@@ -658,6 +673,7 @@ async fn motors_stop(State(state): State<AppState>) -> Result<Json<Value>, AppEr
     command.right_cmd = 0.0;
     command.active_session_id = None;
     command.stopped_by_deadman = false;
+    command.soft_odometry_limited = false;
     Ok(Json(
         json!({"ok": true, "stopped": true, "estop": command.estop}),
     ))
@@ -671,6 +687,7 @@ async fn estop_reset(State(state): State<AppState>) -> Result<Json<Value>, AppEr
     command.active_session_id = None;
     command.estop = false;
     command.stopped_by_deadman = false;
+    command.soft_odometry_limited = false;
     Ok(Json(json!({"ok": true, "estop": false})))
 }
 
@@ -960,6 +977,7 @@ async fn handle_drive_socket(socket: WebSocket, state: AppState) {
     command.left_cmd = 0.0;
     command.right_cmd = 0.0;
     command.active_session_id = None;
+    command.soft_odometry_limited = false;
 }
 
 async fn handle_telemetry_socket(mut socket: WebSocket, state: AppState) {
@@ -1016,6 +1034,18 @@ fn apply_drive(
     let cap = speed_mode.cap();
     let left = clamp(left, -cap, cap);
     let right = clamp(right, -cap, cap);
+    if soft_odometry_limit_reached(state, left, right) {
+        state.rover.stop()?;
+        let mut command = state.command.lock();
+        command.left_cmd = 0.0;
+        command.right_cmd = 0.0;
+        command.last_cmd_at = Some(Instant::now());
+        command.active_session_id = session_id;
+        command.speed_mode = speed_mode;
+        command.stopped_by_deadman = false;
+        command.soft_odometry_limited = true;
+        return Err(AppError::forbidden("soft odometry limit reached"));
+    }
     state.rover.drive(left, right)?;
 
     let mut command = state.command.lock();
@@ -1025,7 +1055,29 @@ fn apply_drive(
     command.active_session_id = session_id;
     command.speed_mode = speed_mode;
     command.stopped_by_deadman = false;
+    command.soft_odometry_limited = false;
     Ok(())
+}
+
+fn soft_odometry_limit_reached(state: &AppState, left: f64, right: f64) -> bool {
+    if state.soft_odometry_limit_m <= 0.0 {
+        return false;
+    }
+    let forward_cmd = (left + right) / 2.0;
+    if forward_cmd <= 0.01 {
+        return false;
+    }
+    current_odometry_m(state).is_some_and(|meters| meters >= state.soft_odometry_limit_m)
+}
+
+fn current_odometry_m(state: &AppState) -> Option<f64> {
+    let raw = state.raw.read();
+    match (raw.odometry_left, raw.odometry_right) {
+        (Some(left), Some(right)) => Some(((left + right) / 2.0).abs()),
+        (Some(left), None) => Some(left.abs()),
+        (None, Some(right)) => Some(right.abs()),
+        (None, None) => None,
+    }
 }
 
 fn spawn_deadman(state: AppState) {
@@ -1050,6 +1102,7 @@ fn spawn_deadman(state: AppState) {
             command.left_cmd = 0.0;
             command.right_cmd = 0.0;
             command.stopped_by_deadman = true;
+            command.soft_odometry_limited = false;
         }
     });
 }
@@ -1366,6 +1419,8 @@ fn current_telemetry_frame(state: &AppState) -> TelemetryFrame {
         deadman_ok,
         estop: command.estop,
         stopped_by_deadman: command.stopped_by_deadman,
+        soft_odometry_limited: command.soft_odometry_limited,
+        soft_odometry_limit_m: state.soft_odometry_limit_m,
         speed_mode: command.speed_mode,
         max_speed: command.speed_mode.cap(),
         last_raw_frame_ms: raw.last_raw_frame_ms,
@@ -1386,6 +1441,7 @@ fn estop_inner(state: &AppState) -> Result<(), AppError> {
     command.active_session_id = None;
     command.estop = true;
     command.stopped_by_deadman = false;
+    command.soft_odometry_limited = false;
     Ok(())
 }
 
@@ -1774,6 +1830,7 @@ mod tests {
             telemetry_tx,
             allow_untokened_drive,
             deadman_ms: DEFAULT_DEADMAN_MS,
+            soft_odometry_limit_m: 20.0,
             camera_client: reqwest::Client::new(),
             camera_device: None,
             camera_stream_url: None,
@@ -2056,5 +2113,59 @@ mod tests {
         .await
         .expect("drive after estop reset");
         assert_eq!(&*commands.lock(), &[(0.0, 0.0), (0.0, 0.0), (0.15, 0.15)]);
+    }
+
+    #[tokio::test]
+    async fn soft_odometry_limit_blocks_forward_motion() {
+        let (mut state, commands) = test_state(false);
+        state.soft_odometry_limit_m = 1.0;
+        insert_session(&state, "pilot", SpeedMode::Medium);
+        {
+            let mut raw = state.raw.write();
+            raw.odometry_left = Some(1.05);
+            raw.odometry_right = Some(1.10);
+        }
+
+        let err = drive(
+            State(state.clone()),
+            Json(DriveReq {
+                left: 0.5,
+                right: 0.5,
+                token: Some("pilot".to_string()),
+            }),
+        )
+        .await
+        .expect_err("forward drive should hit soft odometry limit");
+
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
+        assert_eq!(err.message, "soft odometry limit reached");
+        assert_eq!(&*commands.lock(), &[(0.0, 0.0)]);
+        assert!(current_telemetry_frame(&state).soft_odometry_limited);
+    }
+
+    #[tokio::test]
+    async fn soft_odometry_limit_allows_reverse_recovery() {
+        let (mut state, commands) = test_state(false);
+        state.soft_odometry_limit_m = 1.0;
+        insert_session(&state, "pilot", SpeedMode::Medium);
+        {
+            let mut raw = state.raw.write();
+            raw.odometry_left = Some(1.05);
+            raw.odometry_right = Some(1.10);
+        }
+
+        let _ = drive(
+            State(state.clone()),
+            Json(DriveReq {
+                left: -0.5,
+                right: -0.5,
+                token: Some("pilot".to_string()),
+            }),
+        )
+        .await
+        .expect("reverse should allow recovery from soft limit");
+
+        assert_eq!(&*commands.lock(), &[(-0.25, -0.25)]);
+        assert!(!current_telemetry_frame(&state).soft_odometry_limited);
     }
 }

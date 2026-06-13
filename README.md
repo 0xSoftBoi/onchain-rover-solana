@@ -66,7 +66,9 @@ Three things need credentials/funds to *execute* and fail loudly without them
   (joystick), `ledger.html` (clear-sign treasury).
 - `contracts/` — `EventPass.sol`, `ReputationRegistry.sol`, `RaceMarket.sol`,
   `Treasury.sol`, `erc7730/treasury.json`.
-- `DEMO_RUNBOOK.md` — the timed 3-minute script. `docs/JETSON_BRIDGE.md` — bridge spec.
+- `DEMO_RUNBOOK.md` — the timed 3-minute script.
+  `docs/HARDWARE_BRINGUP.md` — cold-boot rover readiness runbook.
+  `docs/JETSON_BRIDGE.md` — bridge spec.
 
 ## Run
 ```bash

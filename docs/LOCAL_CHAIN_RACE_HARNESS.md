@@ -310,6 +310,10 @@ Open the field checklist before bringing phones and robots online:
 http://<laptop-ip>:4021/field.html
 ```
 
+For cold-boot hardware setup, use `docs/HARDWARE_BRINGUP.md` first. It covers
+Jetson WiFi, serial ownership, Rust rover launch, bridge attachment, phone
+links, emergency stop, and physical smoke checks.
+
 `/field/preflight` is the machine-readable version. It reports:
 
 - local chain health

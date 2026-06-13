@@ -103,6 +103,8 @@ locked 90-second demo by calling both APIs.
   laptop `.10` (set envs accordingly).
 - Provisioning path: USB-net (Jetson `192.168.55.1`, login `jetson`/`jetson`,
   SSH key installed on A). WiFi join via `nmcli dev wifi connect <ssid> password <pw>`.
+- Operator cold-boot flow, pass/fail checks, and recovery commands live in
+  `docs/HARDWARE_BRINGUP.md`.
 
 ## Autostart / recovery
 

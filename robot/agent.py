@@ -72,18 +72,27 @@ def capture_photo(path="/tmp/rover_proof.jpg"):
     # Use the shared camera (so MJPEG streaming + capture don't fight over
     # /dev/video0). Falls back to a direct open if the shared module is unused.
     frame = None
+    camera = None
     try:
-        import camera
-        frame = camera.latest()
+        import camera as camera
+        camera.start()
+        for _ in range(20):           # wait up to ~2s for a grabbed frame
+            frame = camera.latest()
+            if frame is not None:
+                break
+            time.sleep(0.1)
     except Exception:
-        frame = None
-    if frame is None:
+        camera = None
+    if frame is None and camera is None:
+        # no shared camera module — safe to open directly
         cap = cv2.VideoCapture(0)
         time.sleep(0.4)
         ok, frame = cap.read()
         cap.release()
         if not ok:
             raise RuntimeError("camera read failed")
+    if frame is None:
+        raise RuntimeError("camera read failed (shared camera no frame)")
     cv2.imwrite(path, frame)
     digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
     return path, digest

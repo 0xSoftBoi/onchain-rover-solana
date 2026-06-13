@@ -163,5 +163,81 @@ app.get("/health", async (_req, res) => {
   res.json({ ok: true, robots: Object.fromEntries(robots) });
 });
 
+// ---------- Auction orchestration (dashboard-driven) -----------------------
+type AuctionState = {
+  price?: number; agreed?: boolean; buyer?: string; note?: string;
+  pay?: string; mint?: string; settle: boolean;
+};
+const auctions = new Map<string, AuctionState>();
+
+app.post("/race/auction/start", async (req, res) => {
+  const { auctionId, settle: doSettle = false } = req.body;
+  const st: AuctionState = { settle: doSettle, note: "starting…" };
+  auctions.set(auctionId, st);
+  res.json({ started: true, auctionId });
+
+  // fire-and-forget orchestration; dashboard polls /race/auction/state
+  (async () => {
+    try {
+      await fetch(`${ROBOTS.courier.url}/negotiate/buy`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ budget: 1.25, auctionId, timeout_secs: 70 }),
+      });
+      await new Promise((r) => setTimeout(r, 800));
+      await fetch(`${ROBOTS.guard.url}/negotiate/sell`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start: 2.0, floor: 0.5, step: 0.25, tick_secs: 4.0, auctionId }),
+      });
+      st.note = "haggling…";
+      let deal: any = {};
+      for (let i = 0; i < 35; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        deal = await (await fetch(
+          `${ROBOTS.guard.url}/negotiate/result?auctionId=${auctionId}`)).json();
+        if (deal.price) st.price = deal.price;
+        if (deal.agreed !== undefined && !deal.pending) break;
+      }
+      if (!deal.agreed) { st.note = "no deal"; return; }
+      st.agreed = true; st.buyer = deal.buyer; st.price = deal.price;
+      st.note = "sold — settling on Arc…";
+      if (doSettle) {
+        const pay = await settle.pay("courier", "guard", String(deal.price));
+        st.pay = pay.tx;
+        const mint = await settle.mintPass("courier", String(deal.price));
+        st.mint = mint.tx;
+        st.note = "settled + minted on Arc";
+      }
+    } catch (e: any) { st.note = "error: " + e.message; }
+  })();
+});
+
+app.get("/race/auction/state", (req, res) => {
+  res.json(auctions.get(String(req.query.auctionId)) ?? { note: "unknown" });
+});
+
+// ---------- Mission-control dashboard --------------------------------------
+// One aggregate poll for the dashboard: robots + auction + on-chain balances.
+app.get("/status", async (_req, res) => {
+  const robots = await Promise.all(Object.entries(ROBOTS).map(async ([n, r]) => {
+    let health: any = { ok: false, error: "unreachable" };
+    try {
+      health = await (await fetch(`${r.url}/health`,
+        { signal: AbortSignal.timeout(2500) })).json();
+    } catch {}
+    let usdc6 = "0";
+    try { if (r.wallet) usdc6 = (await settle.usdcBalance(r.wallet)).toString(); } catch {}
+    return [n, { ...health, ens: r.ens, wallet: r.wallet, usdc6 }];
+  }));
+  res.json({
+    ok: true,
+    arc: { chainId: ARC.chainId, explorer: ARC.explorer },
+    eventPass: process.env.EVENTPASS_ADDRESS ?? null,
+    robots: Object.fromEntries(robots),
+    race: race.raceState(),
+  });
+});
+
+app.use(express.static(new URL("../public", import.meta.url).pathname));
+
 const PORT = Number(process.env.PORT ?? 4021);
 app.listen(PORT, () => console.log(`sidecar on :${PORT} (Arc ${ARC.chainId})`));

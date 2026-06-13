@@ -20,6 +20,7 @@ Usage:
         r.stop()
 """
 import json
+import os
 import time
 import threading
 
@@ -70,9 +71,14 @@ class Rover:
         return (t.get("v", 0) / 100.0) if t else None  # firmware reports centivolts
 
     # --- motion ------------------------------------------------------------
+    # Per-unit motor polarity: on some units positive drives backward. Set
+    # ROVER_DRIVE_INVERT=1 to flip so positive = forward. Verified per robot.
+    _INVERT = -1.0 if os.environ.get("ROVER_DRIVE_INVERT") == "1" else 1.0
+
     def drive(self, left, right):
-        """Set wheel speeds. left/right roughly -1.0..1.0."""
-        self._send({"T": 1, "L": float(left), "R": float(right)})
+        """Set wheel speeds. left/right roughly -1.0..1.0 (positive = forward)."""
+        self._send({"T": 1, "L": float(left) * self._INVERT,
+                    "R": float(right) * self._INVERT})
 
     def forward(self, speed=0.2):
         self.drive(speed, speed)

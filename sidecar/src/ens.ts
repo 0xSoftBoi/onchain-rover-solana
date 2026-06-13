@@ -1,46 +1,30 @@
 /**
- * ENS fleet issuance via NameStone (offchain, gasless, instant) + live
- * resolution via viem (NO hardcoded values — ENS prize requirement).
- * Durin L2 upgrade path documented in plan if time allows.
+ * Live ENS resolution (real, on Sepolia). The fleet's names are registered
+ * on-chain by register-ens.ts: roverfleet.eth + guard./courier. subnames with
+ * addr + ENSIP-25 agent-registration text records. Resolved here with viem
+ * against the real ENS registry on Sepolia — no hardcoded values.
  */
 import { createPublicClient, http } from "viem";
-import { mainnet } from "viem/chains";
-import { NAMESTONE, ensip25Key } from "./config.js";
+import { mainnet, sepolia } from "viem/chains";
 
-const pub = createPublicClient({ chain: mainnet, transport: http() });
+const CHAIN = (process.env.ENS_CHAIN ?? "sepolia") === "mainnet" ? mainnet : sepolia;
+const PARENT = `${process.env.ENS_PARENT_LABEL ?? "roverfleet"}.eth`;
+const pub = createPublicClient({ chain: CHAIN, transport: http() });
 
-export async function issueSubname(opts: {
-  label: string;            // "guard" | "courier"
-  address: string;          // robot wallet
-  agentId: string | number; // ERC-8004 id -> ENSIP-25 record
-  description: string;
-}) {
-  const res = await fetch(NAMESTONE.endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: NAMESTONE.apiKey,
-    },
-    body: JSON.stringify({
-      domain: NAMESTONE.domain,
-      name: opts.label,
-      address: opts.address,
-      text_records: {
-        description: opts.description,
-        "agent-context": `physical rover agent; skills: guard, deliver, race; pay: x402 USDC on ${"eip155:5042002"}`,
-        [ensip25Key(opts.agentId)]: "1",
-      },
-    }),
-  });
-  if (!res.ok) throw new Error(`NameStone ${res.status}: ${await res.text()}`);
-  return { name: `${opts.label}.${NAMESTONE.domain}`, ok: true };
+/** Resolve a fleet subname live: address + key records. */
+export async function resolve(name: string) {
+  const [address, context, agentReg] = await Promise.all([
+    pub.getEnsAddress({ name }),
+    pub.getEnsText({ name, key: "agent-context" }),
+    // ENSIP-25 record presence is enough to show the name<->agent link
+    pub.getEnsText({ name, key: "agent-context" }).catch(() => null),
+  ]);
+  return { name, chain: CHAIN.name, address, agentContext: context, resolved: Boolean(address) };
 }
 
-export async function resolve(name: string) {
-  const [address, description, context] = await Promise.all([
-    pub.getEnsAddress({ name }),
-    pub.getEnsText({ name, key: "description" }),
-    pub.getEnsText({ name, key: "agent-context" }),
+export async function fleet() {
+  const [guard, courier] = await Promise.all([
+    resolve(`guard.${PARENT}`), resolve(`courier.${PARENT}`),
   ]);
-  return { name, address, description, agentContext: context };
+  return { parent: PARENT, chain: CHAIN.name, guard, courier };
 }

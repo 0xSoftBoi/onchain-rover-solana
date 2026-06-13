@@ -221,9 +221,11 @@ app.post("/give-feedback", async (req, res) => {
   }));
 });
 
-app.post("/ens/issue", async (req, res) => res.json(await ens.issueSubname(req.body)));
+// ENS is issued on-chain by register-ens.ts (real registration, not an API).
+// These endpoints resolve the live records.
 app.get("/ens/resolve", async (req, res) =>
   res.json(await ens.resolve(String(req.query.name))));
+app.get("/ens/fleet", async (_req, res) => res.json(await ens.fleet()));
 
 app.get("/leaderboard", async (_req, res) => {
   const fleet = await lb.fleetFeedback(

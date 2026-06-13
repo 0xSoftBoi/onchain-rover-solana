@@ -338,12 +338,15 @@ app.get("/status", async (_req, res) => {
     try { if (r.wallet) usdc6 = (await settle.usdcBalance(r.wallet)).toString(); } catch {}
     return [n, { ...health, ens: r.ens, wallet: r.wallet, usdc6, url: r.url }];
   }));
+  let ensFleet: any = null;
+  try { ensFleet = await ens.fleet(); } catch {}
   res.json({
     ok: true,
     arc: { chainId: ARC.chainId, explorer: ARC.explorer },
     eventPass: process.env.EVENTPASS_ADDRESS ?? null,
     robots: Object.fromEntries(robots),
     race: race.raceState(),
+    ens: ensFleet,
   });
 });
 

@@ -53,6 +53,11 @@
   </div>
 
   <div class="card">
+    <h2>🏷️ ENS Fleet (live resolve)</h2>
+    <div id="ens">—</div>
+  </div>
+
+  <div class="card">
     <h2>🏆 ERC-8004 Reputation (live flywheel)</h2>
     <div id="rep">—</div>
   </div>
@@ -126,6 +131,16 @@ async function poll() {
     if (s.race && s.race.status) {
       $("auction-status").textContent = "race: " + s.race.status +
         (s.race.winner ? ` · winner ${s.race.winner}` : "");
+    }
+    if (s.ens) {
+      const f = s.ens, row = (label, r) => {
+        const ok = r && r.resolved;
+        return `<div class="kv"><span>${(r&&r.name)||label}</span>
+          <span class="v">${ok ? '<b style="color:var(--grn)">'+r.address.slice(0,8)+'…</b> ✓ ENSIP-25'
+            : '<span style="color:var(--dim)">unresolved ('+f.chain+')</span>'}</span></div>`;
+      };
+      $("ens").innerHTML = `<div class="kv"><span>parent</span><span class="v">${f.parent} · ${f.chain}</span></div>`
+        + row("guard", f.guard) + row("courier", f.courier);
     }
     try {
       const rep = await (await fetch("/reputation")).json();

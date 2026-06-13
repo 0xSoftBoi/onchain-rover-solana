@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Rover GP — Pilot</title>
+<style>
+  html,body { margin:0; height:100%; background:#0a0e14; color:#e6edf3;
+    font:15px/1.4 ui-monospace,Menlo,monospace; overflow:hidden; touch-action:none; }
+  header { padding:12px 16px; border-bottom:1px solid #222c3a; display:flex;
+    justify-content:space-between; align-items:center; }
+  .title { font-weight:700; } .conn { font-size:12px; color:#7d8aa0; }
+  .conn.up { color:#3fb950; }
+  #zone { position:fixed; inset:60px 0 0 0; }
+  #estop { position:fixed; right:18px; bottom:18px; width:90px; height:90px;
+    border-radius:50%; background:#f85149; color:#fff; border:0; font:700 16px monospace;
+    box-shadow:0 4px 16px rgba(248,81,73,.5); z-index:10; }
+  #hud { position:fixed; left:16px; bottom:20px; font-size:12px; color:#7d8aa0; }
+  .speed { color:#d8a657; font-size:20px; font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">🏁 Rover GP — <span id="robot">courier</span></div>
+  <div class="conn" id="conn">connecting…</div>
+</header>
+<div id="zone"></div>
+<div id="hud">L:<span id="l">0.00</span> R:<span id="r">0.00</span><br><span class="speed" id="thr">●</span></div>
+<button id="estop">STOP</button>
+
+<script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const robotName = params.get("robot") || "courier";
+document.getElementById("robot").textContent = robotName;
+let ws, token, alive = false, last = {l:0,r:0};
+
+async function connect() {
+  const auth = await (await fetch("/pilot/dev-authorize", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ robot: robotName }) })).json();
+  if (auth.error) { document.getElementById("conn").textContent = "err: "+auth.error; return; }
+  token = auth.token;
+  ws = new WebSocket(auth.driveWs);
+  ws.onopen = () => { alive = true;
+    document.getElementById("conn").textContent = "● connected";
+    document.getElementById("conn").className = "conn up"; };
+  ws.onclose = () => { alive = false;
+    document.getElementById("conn").textContent = "disconnected"; setTimeout(connect, 1500); };
+}
+function send(l, r) {
+  if (!alive) return;
+  l = Math.max(-1, Math.min(1, l)); r = Math.max(-1, Math.min(1, r));
+  ws.send(JSON.stringify({ left:l, right:r, token, t: Date.now() }));
+  document.getElementById("l").textContent = l.toFixed(2);
+  document.getElementById("r").textContent = r.toFixed(2);
+  document.getElementById("thr").style.opacity = (Math.abs(l)+Math.abs(r))/2 + 0.2;
+}
+// joystick -> differential drive (tank mixing)
+const joy = nipplejs.create({ zone: document.getElementById("zone"),
+  mode:"static", position:{left:"50%",top:"55%"}, color:"#58a6ff", size:140 });
+let iv;
+joy.on("move", (_e, d) => {
+  const fwd = Math.sin(d.angle.radian) * (d.force>1?1:d.force);  // -1..1
+  const turn = Math.cos(d.angle.radian) * (d.force>1?1:d.force);
+  last = { l: fwd + turn*0.6, r: fwd - turn*0.6 };
+});
+joy.on("start", () => { clearInterval(iv); iv = setInterval(()=>send(last.l,last.r), 80); }); // 12.5Hz
+joy.on("end", () => { clearInterval(iv); last={l:0,r:0}; send(0,0); });
+document.getElementById("estop").onclick = () => { last={l:0,r:0}; send(0,0);
+  fetch("/estop/"+robotName, {method:"POST"}); };
+connect();
+</script>
+</body>
+</html>

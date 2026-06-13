@@ -215,6 +215,21 @@ app.get("/race/auction/state", (req, res) => {
   res.json(auctions.get(String(req.query.auctionId)) ?? { note: "unknown" });
 });
 
+// Dev pilot authorize (no payment) — for testing the control loop. The real
+// paid path is /pilot/:robot/start (x402). Returns the robot's WS drive URL.
+app.post("/pilot/dev-authorize", async (req, res) => {
+  const name = (req.body.robot ?? "courier") as RobotName;
+  const token = "dev-" + Math.random().toString(36).slice(2, 10);
+  try {
+    await fetch(`${robot(name).url}/pilot/authorize`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, ttl_secs: 300 }),
+    });
+    res.json({ token, robot: name,
+      driveWs: `${robot(name).url.replace("http", "ws")}/ws/drive` });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // ---------- Mission-control dashboard --------------------------------------
 // One aggregate poll for the dashboard: robots + auction + on-chain balances.
 app.get("/status", async (_req, res) => {

@@ -12,7 +12,7 @@ import hashlib
 import os
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from pydantic import BaseModel
 
 import threading
@@ -190,7 +190,7 @@ DEADMAN_SECS = 0.4   # no command for this long -> motors stop
 
 
 @app.websocket("/ws/drive")
-async def ws_drive(ws):
+async def ws_drive(ws: WebSocket):
     """20 Hz pilot control (nipplejs -> {left,right,token}). Deadman watchdog
     stops the motors if commands cease; stale (>200ms) commands are dropped."""
     import asyncio

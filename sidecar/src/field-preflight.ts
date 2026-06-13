@@ -28,6 +28,8 @@ type ProbeResult = {
   error?: string;
 };
 
+const TELEMETRY_STALE_MS = 1600;
+
 export async function buildFieldPreflight(opts: BuildOptions) {
   const checks: PreflightCheck[] = [];
   const add = (
@@ -165,13 +167,14 @@ function addConfigChecks(
 
 async function probeRobots() {
   const entries = await Promise.all(Object.entries(ROBOTS).map(async ([name, robot]) => {
-    const [health, sensors] = await Promise.all([
+    const [health, capabilities, sensors] = await Promise.all([
       probeJson(`${robot.url}/health`, 2500),
+      probeJson(`${robot.url}/capabilities`, 2500),
       probeJson(`${robot.url}/sensors`, 2500),
     ]);
-    return [name, { health, sensors }] as const;
+    return [name, { health, capabilities, sensors }] as const;
   }));
-  return Object.fromEntries(entries) as Record<string, { health: ProbeResult; sensors: ProbeResult }>;
+  return Object.fromEntries(entries) as Record<string, { health: ProbeResult; capabilities: ProbeResult; sensors: ProbeResult }>;
 }
 
 async function probeJson(url: string, timeoutMs: number): Promise<ProbeResult> {
@@ -195,13 +198,18 @@ async function probeJson(url: string, timeoutMs: number): Promise<ProbeResult> {
 function addRobotChecks(
   add: (category: string, name: string, status: PreflightStatus, detail: string, remediation: string) => void,
   name: "guard" | "courier",
-  probe: { health: ProbeResult; sensors: ProbeResult },
+  probe: { health: ProbeResult; capabilities: ProbeResult; sensors: ProbeResult },
   bridge: any,
 ) {
   const health = probe.health;
   add("robot", `${name} service`, health.ok && health.body?.ok !== false ? "pass" : "fail",
     probeDetail(health, `${ROBOTS[name].url}/health`),
     "Check robot power, WiFi or USB-net, service port, and stale ROBOT_URL values.");
+
+  const capabilities = probe.capabilities;
+  add("robot", `${name} Rust capabilities`, capabilities.ok && capabilities.body?.ok !== false ? "pass" : "warn",
+    capabilities.ok ? rustCapabilitiesDetail(capabilities.body) : probeDetail(capabilities, `${ROBOTS[name].url}/capabilities`),
+    "Start the Rust robot-harness service or confirm this robot is intentionally using a legacy adapter.");
 
   const bridgeConnected = Boolean(bridge?.robotConnected);
   add("robot", `${name} bridge`, bridgeConnected ? "pass" : "warn",
@@ -210,11 +218,24 @@ function addRobotChecks(
       : "not attached to sidecar websocket",
     "Start the Rust robot server bridge or connect the simulator before race start.");
 
+  const telemetryAge = finiteAny(bridge?.robotAgeMs);
+  add("robot", `${name} telemetry freshness`, bridgeConnected && telemetryAge !== null && telemetryAge <= TELEMETRY_STALE_MS ? "pass" : bridgeConnected ? "fail" : "warn",
+    bridgeConnected
+      ? telemetryAge !== null
+        ? `${telemetryAge}ms since last robot frame`
+        : "bridge attached but telemetry age missing"
+      : "no robot websocket telemetry",
+    "Restart the harness bridge and confirm `/ws/telemetry` is streaming from the Rust robot service.");
+
   const telemetry = bridge?.telemetry ?? health.body ?? probe.sensors.body ?? {};
   const battery = batteryVoltage(telemetry);
   add("robot", `${name} battery telemetry`, battery ? "pass" : "warn",
     battery ? `${battery.toFixed(2)}V` : "no battery voltage in health, sensors, or bridge telemetry",
     "Confirm ESP32 telemetry frames are flowing and battery fields are mapped.");
+
+  const sensors = sensorGroupStatus(probe.sensors.body ?? telemetry);
+  add("robot", `${name} sensor groups`, sensors.status, sensors.detail,
+    "Check `/sensors` on the Rust server for battery, odometry, IMU, lidar, camera, and raw frame fields.");
 
   const camera = cameraStatus(telemetry);
   add("robot", `${name} camera`, camera.status === "available" ? "pass" : "warn",
@@ -224,12 +245,25 @@ function addRobotChecks(
   const serial = serialStatus(probe.sensors.body ?? telemetry);
   add("robot", `${name} serial`, serial.status, serial.detail,
     "Stop the old Python/Waveshare app, release the serial device, and restart the Rust server.");
+
+  const motors = motorStatus(bridge, telemetry);
+  add("robot", `${name} motors`, motors.status, motors.detail,
+    "Use `/robot/:robot/stop` or Rust `/motors/stop`; clear estop only after the stage is safe.");
 }
 
 function probeDetail(probe: ProbeResult, url: string) {
   if (probe.ok) return `HTTP ${probe.status} in ${probe.latencyMs}ms at ${url}`;
   if (probe.status) return `HTTP ${probe.status} from ${url}`;
   return `${probe.error ?? "network failure"} at ${url}`;
+}
+
+function rustCapabilitiesDetail(value: any): string {
+  const mode = String(value?.mode ?? "unknown");
+  const role = String(value?.role ?? "unknown");
+  const serialPort = String(value?.serial_port ?? "no serial");
+  const endpoints = Array.isArray(value?.endpoints) ? value.endpoints.length : 0;
+  const camera = String(value?.camera?.status ?? "no camera");
+  return `${role} ${mode} on ${serialPort}; camera ${camera}; ${endpoints} endpoints`;
 }
 
 function batteryVoltage(value: any): number | null {
@@ -248,12 +282,59 @@ function cameraStatus(value: any): { status: "available" | "missing"; detail: st
   return { status: "missing", detail: raw || "no camera status reported" };
 }
 
+function sensorGroupStatus(value: any): { status: PreflightStatus; detail: string } {
+  const sensors = value?.sensors ?? value;
+  const parts = {
+    battery: String(sensors?.battery?.status ?? (finite(value?.battery_v) ? "available" : "")).toLowerCase(),
+    odometry: String(sensors?.odometry?.status ?? (finite(value?.odometry_left) || finite(value?.odometry_right) ? "available" : "")).toLowerCase(),
+    imu: String(sensors?.imu?.status ?? "").toLowerCase(),
+    lidar: String(sensors?.lidar?.status ?? value?.lidar?.status ?? "").toLowerCase(),
+    camera: String(sensors?.camera?.status ?? value?.camera?.status ?? "").toLowerCase(),
+    raw: String(sensors?.raw_frame?.status ?? value?.raw_frame?.status ?? "").toLowerCase(),
+  };
+  const missingRequired = (["battery", "odometry", "raw"] as const)
+    .filter((key) => !statusAvailable(parts[key]));
+  const missingOptional = (["imu", "lidar", "camera"] as const)
+    .filter((key) => parts[key] && !statusAvailable(parts[key]));
+  const detail = Object.entries(parts)
+    .map(([key, status]) => `${key}:${status || "missing"}`)
+    .join(" ");
+  if (missingRequired.length) return { status: "fail", detail };
+  if (missingOptional.length) return { status: "warn", detail };
+  return { status: "pass", detail };
+}
+
+function statusAvailable(status: string): boolean {
+  return Boolean(status) && !/(missing|unavailable|error|busy|denied|absent|stale)/.test(status);
+}
+
 function serialStatus(value: any): { status: PreflightStatus; detail: string } {
   const raw = String(value?.serial?.status ?? value?.sensors?.raw_frame?.status ?? value?.raw_frame?.status ?? "").toLowerCase();
   if (!raw) return { status: "warn", detail: "serial/raw-frame status not reported" };
   if (/(busy|permission|denied|locked)/.test(raw)) return { status: "fail", detail: `serial ${raw}` };
   if (/(missing|absent|unavailable|error)/.test(raw)) return { status: "fail", detail: `serial ${raw}` };
   return { status: "pass", detail: `serial ${raw}` };
+}
+
+function motorStatus(bridge: any, telemetry: any): { status: PreflightStatus; detail: string } {
+  const left = finiteAny(telemetry?.left_cmd) ?? finiteAny(bridge?.lastCommand?.left) ?? 0;
+  const right = finiteAny(telemetry?.right_cmd) ?? finiteAny(bridge?.lastCommand?.right) ?? 0;
+  const estop = telemetry?.estop === true;
+  const stoppedByDeadman = telemetry?.stopped_by_deadman === true;
+  const speedMode = String(telemetry?.speed_mode ?? bridge?.lastCommand?.speed_mode ?? "unknown");
+
+  if (estop) {
+    return { status: "warn", detail: `estop active; L ${left.toFixed(2)} R ${right.toFixed(2)} ${speedMode}` };
+  }
+  if (Math.abs(left) > 0 || Math.abs(right) > 0) {
+    return { status: "warn", detail: `nonzero command L ${left.toFixed(2)} R ${right.toFixed(2)} ${speedMode}` };
+  }
+  return {
+    status: "pass",
+    detail: stoppedByDeadman
+      ? `stopped after deadman; L ${left.toFixed(2)} R ${right.toFixed(2)} ${speedMode}`
+      : `stopped; L ${left.toFixed(2)} R ${right.toFixed(2)} ${speedMode}`,
+  };
 }
 
 function addRoundChecks(
@@ -279,4 +360,10 @@ function addRoundChecks(
 function finite(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function finiteAny(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }

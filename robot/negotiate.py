@@ -41,7 +41,19 @@ def run_seller(item="EventPass", start=2.00, floor=0.50, step=0.25,
     sets a demand-based reserve + step (not a fixed decrement). Returns the deal
     dict, or a no-deal dict if no buyer by the reserve."""
     import brain
-    demand = float(os.environ.get("AUCTION_DEMAND", "0.5"))  # live signal: bidders waiting
+    # LEARNING: pull demand learned from past auction outcomes (sidecar), so the
+    # reserve adapts over time. Falls back to env / neutral if unavailable.
+    demand = float(os.environ.get("AUCTION_DEMAND", "0.5"))
+    sidecar = os.environ.get("SIDECAR_URL")
+    if sidecar:
+        try:
+            import requests
+            d = requests.get(f"{sidecar}/learning", timeout=4).json()
+            if "demand" in d:
+                demand = float(d["demand"])
+                reason.emit("learn", f"learned from {d.get('n',0)} past auctions: {d.get('note','')}", "plan")
+        except Exception:
+            pass
     plan = brain.seller_reserve(start, floor, demand)
     reserve, step = plan["reserve"], plan["step"]
     reason.emit("reserve", f"demand {demand:.1f} — reserve ${reserve}, step ${step}. "

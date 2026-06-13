@@ -117,6 +117,11 @@
   </div>
 
   <div class="card">
+    <h2>📈 Adaptive Learning — seller learns demand</h2>
+    <div id="learning">—</div>
+  </div>
+
+  <div class="card">
     <h2>🏆 ERC-8004 Reputation (live flywheel)</h2>
     <div id="rep">—</div>
   </div>
@@ -297,6 +302,22 @@ poll(); setInterval(poll, 4000);
 pollOnchain(); setInterval(pollOnchain, 3000);
 pollReason(); setInterval(pollReason, 1500);
 pollProof(); setInterval(pollProof, 3000);
+async function pollLearning(){
+  try {
+    const d = await (await fetch("/learning")).json();
+    if (typeof d.demand !== "number") return;
+    const pct = Math.round(d.demand*100);
+    const col = d.demand>0.6?'var(--grn)':d.demand<0.4?'var(--gold)':'var(--blu)';
+    const hist = (d.history||[]).slice(0,6).map(o =>
+      `<span style="color:${o.sold?'var(--grn)':'var(--dim)'}">${o.sold?'$'+o.price.toFixed(2):'unsold'}</span>`).join(" · ");
+    $("learning").innerHTML =
+      `<div style="font-size:30px;font-weight:800;color:${col}">demand ${d.demand.toFixed(2)}</div>
+       <div class="ocstats" style="padding:6px 0"><div style="width:100%;height:8px;background:#0a0e14;border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${col}"></div></div></div>
+       <div class="addr" style="margin:6px 0">${d.note||''}</div>
+       <div class="kv"><span class="addr">recent outcomes</span><span class="v">${hist}</span></div>`;
+  } catch {}
+}
+pollLearning(); setInterval(pollLearning, 3000);
 </script>
 </body>
 </html>

@@ -99,6 +99,17 @@ const mockRep = () => ({
 });
 const mockOdds = () => ({ pool: { guard: 3, courier: 5 }, total: 8,
   odds: { guard: 2.67, courier: 1.6 }, count: 6 });
+const mockLearning = () => ({
+  demand: 0.72, n: 6, sellRate: 0.83, avgRounds: 2.2,
+  note: "5/6 sold, avg 2.2 rounds → demand 0.72 (holding value)",
+  history: [
+    { t: Date.now() - 60000, price: 1.50, sold: true, rounds: 2 },
+    { t: Date.now() - 120000, price: 1.25, sold: true, rounds: 3 },
+    { t: Date.now() - 200000, price: 1.50, sold: true, rounds: 2 },
+    { t: Date.now() - 300000, price: 0.75, sold: false, rounds: 6 },
+    { t: Date.now() - 380000, price: 1.25, sold: true, rounds: 3 },
+  ],
+});
 
 const gateway = createGatewayMiddleware({
   sellerAddress: process.env.TREASURY_ADDRESS!,    // fleet treasury (Ledger-governed)
@@ -163,6 +174,33 @@ app.post("/reason", (req, res) => {
 app.get("/reason/feed", (_req, res) => {
   if (MOCK) return res.json({ events: mockReason() });
   res.json({ events: reasoning.slice(0, 60) });
+});
+
+// --- adaptive learning: the seller learns demand from past auction outcomes --
+type Outcome = { t: number; price: number; sold: boolean; rounds: number };
+const auctionHistory: Outcome[] = [];
+function recordOutcome(o: Omit<Outcome, "t">) {
+  auctionHistory.unshift({ ...o, t: Date.now() });
+  if (auctionHistory.length > 50) auctionHistory.pop();
+}
+// learned demand 0..1: recent sales that closed fast + near start price => high
+// demand => seller holds value (higher reserve). Slow/floor sales => low demand.
+function learnedDemand() {
+  const recent = auctionHistory.slice(0, 8);
+  if (!recent.length) return { demand: 0.5, note: "no history yet — neutral demand 0.5", n: 0 };
+  const sold = recent.filter((o) => o.sold);
+  const sellRate = sold.length / recent.length;
+  const avgRounds = sold.length ? sold.reduce((s, o) => s + o.rounds, 0) / sold.length : 6;
+  // fast sales (few rounds) + high sell-rate => high demand
+  const speed = Math.max(0, 1 - (avgRounds - 1) / 6);       // 1 round->1.0, 7+->0
+  const demand = Math.max(0.1, Math.min(0.95, 0.5 * sellRate + 0.5 * speed));
+  const note = `${sold.length}/${recent.length} sold, avg ${avgRounds.toFixed(1)} rounds`
+    + ` → demand ${demand.toFixed(2)} (${demand > 0.6 ? "holding value" : demand < 0.4 ? "moving inventory" : "balanced"})`;
+  return { demand: +demand.toFixed(2), note, n: recent.length, sellRate, avgRounds: +avgRounds.toFixed(1) };
+}
+app.get("/learning", (_req, res) => {
+  if (MOCK) return res.json(mockLearning());
+  res.json({ ...learnedDemand(), history: auctionHistory.slice(0, 10) });
 });
 
 // --- latest proof-of-action (pulled from a public Walrus aggregator) -------
@@ -452,6 +490,9 @@ app.post("/race/auction/start", async (req, res) => {
         if (deal.price) st.price = deal.price;
         if (deal.agreed !== undefined && !deal.pending) break;
       }
+      // LEARNING: record the outcome so the seller adapts demand next time
+      recordOutcome({ price: deal.price ?? 0, sold: !!deal.agreed,
+                      rounds: deal.rounds ?? (deal.history?.length ?? 4) });
       if (!deal.agreed) { st.note = "no deal"; return; }
       st.agreed = true; st.buyer = deal.buyer; st.price = deal.price;
       st.note = "sold — settling on Arc…";

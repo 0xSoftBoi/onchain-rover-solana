@@ -1,46 +1,88 @@
 # The Onchain Rover — ETHGlobal NYC 2026
 
-**"Give your AI agent a body."** Two Waveshare UGV rovers (Jetson Orin NX) as a
-physical agent fleet you can hire over HTTP: x402 USDC payments on Arc, ENS
-fleet identity, ERC-8004 reputation, World-ID human backing, Gemini-verified
-proof on Walrus, Ledger-governed treasury.
+### Give your AI agent a body.
 
-- **Act 1 — The Checkpoint:** courier robot is hired, drives to the guard
-  robot, they handshake over GibberLink sound, on-chain verify → reject → pay →
-  pass minted → admitted → proof → reputation. (`robot/checkpoint.py`)
-- **Act 2 — Rover GP:** spectators pay to pilot the rovers ($1 x402 sessions)
-  and bet USDC on races (parimutuel `contracts/RaceMarket.sol` on Arc, settled
-  by the guard robot's Gemini-verified finish-line attestation; one bet per
-  World-ID human).
+Every agent at this hackathon is trapped behind a screen. We gave two of them
+bodies: a fleet of **Waveshare UGV rovers (Jetson Orin NX)** that you **hire over
+HTTP**, that earn an **on-chain reputation**, and whose **treasury only a human
+can unlock with a Ledger**. Identity, payments, reputation, a labor market, and
+human governance — every sponsor doing real work, with a robot on the table the
+whole time.
+
+```
+   hire (x402/Arc) → robot acts → Gemini verifies → proof on Walrus
+         ▲                                                │
+    BigQuery rank ◄── ERC-8004 reputation ◄── requester rates the job
+```
+
+## The two acts
+- **Act 1 — The Checkpoint:** a courier robot is hired, drives to the guard
+  robot, they greet in speech then **switch to GibberLink** (data-over-sound);
+  the guard verifies it **on-chain** (signed challenge + AgentBook human-backing +
+  ERC-8004 + EventPass) → rejects it → the robots run a **Texas-auctioneer Dutch
+  auction** to negotiate the pass price → pay + mint on Arc → admitted → proof to
+  Walrus → reputation ticks up.
+- **Act 2 — Rover GP:** spectators **pay to pilot** the rovers ($1 x402 sessions,
+  WebSocket joystick + deadman) and **bet USDC** on a fruit-obstacle drag race
+  (parimutuel, **one bet per human via real World ID**), settled on-chain by the
+  guard robot's Walrus-anchored finish photo.
+- **Climax:** withdrawing the fleet's earnings **blocks** until a human
+  clear-signs on a **Ledger** (ERC-7730: "Withdraw N USDC → recipient").
+
+## What's real (not mocked)
+Every integration is real code — on-chain reads/writes or real signatures, no
+fake data (`grep` the repo: no `Math.random` nullifiers, no stubs):
+- **Identity** — robots sign challenges with their own EOA keys (verified by
+  recovery); **live AgentBook reads** on World Chain for human-backing.
+- **World ID** — real IDKit proof → World cloud verifier → real nullifier; every
+  bet requires it (no proof = no bet).
+- **ENS** — real on-chain registration on Sepolia (`roverfleet.eth` + guard/
+  courier subnames + ENSIP-25 `agent-registration` records), resolved live via viem.
+- **Payments / settlement** — real USDC transfers, EventPass mint, RaceMarket
+  bets + settle on **Arc** (USDC-as-gas), via viem.
+- **Reputation** — ERC-8004-compatible `ReputationRegistry` on Arc, requester
+  rates the agent, feeds the leaderboard.
+- **Proof** — finish/job photos stored on **Walrus** (real blobId, read-back
+  verified), hash anchored on-chain.
+- **Governance** — `Treasury` withdrawable only by the Ledger-held owner,
+  clear-signed via an ERC-7730 descriptor.
+
+Three things need credentials/funds to *execute* and fail loudly without them
+(no mock fallback): **Arc USDC** (Circle faucet/booth), **`WORLD_APP_ID`**
+(developer.world.org), **Sepolia ETH** for ENS registration.
 
 ## Layout
-- `robot/` — Python, runs on each Jetson. `api.py` (FastAPI :8000, LAN-only
-  interface contract), `rover.py` (serial bridge, tested), `agent.py` (LLM task
-  loop, tested), `perception.py` (Gemini seek + AprilTag fallback), `proof.py`
-  (Walrus + Gemini verdicts), `gibber.py` (ggwave + network fallback),
-  `checkpoint.py` (demo orchestrator). `x402_server_legacy.py` is superseded.
-- `sidecar/` — Node 22 + TS, runs on the laptop (:4021). PUBLIC paid surface:
-  Circle x402 Gateway middleware (Arc testnet), ERC-8004, ENS/NameStone,
-  BigQuery leaderboard, pilot-session safety layer, race coordinator.
-- `web/` — Next.js (partner track): IDKit, Dynamic wallets, pilot gamepad,
-  betting UI, Ledger clear-sign climax, leaderboard. See `web/README.md`.
-- `contracts/` — `RaceMarket.sol` (+ EventPass TODO) + ERC-7730 descriptors.
-- `docs/JETSON_BRIDGE.md` — full robot↔rails bridge spec (ports, serial
-  protocol, provisioning checklist for Robot B).
+- `robot/` — Python on each Jetson. `api.py` (FastAPI :8000 + MJPEG `/stream` +
+  pilot WS + heartbeat), `rover.py` (serial bridge), `agent.py` (LLM task loop),
+  `camera.py` (shared capture), `perception.py` (Gemini seek + AprilTag),
+  `negotiate.py` (Dutch auction), `finish_line.py` (race judge), `gibber.py`
+  (GibberLink), `voice.py` (espeak), `proof.py` (Walrus), `checkpoint.py` (Act 1).
+- `sidecar/` — Node 22 + TS (:4021). x402 Gateway paid surface, `identity.ts`
+  (signed challenge + AgentBook), `worldid.ts` (real verify), `settle.ts`
+  (Arc pay/mint/reputation/race/treasury), `ens.ts` (live resolution),
+  `register-ens.ts` / `go-live.ts` / `preflight.ts` scripts. Serves the dashboards.
+- `sidecar/public/` — `index.html` mission control (live feeds, balances, ENS,
+  reputation, 1-click auction+settle), `race.html` (betting), `pilot.html`
+  (joystick), `ledger.html` (clear-sign treasury).
+- `contracts/` — `EventPass.sol`, `ReputationRegistry.sol`, `RaceMarket.sol`,
+  `Treasury.sol`, `erc7730/treasury.json`.
+- `DEMO_RUNBOOK.md` — the timed 3-minute script. `docs/JETSON_BRIDGE.md` — bridge spec.
 
 ## Run
 ```bash
-# Jetson (each robot; stop the stock app first):
+# each Jetson (stop the stock app first):
 pgrep -f '[a]pp.py' | xargs -r kill
-ROBOT_ROLE=guard ~/ugv_jetson/ugv-env/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000
+ROBOT_ROLE=guard SIDECAR_URL=http://<laptop-ip>:4021 \
+  ~/ugv_jetson/ugv-env/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000
 
-# Laptop:
-cd sidecar && npm i && cp ../.env.example .env  # fill keys
-npm run dev
+# laptop:
+cd sidecar && npm i && npm run build:ledger
+node --import tsx src/preflight.ts      # readiness board
+node --import tsx src/index.ts          # sidecar + dashboards on :4021
 
-# Demo:
-python3 robot/checkpoint.py
+# once funded (Circle booth / faucets):
+npx tsx src/register-ens.ts             # real ENS on Sepolia
+npx tsx src/go-live.ts                  # deploy contracts + run the full on-chain loop
 ```
 
-Master plan (tiers, cut order, verified addresses/gotchas): see the
-ethnyc2026-rover-plan memory note.
+Demo at `http://<laptop>:4021/` (mission control) · `/race.html` · `/pilot.html` · `/ledger.html`.

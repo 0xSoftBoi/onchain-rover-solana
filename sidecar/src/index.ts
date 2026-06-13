@@ -22,6 +22,10 @@ import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
 import * as settle from "./settle.js";
 
+// Never let one bad call take down the demo: log unhandled errors, stay up.
+process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
+process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
+
 const app = express();
 app.use(express.json());
 
@@ -246,12 +250,15 @@ app.post("/register-agent", async (req, res) => {
 });
 
 app.post("/give-feedback", async (req, res) => {
-  const r = robot(req.body.robot);
-  res.json(await erc8004.giveFeedback({
-    agentId: BigInt(r.agentId ?? 0),
-    score: req.body.score, skill: req.body.skill,
-    blobId: req.body.blobId, sha256: req.body.sha256,
-  }));
+  try {
+    const r = robot(req.body.robot);
+    // Arc reputation (same chain as the rest of the flywheel)
+    res.json(await settle.giveFeedback({
+      agentId: Number(r.agentId ?? 0),
+      score: req.body.score, skill: req.body.skill,
+      blobId: req.body.blobId, sha256: req.body.sha256,
+    }));
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 // ENS is issued on-chain by register-ens.ts (real registration, not an API).
@@ -384,6 +391,12 @@ app.get("/status", async (_req, res) => {
 });
 
 app.use(express.static(new URL("../public", import.meta.url).pathname));
+
+// Express error middleware — any thrown/rejected handler returns 500, no crash.
+app.use((err: any, _req: any, res: any, _next: any) => {
+  console.error("handler error:", err?.message ?? err);
+  if (!res.headersSent) res.status(500).json({ error: String(err?.message ?? err) });
+});
 
 const PORT = Number(process.env.PORT ?? 4021);
 app.listen(PORT, () => console.log(`sidecar on :${PORT} (Arc ${ARC.chainId})`));

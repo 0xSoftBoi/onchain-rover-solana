@@ -8,10 +8,16 @@
   body { margin:0; background:#0a0e14; color:#e6edf3; font:15px/1.6 ui-monospace,Menlo,monospace;
          display:flex; flex-direction:column; align-items:center; padding:40px 20px; }
   .card { background:#141a24; border:1px solid #222c3a; border-radius:14px; padding:28px;
-          max-width:520px; width:100%; }
+          max-width:860px; width:100%; }
   h1 { font-size:20px; margin:0 0 6px; } .sub { color:#7d8aa0; font-size:13px; margin-bottom:20px; }
   .bal { font-size:42px; font-weight:800; color:#d8a657; text-align:center; margin:10px 0; }
   .bal small { font-size:14px; color:#7d8aa0; font-weight:400; }
+  .section { border-top:1px solid #222c3a; margin-top:22px; padding-top:18px; }
+  .section h2 { font-size:15px; margin:0 0 12px; }
+  .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+  .metric { background:#0a0e14; border:1px solid #222c3a; border-radius:8px; padding:10px; }
+  .metric .k { color:#7d8aa0; font-size:12px; }
+  .metric .v { font-size:18px; color:#e6edf3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .row { display:flex; gap:8px; margin:10px 0; }
   input { flex:1; background:#0a0e14; border:1px solid #222c3a; color:#e6edf3;
           padding:10px; border-radius:7px; font:inherit; }
@@ -26,6 +32,23 @@
   .step { display:flex; align-items:center; gap:8px; color:#7d8aa0; font-size:13px; margin:6px 0; }
   .step .n { background:#222c3a; border-radius:50%; width:20px; height:20px; display:inline-flex;
              align-items:center; justify-content:center; font-size:11px; flex:none; }
+  .table-wrap { overflow:auto; border:1px solid #222c3a; border-radius:8px; }
+  table { width:100%; border-collapse:collapse; min-width:760px; }
+  th, td { padding:9px 10px; border-bottom:1px solid #222c3a; text-align:left; font-size:12px; }
+  th { color:#7d8aa0; font-weight:600; background:#0f1520; }
+  tr:last-child td { border-bottom:0; }
+  .status { display:inline-flex; align-items:center; border-radius:999px; padding:2px 7px; font-size:11px; }
+  .status.paid { color:#3fb950; background:#0f2a1a; }
+  .status.pending { color:#d8a657; background:#2b2412; }
+  .status.failed { color:#f85149; background:#2d1717; }
+  .mono { max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @media (max-width:720px) {
+    body { padding:20px 10px; }
+    .card { padding:18px; }
+    .metrics { grid-template-columns:1fr; }
+    .row { flex-direction:column; }
+    input#amt { max-width:none !important; }
+  }
 </style>
 </head>
 <body>
@@ -38,6 +61,33 @@
   <div class="warn">⚠️ Robots earn autonomously, but moving the treasury requires a
     human to physically clear-sign on a Ledger. The device shows the exact intent
     (ERC-7730): <code>Withdraw N USDC → recipient</code>.</div>
+
+  <div class="section">
+    <h2>Race fee ledger</h2>
+    <div class="metrics">
+      <div class="metric"><div class="k">paid fees</div><div class="v" id="feePaid">-</div></div>
+      <div class="metric"><div class="k">pending fees</div><div class="v" id="feePending">-</div></div>
+      <div class="metric"><div class="k">entries</div><div class="v" id="feeEntries">-</div></div>
+    </div>
+    <div class="sub" id="feeRecipient" style="margin:10px 0 12px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>round</th>
+            <th>slot</th>
+            <th>driver</th>
+            <th>fee</th>
+            <th>status</th>
+            <th>proof</th>
+          </tr>
+        </thead>
+        <tbody id="feeLedgerRows">
+          <tr><td colspan="6">loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <div class="step"><span class="n">1</span> Connect &amp; unlock your Ledger, open the Ethereum app</div>
   <button id="connect">Connect Ledger (WebHID)</button>
@@ -61,6 +111,34 @@ async function refresh(){
       $("owner").textContent = "owner (Ledger): " + i.owner; }
     else $("bal").textContent = "not deployed"; } catch {}
 }
+async function refreshFeeLedger(){
+  try {
+    const ledger = await (await fetch("/treasury/fee-ledger")).json();
+    if (ledger.error) throw new Error(ledger.error);
+    $("feePaid").textContent = `${ledger.totals.paidFees} USDC`;
+    $("feePending").textContent = `${ledger.totals.pendingFees} USDC`;
+    $("feeEntries").textContent = `${ledger.totals.paidCount}/${ledger.totals.entryCount} paid`;
+    $("feeRecipient").textContent = ledger.recipientTreasury
+      ? `recipient treasury: ${short(ledger.recipientTreasury)}`
+      : "recipient treasury: not configured";
+    const rows = ledger.entries.slice(0, 30).map((entry) => {
+      const proof = entry.paymentProof
+        ? `${entry.paymentProof.kind === "transaction" ? "tx" : "id"} ${short(entry.paymentProof.value)}`
+        : entry.reconciliationStatus;
+      return `<tr>
+        <td>${escapeHtml(entry.roundId)}</td>
+        <td>${escapeHtml(entry.slot)}</td>
+        <td class="mono" title="${escapeHtml(entry.driverAddress || "")}">${escapeHtml(short(entry.driverAddress || "-"))}</td>
+        <td>${escapeHtml(entry.amountUsdc)} USDC</td>
+        <td><span class="status ${escapeHtml(entry.status)}">${escapeHtml(entry.reconciliationStatus)}</span></td>
+        <td class="mono" title="${escapeHtml(entry.paymentProof?.value || "")}">${escapeHtml(proof)}</td>
+      </tr>`;
+    });
+    $("feeLedgerRows").innerHTML = rows.length ? rows.join("") : '<tr><td colspan="6">no race fees recorded</td></tr>';
+  } catch(e) {
+    $("feeLedgerRows").innerHTML = `<tr><td colspan="6">fee ledger unavailable: ${escapeHtml(e.message)}</td></tr>`;
+  }
+}
 $("connect").onclick = async () => {
   try { const a = await window.roverLedger.connect();
     $("withdraw").disabled = false; if(!$("to").value) $("to").value = a; }
@@ -73,7 +151,18 @@ $("withdraw").onclick = async () => {
     refresh();
   } catch(e){ $("status").textContent = "✗ " + e.message; $("withdraw").disabled = false; }
 };
-refresh(); setInterval(refresh, 5000);
+function short(value){
+  if (!value || value.length <= 14) return value;
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g, (ch) => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  }[ch]));
+}
+refresh(); refreshFeeLedger();
+setInterval(refresh, 5000);
+setInterval(refreshFeeLedger, 5000);
 </script>
 </body>
 </html>

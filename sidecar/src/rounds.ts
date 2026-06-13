@@ -20,6 +20,7 @@ export type Driver = {
   wallet: string;
   displayName?: string;
   feePaid: boolean;
+  feePayment?: FeePayment;
   stakeAuthorized: boolean;
   chainJoined?: boolean;
   entrySignature?: string;
@@ -28,6 +29,19 @@ export type Driver = {
   robot?: RobotName;
   lane?: "left" | "right";
   token?: string;
+};
+
+export type FeePayment = {
+  status: "paid" | "pending" | "failed";
+  source: "x402" | "local-chain" | "manual";
+  amountUsdc: string;
+  amountUnits?: string;
+  recipientTreasury?: string;
+  paymentId?: string;
+  txHash?: string;
+  payer?: string;
+  paidAt?: number;
+  reconciliationStatus?: "pending" | "reconciled" | "needs-proof" | "failed";
 };
 
 export type ChainRoundStatus =
@@ -215,6 +229,7 @@ export function markFeePaid(id: string, slot: DriverSlot, payment?: Record<strin
   requireJoinable(round);
   const driver = requireDriver(round, slot);
   driver.feePaid = true;
+  driver.feePayment = normalizeFeePayment(round, payment);
   if (payment) {
     driver.displayName ??= String(payment.displayName ?? "");
   }
@@ -317,8 +332,17 @@ export function markChainJoined(
 ): Round {
   const round = getMutableRound(id);
   const driver = requireDriver(round, slot);
+  const paidAt = Date.now();
   driver.chainJoined = true;
   driver.feePaid = true;
+  driver.feePayment = {
+    status: "paid",
+    source: "local-chain",
+    amountUsdc: round.feeUsdc,
+    txHash,
+    paidAt,
+    reconciliationStatus: "reconciled",
+  };
   driver.stakeAuthorized = true;
   if (authorization?.entrySignature) driver.entrySignature = authorization.entrySignature;
   if (authorization?.permitSignature) driver.permitSignature = authorization.permitSignature;
@@ -480,6 +504,54 @@ function normalizeWallet(wallet?: string): string {
 function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(Number(value))));
+}
+
+function normalizeFeePayment(round: Round, payment?: Record<string, unknown>): FeePayment {
+  const txHash = firstString(payment?.txHash, payment?.transactionHash, payment?.hash, payment?.tx);
+  const paymentId = firstString(payment?.paymentId, payment?.id, payment?.reference);
+  const status = parsePaymentStatus(payment?.status);
+  const source = parsePaymentSource(payment?.source, txHash, paymentId);
+  const reconciliationStatus =
+    status === "failed" ? "failed" :
+    status === "paid" && (txHash || paymentId) ? "reconciled" :
+    status === "paid" ? "needs-proof" : "pending";
+
+  return {
+    status,
+    source,
+    amountUsdc: firstString(payment?.amountUsdc, payment?.amount, payment?.value) ?? round.feeUsdc,
+    amountUnits: firstString(payment?.amountUnits, payment?.units),
+    recipientTreasury: firstString(payment?.recipientTreasury, payment?.treasury, payment?.recipient),
+    paymentId,
+    txHash,
+    payer: firstString(payment?.payer, payment?.wallet, payment?.driver),
+    paidAt: Number.isFinite(Number(payment?.paidAt)) ? Number(payment?.paidAt) : Date.now(),
+    reconciliationStatus,
+  };
+}
+
+function parsePaymentStatus(value: unknown): FeePayment["status"] {
+  if (value === "pending" || value === "failed") return value;
+  return "paid";
+}
+
+function parsePaymentSource(
+  value: unknown,
+  txHash?: string,
+  paymentId?: string,
+): FeePayment["source"] {
+  if (value === "x402" || value === "local-chain" || value === "manual") return value;
+  if (txHash) return "local-chain";
+  if (paymentId) return "x402";
+  return "manual";
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
 }
 
 function snapshot(round: Round): Round {

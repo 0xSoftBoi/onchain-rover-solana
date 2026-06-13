@@ -26,6 +26,7 @@ import * as localDevWallets from "./local-dev-wallets.js";
 import * as robotLink from "./robot-link.js";
 import * as rounds from "./rounds.js";
 import * as settle from "./settle.js";
+import * as treasuryLedger from "./treasury-ledger.js";
 
 // Never let one bad call take down the demo: log unhandled errors, stay up.
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
@@ -381,6 +382,11 @@ app.get("/chain/health", async (_req, res) => {
 
 app.get("/treasury/local", async (_req, res) => {
   try { res.json(await chain.localTreasuryInfo()); }
+  catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/treasury/fee-ledger", (_req, res) => {
+  try { res.json(treasuryLedger.buildTreasuryFeeLedger()); }
   catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 

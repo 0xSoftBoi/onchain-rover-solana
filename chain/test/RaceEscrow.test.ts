@@ -133,6 +133,76 @@ describe("RaceEscrow", async () => {
       joinWithPermit(escrowAsFacilitator, raceId, challenger.account.address, 1, stakeAmount, feeAmount, auth)
     );
   });
+
+  it("rejects unauthorized callers", async () => {
+    const { escrow, challenger } = await deployFixture();
+    const stakeAmount = parseUnits("1", 6);
+    const feeAmount = parseUnits("0.25", 6);
+    const escrowAsChallenger = await viem.getContractAt("RaceEscrow", escrow.address, {
+      client: { wallet: challenger },
+    });
+
+    await assert.rejects(() =>
+      escrowAsChallenger.write.openRace([keccak256(toBytes("round-unauthorized")), stakeAmount, feeAmount])
+    );
+  });
+
+  it("rejects wrong round, expired, or mismatched amount authorizations", async () => {
+    const { token, escrowAsFacilitator, challenger } = await deployFixture();
+    const raceId = await escrowAsFacilitator.read.nextRaceId();
+    const stakeAmount = parseUnits("1", 6);
+    const feeAmount = parseUnits("0.25", 6);
+
+    await publicClient.waitForTransactionReceipt({
+      hash: await escrowAsFacilitator.write.openRace([
+        keccak256(toBytes("round-auth-failures")),
+        stakeAmount,
+        feeAmount,
+      ]),
+    });
+
+    const wrongRoundAuth = await signEntryAndPermit({
+      token,
+      escrow: escrowAsFacilitator,
+      raceId: raceId + 1n,
+      driver: challenger,
+      slot: 0,
+      stakeAmount,
+      feeAmount,
+    });
+    await assert.rejects(() =>
+      joinWithPermit(escrowAsFacilitator, raceId, challenger.account.address, 0, stakeAmount, feeAmount, wrongRoundAuth)
+    );
+
+    const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
+    const expiredAuth = await signEntryAndPermit({
+      token,
+      escrow: escrowAsFacilitator,
+      raceId,
+      driver: challenger,
+      slot: 0,
+      stakeAmount,
+      feeAmount,
+      deadline: latestBlock.timestamp - 1n,
+    });
+    await assert.rejects(() =>
+      joinWithPermit(escrowAsFacilitator, raceId, challenger.account.address, 0, stakeAmount, feeAmount, expiredAuth)
+    );
+
+    const overLimitStake = parseUnits("2", 6);
+    const overLimitAuth = await signEntryAndPermit({
+      token,
+      escrow: escrowAsFacilitator,
+      raceId,
+      driver: challenger,
+      slot: 0,
+      stakeAmount: overLimitStake,
+      feeAmount,
+    });
+    await assert.rejects(() =>
+      joinWithPermit(escrowAsFacilitator, raceId, challenger.account.address, 0, overLimitStake, feeAmount, overLimitAuth)
+    );
+  });
 });
 
 async function signEntryAndPermit(opts: {
@@ -143,9 +213,10 @@ async function signEntryAndPermit(opts: {
   slot: 0 | 1;
   stakeAmount: bigint;
   feeAmount: bigint;
+  deadline?: bigint;
 }) {
   const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
-  const deadline = latestBlock.timestamp + 3600n;
+  const deadline = opts.deadline ?? latestBlock.timestamp + 3600n;
   const totalAmount = opts.stakeAmount + opts.feeAmount;
   const tokenNonce = await opts.token.read.nonces([opts.driver.account.address]);
   const raceNonce = await opts.escrow.read.nonces([opts.driver.account.address]);

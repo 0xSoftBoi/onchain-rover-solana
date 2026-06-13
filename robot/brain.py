@@ -1,11 +1,10 @@
 """
-Negotiation reasoning — the robots actually THINK, via the onboard LLM (Ollama,
-already running on the Jetson). Not a while-loop: each side reasons about price,
-budget, demand, and the observed price trajectory, and explains its move.
-
-Returns a structured decision + a one-line rationale (spoken/logged for the
-demo). Deterministic fallback if Ollama is slow/unavailable so the demo never
-stalls — but the default path is real local inference.
+Negotiation reasoning — the robots actually THINK. Dual-backend:
+  - local Ollama (gemma3:1b) on the Jetson — true edge autonomy, no network.
+  - Gemini Flash (cloud) — faster (~1-2s) + much smarter reasoning.
+NEGOTIATE_BACKEND picks the primary ("ollama" default | "gemini"); the OTHER is
+the automatic fallback if the primary errors/times out (survives WiFi drops).
+A deterministic heuristic is the final fallback so the demo never stalls.
 """
 import json
 import os
@@ -14,9 +13,12 @@ import requests
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 MODEL = os.environ.get("NEGOTIATE_MODEL", "gemma3:1b")
+BACKEND = os.environ.get("NEGOTIATE_BACKEND", "ollama").lower()  # ollama | gemini
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 
-def _ask(prompt, timeout=12):
+def _ask_ollama(prompt, timeout=12):
     r = requests.post(OLLAMA, json={
         "model": MODEL, "prompt": prompt, "stream": False,
         "format": "json", "options": {"temperature": 0.4, "num_predict": 120},
@@ -24,12 +26,44 @@ def _ask(prompt, timeout=12):
     return json.loads(r.json()["response"])
 
 
+def _ask_gemini(prompt, timeout=12):
+    if not GEMINI_KEY:
+        raise RuntimeError("no GEMINI_API_KEY")
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}")
+    r = requests.post(url, json={
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json",
+                             "temperature": 0.3, "maxOutputTokens": 200},
+    }, timeout=timeout)
+    r.raise_for_status()
+    txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return json.loads(txt)
+
+
+def _ask(prompt, timeout=12):
+    """Try the primary backend, fall back to the other on any failure.
+    Returns the model used via the parsed dict's '_via' (for the dashboard)."""
+    order = (["gemini", "ollama"] if BACKEND == "gemini" else ["ollama", "gemini"])
+    last = None
+    for be in order:
+        try:
+            d = _ask_gemini(prompt, timeout) if be == "gemini" else _ask_ollama(prompt, timeout)
+            if isinstance(d, dict):
+                d["_via"] = be
+                return d
+        except Exception as e:
+            last = e
+    raise last or RuntimeError("no backend")
+
+
 def buyer_decision(price, budget, history, secs_left):
     """Buyer reasons: ACCEPT now or WAIT for a lower price? history = prices seen
     so far (descending). Real trade-off: waiting may get a better price, but the
     item could be taken or the auction could end. Returns {action, reason}."""
     if price > budget:
-        return {"action": "wait", "reason": f"{price:.2f} is over my {budget:.2f} budget"}
+        return {"action": "wait", "via": "rule",
+                "reason": f"{price:.2f} is over my {budget:.2f} budget"}
     drop = (history[-2] - history[-1]) if len(history) >= 2 else 0.0
     prompt = (
         f"You are a buyer agent in a Dutch auction (price falls each round). "
@@ -44,13 +78,13 @@ def buyer_decision(price, budget, history, secs_left):
         txt = str(d.get("reason", "")).strip()[:60] or (
             "at budget, low risk in waiting" if action == "accept"
             else "price still falling, hold")
-        return {"action": action, "reason": txt}
+        return {"action": action, "reason": txt, "via": d.get("_via", "?")}
     except Exception:
         # fallback: accept once we're within ~one decrement of budget or low on time
         margin = budget - price
         if margin <= drop or secs_left < 8:
-            return {"action": "accept", "reason": "good price, low risk of waiting"}
-        return {"action": "wait", "reason": "price still falling, hold"}
+            return {"action": "accept", "reason": "good price, low risk of waiting", "via": "rule"}
+        return {"action": "wait", "reason": "price still falling, hold", "via": "rule"}
 
 
 def seller_reserve(start, floor, demand):
@@ -73,11 +107,11 @@ def seller_reserve(start, floor, demand):
         reserve = max(floor, min(reserve_cap, float(d.get("reserve", floor))))
         step = max(0.15, min(0.25, float(d.get("step", 0.25))))
         return {"reserve": round(reserve, 2), "step": round(step, 2),
-                "reason": str(d.get("reason", ""))[:60]}
+                "reason": str(d.get("reason", ""))[:60], "via": d.get("_via", "?")}
     except Exception:
         reserve = floor + (start - floor) * demand * 0.4
         return {"reserve": round(reserve, 2), "step": 0.25,
-                "reason": "demand-scaled reserve"}
+                "reason": "demand-scaled reserve", "via": "rule"}
 
 
 def warmup():

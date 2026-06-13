@@ -11,7 +11,7 @@ print("=== REAL gemma3 negotiation (Orin Nano 4GB, on-device) ===\n")
 t0 = time.time()
 plan = brain.seller_reserve(2.00, 0.50, 0.6)
 dt = time.time() - t0
-print(f"[SELLER gemma3 {dt:.1f}s] reserve=${plan['reserve']} step=${plan['step']}")
+print(f"[SELLER gemma3 {dt:.1f}s] reserve=${plan['reserve']} step=${plan['step']} [via {plan.get('via','?')}]")
 print(f"           rationale: {plan['reason']}\n")
 reason.ROLE = "guard"
 reason.emit("reserve", f"reserve ${plan['reserve']}, step ${plan['step']} — {plan['reason']}", "plan")
@@ -29,7 +29,7 @@ while price >= (plan["reserve"] - 1e-9):
     reason.ROLE = "courier"
     d = brain.buyer_decision(price, budget, hist, 30)
     dt = time.time() - t1
-    print(f"[BUYER gemma3 {dt:.1f}s] @${price:.2f} (budget ${budget}) -> {d['action'].upper()}")
+    print(f"[BUYER gemma3 {dt:.1f}s] @${price:.2f} (budget ${budget}) -> {d['action'].upper()} [via {d.get('via','?')}]")
     print(f"          rationale: {d['reason']}")
     reason.emit("decide", f"${price:.2f} @ budget ${budget}: {d['action'].upper()} — {d['reason']}",
                 "decision" if d["action"] == "accept" else "thought")

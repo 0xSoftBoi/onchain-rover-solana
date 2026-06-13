@@ -1,11 +1,46 @@
+import type { RobotName } from "./config.js";
 import type { DriverSlot, Round } from "./rounds.js";
 import * as raceStore from "./race-store.js";
 import { estimateStagePosition } from "./stage-estimator.js";
 
 type TraceFrame = raceStore.TelemetryTraceEvent & { type: "frame"; frame: Record<string, unknown> };
+type TraceEventDetail = Record<string, unknown>;
 
 export function traceIdForRound(round: Pick<Round, "id" | "telemetryTraceId">): string {
   return round.telemetryTraceId ?? `trace-${round.id}`;
+}
+
+export function appendRoundTraceEvent(
+  round: Round,
+  event: string,
+  detail: TraceEventDetail = {},
+  opts: { atMs?: number } = {},
+) {
+  for (const slot of ["challenger", "opponent"] as const) {
+    appendDriverTraceEvent(round, slot, event, detail, opts);
+  }
+}
+
+export function appendDriverTraceEvent(
+  round: Round,
+  slot: DriverSlot,
+  event: string,
+  detail: TraceEventDetail = {},
+  opts: { atMs?: number } = {},
+) {
+  const robot = round.drivers[slot]?.robot;
+  if (!robot) return;
+  raceStore.appendTelemetryTrace({
+    schema: "onchain-rover.telemetry-trace-event.v1",
+    traceId: traceIdForRound(round),
+    roundId: round.id,
+    atMs: opts.atMs ?? Date.now(),
+    type: "event",
+    slot,
+    robot: robot as RobotName,
+    event,
+    detail,
+  });
 }
 
 export function buildTelemetryTraceSummary(round: Round, includeFrames = false) {
@@ -30,6 +65,7 @@ export function buildTelemetryTraceSummary(round: Round, includeFrames = false) 
     finishedAt: round.finishedAt ?? null,
     drivers,
     notableEvents,
+    eventSequence: notableEvents,
     frames: includeFrames ? frames.map(compactTraceFrame) : undefined,
   };
 }
@@ -140,8 +176,25 @@ function buildNotableEvents(
   frames: TraceFrame[],
 ) {
   const notable: Array<Record<string, unknown>> = [];
+  const persistedEventTypes = new Set(
+    events
+      .filter((event) => event.type === "event")
+      .map((event) => event.event)
+      .filter(Boolean),
+  );
+  if (round.countdownStartedAt && !persistedEventTypes.has("countdown-start")) {
+    notable.push({
+      type: "countdown-start",
+      atMs: round.countdownStartedAt,
+      detail: { countdownSecs: round.countdownSecs, roundStartsAt: round.roundStartsAt ?? null },
+    });
+  }
   if (round.startedAt) notable.push({ type: "round-start", atMs: round.startedAt });
+  if (round.startedAt && !persistedEventTypes.has("go")) notable.push({ type: "go", atMs: round.startedAt });
   if (round.finishedAt) notable.push({ type: "round-finish", atMs: round.finishedAt, winner: round.winner });
+  if (round.finishedAt && !persistedEventTypes.has("race-finish")) {
+    notable.push({ type: "race-finish", atMs: round.finishedAt, winner: round.winner });
+  }
   for (const event of events) {
     if (event.type === "event") {
       notable.push({
@@ -154,8 +207,12 @@ function buildNotableEvents(
     }
   }
   for (const event of frames) {
-    if (event.frame.estop === true) notable.push(safetyEvent("estop", event));
-    if (event.frame.stopped_by_deadman === true) notable.push(safetyEvent("deadman-stop", event));
+    if (!persistedEventTypes.has("emergency-stop") && event.frame.estop === true) {
+      notable.push(safetyEvent("emergency-stop", event));
+    }
+    if (!persistedEventTypes.has("deadman-stop") && event.frame.stopped_by_deadman === true) {
+      notable.push(safetyEvent("deadman-stop", event));
+    }
     if (event.frame.deadman_ok === false) notable.push(safetyEvent("deadman-open", event));
   }
   return notable

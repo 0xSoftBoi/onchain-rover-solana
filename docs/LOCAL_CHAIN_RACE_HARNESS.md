@@ -323,7 +323,10 @@ that moves from `blocked` to `ready` at winner confirmation and then to
 Telemetry trace files are stored as `telemetry.jsonl` beside `round.json`,
 `evidence.json`, and `events.jsonl`. Each frame is tagged with round id, trace
 id, driver slot, robot, timestamp, command, odometry, battery, speed mode,
-deadman/estop state, camera status, and lidar status.
+deadman/estop state, camera status, and lidar status. The same file also stores
+trace events for `countdown-start`, `go`, `obstacle-detected`,
+`boundary-warning`, `camera-stale`, `lidar-stale`, `emergency-stop`,
+`deadman-stop`, `finish-proof-captured`, and `race-finish`.
 
 The pilot HUD renders camera health in two compact fields: state (`healthy`,
 `stale`, `missing`, or `degraded`) and detail (`fps`, frame age, resolution, or

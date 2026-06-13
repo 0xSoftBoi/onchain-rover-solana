@@ -300,6 +300,11 @@ function assertTelemetryTrace(round: any, trace: any) {
   if (!trace.notableEvents?.some((event: { type?: string }) => event.type === "round-finish")) {
     throw new Error("trace missing round-finish event");
   }
+  for (const type of ["countdown-start", "go", "finish-proof-captured", "race-finish"]) {
+    if (!trace.eventSequence?.some((event: { type?: string }) => event.type === type)) {
+      throw new Error(`trace missing ${type} event`);
+    }
+  }
 }
 
 function readJson(path: string): any {

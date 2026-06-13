@@ -87,6 +87,7 @@ type RobotRuntime = {
   sessions: Map<string, PilotSession>;
   telemetry: RobotTelemetry;
   telemetryHistory: RobotTelemetry[];
+  traceEventState: Map<string, boolean>;
   lastCommand: DriveCommand;
   stoppedByDeadman: boolean;
 };
@@ -390,6 +391,7 @@ function runtimeFor(robot: RobotName): RobotRuntime {
       lidar: { status: "unavailable" },
     },
     telemetryHistory: [],
+    traceEventState: new Map(),
   };
   recordTelemetry(runtime, runtime.telemetry);
   runtimes.set(robot, runtime);
@@ -555,6 +557,7 @@ function recordRoundTelemetry(runtime: RobotRuntime, frame: RobotTelemetry) {
       robot: runtime.robot,
       frame: compactTelemetryFrame(frame),
     });
+    recordSensorTraceEvents(runtime, target, frame);
   }
 }
 
@@ -573,6 +576,105 @@ function recordRobotTraceEvent(runtime: RobotRuntime, event: string, detail?: Re
       detail,
     });
   }
+}
+
+function recordSensorTraceEvents(
+  runtime: RobotRuntime,
+  target: { round: rounds.Round; slot: rounds.DriverSlot },
+  frame: RobotTelemetry,
+) {
+  const lidar = frame.lidar ?? frame.sensors?.lidar;
+  const distance = lidar?.front_m ?? lidar?.min_m;
+  const obstacleThresholdM = target.round.stageCalibration.safetyDefaults.obstacleStopDistanceFt / 3.28084;
+  emitTraceTransition(runtime, target, "obstacle-detected", Boolean(
+    lidar?.blocked || (distance !== undefined && distance <= obstacleThresholdM),
+  ), {
+    distanceM: distance ?? null,
+    blocked: lidar?.blocked ?? false,
+    thresholdM: Number(obstacleThresholdM.toFixed(3)),
+  }, frame.ts_ms);
+
+  emitTraceTransition(runtime, target, "boundary-warning", frame.soft_odometry_limited === true, {
+    softOdometryLimitM: frame.soft_odometry_limit_m ?? null,
+    odometryM: averageOdometry(frame),
+  }, frame.ts_ms);
+
+  const camera = frame.camera ?? frame.sensors?.camera;
+  const cameraAgeMs = camera?.last_frame_age_ms ?? frame.raw_frame_age_ms ?? frame.sensors?.raw_frame?.age_ms;
+  const cameraStatus = camera?.status;
+  const cameraHealth = camera?.health;
+  emitTraceTransition(runtime, target, "camera-stale", Boolean(
+    cameraHealth === "stale"
+      || cameraHealth === "missing"
+      || cameraStatus === "unavailable"
+      || cameraStatus === "missing"
+      || cameraStatus === "error"
+      || (cameraAgeMs !== undefined && cameraAgeMs > 1500)
+  ), {
+    status: cameraStatus ?? null,
+    health: cameraHealth ?? null,
+    ageMs: cameraAgeMs ?? null,
+  }, frame.ts_ms);
+
+  emitTraceTransition(runtime, target, "lidar-stale", Boolean(
+    lidar?.status === "stale"
+      || lidar?.status === "unavailable"
+      || lidar?.status === "missing"
+      || lidar?.status === "error"
+  ), {
+    status: lidar?.status ?? null,
+    frontM: lidar?.front_m ?? null,
+    minM: lidar?.min_m ?? null,
+  }, frame.ts_ms);
+
+  emitTraceTransition(runtime, target, "emergency-stop", frame.estop === true, {
+    left: frame.left_cmd,
+    right: frame.right_cmd,
+    speedMode: frame.speed_mode,
+  }, frame.ts_ms);
+
+  emitTraceTransition(runtime, target, "deadman-stop", frame.stopped_by_deadman === true, {
+    deadmanOk: frame.deadman_ok,
+    left: frame.left_cmd,
+    right: frame.right_cmd,
+    speedMode: frame.speed_mode,
+  }, frame.ts_ms);
+}
+
+function emitTraceTransition(
+  runtime: RobotRuntime,
+  target: { round: rounds.Round; slot: rounds.DriverSlot },
+  event: string,
+  active: boolean,
+  detail: Record<string, unknown>,
+  atMs: number,
+) {
+  const key = `${target.round.id}:${target.slot}:${event}`;
+  const wasActive = runtime.traceEventState.get(key) === true;
+  if (!active) {
+    if (wasActive) runtime.traceEventState.delete(key);
+    return;
+  }
+  if (wasActive) return;
+  runtime.traceEventState.set(key, true);
+  raceStore.appendTelemetryTrace({
+    schema: "onchain-rover.telemetry-trace-event.v1",
+    traceId: traceIdForRound(target.round),
+    roundId: target.round.id,
+    atMs,
+    type: "event",
+    slot: target.slot,
+    robot: runtime.robot,
+    event,
+    detail,
+  });
+}
+
+function averageOdometry(frame: RobotTelemetry): number | null {
+  if (frame.odometry_left === undefined && frame.odometry_right === undefined) return null;
+  if (frame.odometry_left === undefined) return frame.odometry_right ?? null;
+  if (frame.odometry_right === undefined) return frame.odometry_left;
+  return Number(((frame.odometry_left + frame.odometry_right) / 2).toFixed(4));
 }
 
 function activeTraceTargets(robot: RobotName): Array<{ round: rounds.Round; slot: rounds.DriverSlot }> {

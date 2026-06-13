@@ -634,7 +634,14 @@ app.post("/race/round/:id/lock", async (req, res) => {
 });
 
 app.post("/race/round/:id/countdown", (req, res) => {
-  try { res.json(rounds.startCountdown(req.params.id)); }
+  try {
+    const round = rounds.startCountdown(req.params.id);
+    telemetryTrace.appendRoundTraceEvent(round, "countdown-start", {
+      countdownSecs: round.countdownSecs,
+      roundStartsAt: round.roundStartsAt ?? null,
+    }, { atMs: round.countdownStartedAt });
+    res.json(round);
+  }
   catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -642,6 +649,10 @@ app.post("/race/round/:id/start", (req, res) => {
   try {
     const round = rounds.startRace(req.params.id);
     evidence.recordRoundSnapshot(round, "started");
+    telemetryTrace.appendRoundTraceEvent(round, "go", {
+      startedAt: round.startedAt ?? null,
+      durationSecs: round.durationSecs,
+    }, { atMs: round.startedAt });
     res.json(round);
   }
   catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -662,11 +673,17 @@ app.post("/race/round/:id/finish-detection", (req, res) => {
       if (round.winner && round.winner !== detection.slot) {
         throw new Error(`round already finished with ${round.winner}`);
       }
+      telemetryTrace.appendDriverTraceEvent(round, detection.slot, "finish-proof-captured", finishDetectionTraceDetail(detection), {
+        atMs: detection.detectedAtMs,
+      });
       const hashes = evidence.getEvidenceHash(round);
       round = rounds.markEvidenceHashes(req.params.id, hashes.proofHash, hashes.evidenceHash);
       return res.json({ round, detection, detections: evidence.listFinishDetections(round) });
     }
     if (req.body?.autoFinish === false) {
+      telemetryTrace.appendDriverTraceEvent(round, detection.slot, "finish-proof-captured", finishDetectionTraceDetail(detection), {
+        atMs: detection.detectedAtMs,
+      });
       const hashes = evidence.getEvidenceHash(round);
       round = rounds.markEvidenceHashes(req.params.id, hashes.proofHash, hashes.evidenceHash);
       return res.json({ round, detection, detections: evidence.listFinishDetections(round) });
@@ -1031,8 +1048,52 @@ function finishRoundWithEvidence(
   evidence.recordRoundSnapshot(round, "finished");
   const finalized = evidence.finalizeResultProof(round, proof);
   round = rounds.markEvidenceHashes(roundId, finalized.proofHash, finalized.evidenceHash);
+  telemetryTrace.appendDriverTraceEvent(round, winner, "finish-proof-captured", finishProofTraceDetail(round.proof ?? proof), {
+    atMs: finishProofAtMs(round.proof ?? proof) ?? round.finishedAt,
+  });
+  telemetryTrace.appendRoundTraceEvent(round, "race-finish", {
+    winner,
+    finishMs: round.finishMs ?? null,
+    proofHash: round.proofHash ?? null,
+    evidenceHash: round.evidenceHash ?? null,
+  }, { atMs: round.finishedAt });
   revokeRoundPilots(round);
   return round;
+}
+
+function finishDetectionTraceDetail(detection: evidence.FinishDetectionEvent): Record<string, unknown> {
+  return {
+    detectionId: detection.id,
+    source: detection.source,
+    method: detection.method,
+    confidence: detection.confidence,
+    frameHash: detection.frameHash ?? null,
+  };
+}
+
+function finishProofTraceDetail(proof?: Record<string, unknown>): Record<string, unknown> {
+  const detection = proof?.detection as evidence.FinishDetectionEvent | undefined;
+  if (detection?.id) return finishDetectionTraceDetail(detection);
+  const proofFrame = proof?.proofFrame && typeof proof.proofFrame === "object"
+    ? proof.proofFrame as Record<string, unknown>
+    : undefined;
+  return {
+    source: typeof proof?.source === "string" ? proof.source : "operator",
+    method: typeof proof?.method === "string" ? proof.method : "operator-confirmation",
+    operatorActionId: typeof proof?.operatorActionId === "string" ? proof.operatorActionId : null,
+    frameHash: typeof proof?.frameHash === "string" ? proof.frameHash : proofFrame?.hash ?? null,
+    proofFrameStatus: proofFrame?.status ?? null,
+  };
+}
+
+function finishProofAtMs(proof?: Record<string, unknown>): number | undefined {
+  const detection = proof?.detection as evidence.FinishDetectionEvent | undefined;
+  if (Number.isFinite(Number(detection?.detectedAtMs))) return Number(detection?.detectedAtMs);
+  const proofFrame = proof?.proofFrame && typeof proof.proofFrame === "object"
+    ? proof.proofFrame as Record<string, unknown>
+    : undefined;
+  const capturedAtMs = Number(proofFrame?.capturedAtMs);
+  return Number.isFinite(capturedAtMs) ? capturedAtMs : undefined;
 }
 
 function revokeRoundPilots(round: rounds.Round) {

@@ -84,6 +84,9 @@ async function main() {
   assert(trace.drivers?.challenger?.frameCount > 0, "challenger telemetry trace missing");
   assert(trace.notableEvents?.some((event: { type?: string }) => event.type === "round-start"), "round start trace event missing");
   assert(trace.notableEvents?.some((event: { type?: string }) => event.type === "round-finish"), "round finish trace event missing");
+  for (const type of ["countdown-start", "go", "finish-proof-captured", "race-finish"]) {
+    assert(trace.eventSequence?.some((event: { type?: string }) => event.type === type), `${type} trace event missing`);
+  }
 
   console.log("Local dev wallet rehearsal e2e passed");
   console.log(`  roundId:     ${round.id}`);

@@ -718,6 +718,7 @@ function renderReplay() {
     ["packet", evidence.evidenceHash || "-"],
     ["trace", state.trace?.traceId || evidence.resultProof?.result?.telemetryTraceId || "-"],
     ["trace frames", state.trace ? `${state.trace.frameCount} frames · ${state.trace.eventCount} events` : "-"],
+    ["event sequence", traceEventSequence(state.trace)],
     ["settlement", evidence.resultProof?.result?.settlementState?.status || "-"],
     ["detections", String(evidence.finishDetections?.length || 0)],
     ["lifecycle", (evidence.lifecycle || []).map((event) => `${event.event}@${new Date(event.atMs).toLocaleTimeString()}`).join(" -> ") || "-"],
@@ -742,6 +743,20 @@ function renderReplay() {
     row.children[1].textContent = value;
     root.append(row);
   }
+}
+
+function traceEventSequence(trace) {
+  const events = trace?.eventSequence || trace?.notableEvents || [];
+  if (!events.length) return "-";
+  return events
+    .filter((event) => event?.type && event.type !== "deadman-open")
+    .slice(-16)
+    .map((event) => {
+      const time = event.atMs ? new Date(event.atMs).toLocaleTimeString() : "--";
+      const subject = event.slot ? `${event.slot}` : event.winner ? `${event.winner}` : "";
+      return `${time} ${event.type}${subject ? ` ${subject}` : ""}`;
+    })
+    .join(" -> ");
 }
 
 function operatorFinishProof(winner) {

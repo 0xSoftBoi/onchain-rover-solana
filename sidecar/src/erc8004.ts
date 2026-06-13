@@ -19,11 +19,14 @@ import { ERC8004 } from "./config.js";
 
 const pub = createPublicClient({ chain: sepolia, transport: http() });
 // Requester key (rates the robots) — separate from robot wallets by design.
-const requester = privateKeyToAccount(
-  process.env.REQUESTER_PRIVATE_KEY! as `0x${string}`);
-const wallet = createWalletClient({
-  account: requester, chain: sepolia, transport: http(),
-});
+// Lazy: don't crash the whole sidecar at boot before keys are configured.
+function requesterWallet() {
+  const requester = privateKeyToAccount(
+    process.env.REQUESTER_PRIVATE_KEY! as `0x${string}`);
+  return createWalletClient({
+    account: requester, chain: sepolia, transport: http(),
+  });
+}
 
 export async function registerAgent(agentURI: string, ownerKey: `0x${string}`) {
   const owner = privateKeyToAccount(ownerKey);
@@ -41,7 +44,7 @@ export async function registerAgent(agentURI: string, ownerKey: `0x${string}`) {
 export async function giveFeedback(opts: {
   agentId: bigint; score: number; skill: string; blobId: string; sha256: string;
 }) {
-  const hash = await wallet.writeContract({
+  const hash = await requesterWallet().writeContract({
     address: ERC8004.reputation as `0x${string}`, abi,
     functionName: "giveFeedback",
     args: [

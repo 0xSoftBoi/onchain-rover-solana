@@ -16,13 +16,35 @@ FORCE_NETWORK = os.environ.get("GIBBER_NETWORK_ONLY") == "1"
 _inbox = []  # network-fallback inbox (api.py can append via /gibber/send)
 
 
+def _usb_device(kind: str):
+    """Pick an audio device. kind: 'input' | 'output'. Overridable via env.
+
+    Jetson gotcha: direct ALSA grab of the USB mic (hw:0/1) fails with
+    'Device unavailable' (camera holds it / single-open). The Pulse layer
+    mixes fine, so INPUT defaults to 'pulse'. OUTPUT to the USB PnP speaker
+    (direct works and is louder) — fall back to default if absent."""
+    import sounddevice as sd
+    env = os.environ.get(f"GIBBER_{kind.upper()}_DEVICE")
+    if env is not None:
+        return int(env) if env.isdigit() else env
+    if kind == "input":
+        for i, d in enumerate(sd.query_devices()):
+            if d["name"] == "pulse" and d["max_input_channels"] > 0:
+                return i
+        return None
+    for i, d in enumerate(sd.query_devices()):  # output
+        if "USB" in d["name"] and d["max_output_channels"] > 0:
+            return i
+    return None
+
+
 def _audio_send(payload: str):
     import ggwave
     import sounddevice as sd
     import numpy as np
-    waveform = ggwave.encode(payload, protocolId=1, volume=60)
+    waveform = ggwave.encode(payload, protocolId=1, volume=80)
     audio = np.frombuffer(waveform, dtype=np.float32)
-    sd.play(audio, samplerate=48000, blocking=True)
+    sd.play(audio, samplerate=48000, blocking=True, device=_usb_device("output"))
 
 
 def _audio_recv(timeout_secs: float):
@@ -32,7 +54,7 @@ def _audio_recv(timeout_secs: float):
     deadline = time.time() + timeout_secs
     try:
         with sd.InputStream(samplerate=48000, channels=1, dtype="float32",
-                            blocksize=4096) as stream:
+                            blocksize=4096, device=_usb_device("input")) as stream:
             while time.time() < deadline:
                 block, _ = stream.read(4096)
                 res = ggwave.decode(instance, block.tobytes())

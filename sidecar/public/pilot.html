@@ -3,73 +3,158 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Rover GP — Pilot</title>
+<title>Rover GP Pilot</title>
 <style>
-  html,body { margin:0; height:100%; background:#0a0e14; color:#e6edf3;
-    font:15px/1.4 ui-monospace,Menlo,monospace; overflow:hidden; touch-action:none; }
-  header { padding:12px 16px; border-bottom:1px solid #222c3a; display:flex;
-    justify-content:space-between; align-items:center; }
-  .title { font-weight:700; } .conn { font-size:12px; color:#7d8aa0; }
-  .conn.up { color:#3fb950; }
-  #zone { position:fixed; inset:60px 0 0 0; }
-  #estop { position:fixed; right:18px; bottom:18px; width:90px; height:90px;
-    border-radius:50%; background:#f85149; color:#fff; border:0; font:700 16px monospace;
-    box-shadow:0 4px 16px rgba(248,81,73,.5); z-index:10; }
-  #hud { position:fixed; left:16px; bottom:20px; font-size:12px; color:#7d8aa0; }
-  .speed { color:#d8a657; font-size:20px; font-weight:700; }
+  :root {
+    --bg:#05070a; --glass:rgba(5,8,12,.62); --line:rgba(223,235,255,.18);
+    --txt:#f2f7fb; --muted:#9baec2; --ok:#49d17d; --warn:#f2c14e;
+    --bad:#ff5d5d; --blue:#59a6ff;
+  }
+  * { box-sizing:border-box; }
+  html, body {
+    margin:0; width:100%; height:100%; background:var(--bg); color:var(--txt);
+    font:14px/1.35 ui-monospace, Menlo, Consolas, monospace;
+    overflow:hidden; touch-action:none;
+  }
+  body { display:grid; place-items:center; }
+  button { font:inherit; color:inherit; }
+  #app {
+    position:relative; overflow:hidden; background:#020305; aspect-ratio:9 / 16;
+    width:min(100vw, calc(100dvh * 9 / 16));
+    height:min(100dvh, calc(100vw * 16 / 9));
+    max-width:100vw; max-height:100dvh;
+    box-shadow:0 0 0 1px rgba(255,255,255,.08), 0 24px 80px rgba(0,0,0,.45);
+  }
+  .video {
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    background:#020305; z-index:1;
+  }
+  .local-video { z-index:2; }
+  .video.off { opacity:.28; }
+  .video-fallback {
+    position:absolute; inset:0; z-index:0; display:grid; place-items:center;
+    color:var(--muted); background:
+      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(255,255,255,.035) 1px, transparent 1px), #070a0f;
+    background-size:44px 44px;
+  }
+  #zone { position:absolute; inset:0; z-index:8; }
+  .hud { pointer-events:none; position:absolute; inset:0; z-index:12; }
+  .chip-row {
+    position:absolute; left:12px; right:12px; top:10px; display:flex;
+    align-items:flex-start; justify-content:space-between; gap:10px;
+  }
+  .chip-group { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; max-width:58vw; }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px; min-height:28px; padding:5px 8px;
+    border:1px solid var(--line); border-radius:8px; background:var(--glass);
+    backdrop-filter:blur(10px); color:var(--txt); text-shadow:0 1px 2px #000;
+    font-size:12px; white-space:nowrap;
+  }
+  .chip.dim { color:var(--muted); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--warn); box-shadow:0 0 10px currentColor; }
+  .conn.up .dot { background:var(--ok); }
+  .conn.down .dot { background:var(--bad); }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .direction {
+    position:absolute; left:50%; bottom:22px; transform:translateX(-50%);
+    min-width:150px; max-width:42vw; padding:8px 11px; border:1px solid var(--line);
+    border-radius:8px; background:var(--glass); backdrop-filter:blur(10px);
+    text-align:center; text-shadow:0 1px 2px #000; font-size:15px;
+  }
+  .wheel-readout {
+    position:absolute; left:13px; bottom:76px; color:var(--muted);
+    font-size:12px; text-shadow:0 1px 2px #000;
+  }
+  .throttle {
+    pointer-events:auto; position:absolute; left:12px; bottom:14px; display:flex; gap:6px;
+    padding:6px; border:1px solid var(--line); border-radius:9px;
+    background:var(--glass); backdrop-filter:blur(10px);
+  }
+  .throttle button {
+    width:48px; height:36px; border:1px solid rgba(223,235,255,.22);
+    border-radius:7px; background:rgba(20,28,38,.72); color:var(--muted);
+  }
+  .throttle button.active {
+    color:#06100a; background:var(--ok); border-color:var(--ok);
+  }
+  .estop {
+    pointer-events:auto; position:absolute; right:14px; bottom:14px; width:84px; height:84px;
+    border:0; border-radius:50%; background:var(--bad); color:#fff; font-weight:800;
+    font-size:16px; box-shadow:0 7px 28px rgba(255,93,93,.5);
+  }
+  .modal {
+    position:absolute; inset:0; z-index:30; display:grid; place-items:center;
+    padding:22px; background:rgba(0,0,0,.22); backdrop-filter:blur(2px);
+  }
+  .modal.hidden { display:none; }
+  .modal-panel {
+    width:min(390px, 92vw); border:1px solid var(--line); border-radius:10px;
+    background:rgba(8,12,18,.84); backdrop-filter:blur(14px);
+    padding:18px; box-shadow:0 18px 60px rgba(0,0,0,.45);
+  }
+  .modal-panel h1 { margin:0 0 7px; font-size:18px; letter-spacing:0; }
+  .modal-panel p { margin:0 0 15px; color:var(--muted); font-size:13px; }
+  .modal-status {
+    min-height:18px; margin:0 0 12px; color:var(--muted); font-size:12px;
+    overflow-wrap:anywhere;
+  }
+  .modal-status.bad { color:var(--bad); }
+  .modal-status.ok { color:var(--ok); }
+  .start-button {
+    width:100%; height:48px; border:0; border-radius:8px; background:var(--ok);
+    color:#041008; font-weight:800;
+  }
+  .start-button:disabled { opacity:.55; }
+  @media (max-width:560px) {
+    .chip-group { max-width:64vw; }
+    .chip { font-size:11px; min-height:26px; padding:4px 7px; }
+    .direction { max-width:48vw; bottom:20px; font-size:13px; }
+    .throttle button { width:43px; height:34px; }
+    .estop { width:78px; height:78px; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <div class="title">🏁 Rover GP — <span id="robot">courier</span></div>
-  <div class="conn" id="conn">connecting…</div>
-</header>
-<div id="zone"></div>
-<div id="hud">L:<span id="l">0.00</span> R:<span id="r">0.00</span><br><span class="speed" id="thr">●</span></div>
-<button id="estop">STOP</button>
+<main id="app">
+  <div class="video-fallback" id="videoFallback">camera feed unavailable</div>
+  <img class="video off" id="video" alt="" />
+  <video class="video local-video off" id="localVideo" muted playsinline autoplay></video>
+  <div id="zone"></div>
+
+  <div class="hud">
+    <div class="chip-row">
+      <div class="chip conn" id="conn"><i class="dot"></i><span>idle</span></div>
+      <div class="chip-group">
+        <div class="chip dim" id="robotName">courier</div>
+        <div class="chip" id="battery">--</div>
+        <div class="chip" id="latency">--</div>
+        <div class="chip" id="deadman">--</div>
+        <div class="chip" id="cap">--</div>
+      </div>
+    </div>
+
+    <div class="direction" id="direction">Tap start to drive</div>
+    <div class="wheel-readout">L <span id="left">0.00</span> / R <span id="right">0.00</span></div>
+    <div class="throttle" id="throttle">
+      <button data-speed="low">LOW</button>
+      <button data-speed="medium" class="active">MED</button>
+      <button data-speed="high">HIGH</button>
+    </div>
+    <button class="estop" id="estop">STOP</button>
+  </div>
+
+  <div class="modal" id="startModal">
+    <div class="modal-panel">
+      <h1 id="modalTitle">Start Pilot Session</h1>
+      <p id="modalCopy">Connect to the rover camera and unlock controls. Keep the stop button in reach.</p>
+      <div class="modal-status" id="modalStatus"></div>
+      <button class="start-button" id="startButton">START</button>
+    </div>
+  </div>
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
-<script>
-const params = new URLSearchParams(location.search);
-const robotName = params.get("robot") || "courier";
-document.getElementById("robot").textContent = robotName;
-let ws, token, alive = false, last = {l:0,r:0};
-
-async function connect() {
-  const auth = await (await fetch("/pilot/dev-authorize", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ robot: robotName }) })).json();
-  if (auth.error) { document.getElementById("conn").textContent = "err: "+auth.error; return; }
-  token = auth.token;
-  ws = new WebSocket(auth.driveWs);
-  ws.onopen = () => { alive = true;
-    document.getElementById("conn").textContent = "● connected";
-    document.getElementById("conn").className = "conn up"; };
-  ws.onclose = () => { alive = false;
-    document.getElementById("conn").textContent = "disconnected"; setTimeout(connect, 1500); };
-}
-function send(l, r) {
-  if (!alive) return;
-  l = Math.max(-1, Math.min(1, l)); r = Math.max(-1, Math.min(1, r));
-  ws.send(JSON.stringify({ left:l, right:r, token, t: Date.now() }));
-  document.getElementById("l").textContent = l.toFixed(2);
-  document.getElementById("r").textContent = r.toFixed(2);
-  document.getElementById("thr").style.opacity = (Math.abs(l)+Math.abs(r))/2 + 0.2;
-}
-// joystick -> differential drive (tank mixing)
-const joy = nipplejs.create({ zone: document.getElementById("zone"),
-  mode:"static", position:{left:"50%",top:"55%"}, color:"#58a6ff", size:140 });
-let iv;
-joy.on("move", (_e, d) => {
-  const fwd = Math.sin(d.angle.radian) * (d.force>1?1:d.force);  // -1..1
-  const turn = Math.cos(d.angle.radian) * (d.force>1?1:d.force);
-  last = { l: fwd + turn*0.6, r: fwd - turn*0.6 };
-});
-joy.on("start", () => { clearInterval(iv); iv = setInterval(()=>send(last.l,last.r), 80); }); // 12.5Hz
-joy.on("end", () => { clearInterval(iv); last={l:0,r:0}; send(0,0); });
-document.getElementById("estop").onclick = () => { last={l:0,r:0}; send(0,0);
-  fetch("/estop/"+robotName, {method:"POST"}); };
-connect();
-</script>
+<script type="module" src="/pilot-app.bundle.js"></script>
 </body>
 </html>

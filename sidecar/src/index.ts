@@ -9,7 +9,7 @@
  * 🚨 Buyer wallets must be plain EOAs (Privy server wallets are).
  */
 import express from "express";
-import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 
 import "./env.js"; // MUST be first — loads dotenv before any env-reading module
@@ -20,6 +20,9 @@ import * as identity from "./identity.js";
 import * as worldid from "./worldid.js";
 import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
+import * as chain from "./chain.js";
+import * as robotLink from "./robot-link.js";
+import * as rounds from "./rounds.js";
 import * as settle from "./settle.js";
 
 // Never let one bad call take down the demo: log unhandled errors, stay up.
@@ -28,6 +31,8 @@ process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
 
 const app = express();
 app.use(express.json());
+const server = createServer(app);
+robotLink.installRobotLink(app, server);
 
 const gateway = createGatewayMiddleware({
   sellerAddress: process.env.TREASURY_ADDRESS!,    // fleet treasury (Ledger-governed)
@@ -361,22 +366,178 @@ app.get("/race/auction/state", (req, res) => {
   res.json(auctions.get(String(req.query.auctionId)) ?? { note: "unknown" });
 });
 
-// Free pilot session (gated by ALLOW_FREE_PILOT). The PAID path is
-// /pilot/:robot/start (x402, $1). Both issue the same real cryptographic
-// session token authorizing the robot's WS drive — the only difference is
-// payment. Off by default so production requires payment.
+// ---------- Local Hardhat race payment harness -----------------------------
+app.get("/chain/config", (_req, res) => {
+  try { res.json(chain.publicLocalChainConfig()); }
+  catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/chain/health", async (_req, res) => {
+  try { res.json(await chain.localChainHealth()); }
+  catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.get("/treasury/local", async (_req, res) => {
+  try { res.json(await chain.localTreasuryInfo()); }
+  catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/chain/faucet", async (req, res) => {
+  try { res.json(await chain.fundLocalWallet(req.body.wallet, String(req.body.amount ?? "100"))); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/chain/open", async (req, res) => {
+  try {
+    const round = rounds.getRound(req.params.id);
+    const opened = await chain.openRoundOnChain(round);
+    res.json(rounds.attachChainRace(req.params.id, opened.raceId, opened.tx));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/chain/authorization-request", async (req, res) => {
+  try {
+    const slot = requireDriverSlot(req.body.slot);
+    const round = rounds.getRound(req.params.id);
+    res.json(await chain.buildRaceEntryRequest(round, slot, req.body.wallet));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/chain/join", async (req, res) => {
+  try {
+    const slot = requireDriverSlot(req.body.slot);
+    const round = rounds.getRound(req.params.id);
+    if (!req.body.entrySignature) throw new Error("entrySignature required");
+    if (!req.body.entryDeadline) throw new Error("entryDeadline required");
+    const joined = await chain.joinRoundOnChain({
+      round,
+      slot,
+      entrySignature: req.body.entrySignature,
+      permitSignature: req.body.permitSignature,
+      entryDeadline: req.body.entryDeadline,
+      permitDeadline: req.body.permitDeadline,
+    });
+    res.json(rounds.markChainJoined(req.params.id, slot, joined.tx, {
+      entrySignature: req.body.entrySignature,
+      permitSignature: req.body.permitSignature,
+    }));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/chain/lock", async (req, res) => {
+  try {
+    const locked = await chain.lockRoundOnChain(rounds.getRound(req.params.id));
+    res.json(rounds.markChainLocked(req.params.id, locked.tx));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/chain/start", async (req, res) => {
+  try {
+    const started = await chain.startRoundOnChain(rounds.getRound(req.params.id));
+    res.json(rounds.markChainStarted(req.params.id, started.tx));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/chain/settle", async (req, res) => {
+  try {
+    let round = rounds.getRound(req.params.id);
+    if (round.chainStatus === "started") {
+      const finished = await chain.finishRoundOnChain(round);
+      round = rounds.markChainFinished(req.params.id, finished.tx);
+    }
+    const settled = await chain.settleRoundOnChain(round);
+    res.json(rounds.markChainSettled(req.params.id, settled.tx));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/chain/cancel", async (req, res) => {
+  try {
+    const reason = String(req.body.reason ?? "canceled");
+    const canceled = await chain.cancelRoundOnChain(rounds.getRound(req.params.id), reason);
+    res.json(rounds.markChainCanceled(req.params.id, canceled.tx, reason));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// ---------- Two-driver race-room coordinator -------------------------------
+app.post("/race/round/challenge", (req, res) => {
+  try { res.json(rounds.createRound(req.body)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/claim-slot", (req, res) => {
+  try { res.json(rounds.claimSlot(req.params.id, requireDriverSlot(req.body.slot), req.body)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.get("/race/rounds", (_req, res) => res.json({ rounds: rounds.listRounds() }));
+
+app.get("/race/round/:id", (req, res) => {
+  try { res.json(rounds.getRound(req.params.id)); }
+  catch (e: any) { res.status(404).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/accept", (req, res) => {
+  try { res.json(rounds.acceptRound(req.params.id, req.body)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/fee-paid", (req, res) => {
+  try { res.json(rounds.markFeePaid(req.params.id, req.body.slot, req.body.payment)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/stake-authorize", (req, res) => {
+  try { res.json(rounds.authorizeStake(req.params.id, req.body.slot, req.body.authorization)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/lock", async (req, res) => {
+  try {
+    if (req.body?.skipRobotAuth) {
+      if (process.env.ALLOW_FREE_PILOT !== "1") {
+        return res.status(403).json({ error: "skipRobotAuth requires ALLOW_FREE_PILOT=1" });
+      }
+      return res.json(rounds.lockRoundLocal(req.params.id));
+    }
+    res.json(await rounds.lockRound(req.params.id, (name) => robot(name).url));
+  }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/countdown", (req, res) => {
+  try { res.json(rounds.startCountdown(req.params.id)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/start", (req, res) => {
+  try { res.json(rounds.startRace(req.params.id)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/finish", (req, res) => {
+  try { res.json(rounds.finishRound(req.params.id, req.body.winner, req.body.proof)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/cancel", (req, res) => {
+  try { res.json(rounds.cancelRound(req.params.id, req.body.reason)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Free pilot session (gated by ALLOW_FREE_PILOT). This local harness path
+// issues a sidecar bridge token; paid production sessions can keep using the
+// lower-latency direct robot path until the bridge is promoted there too.
 app.post("/pilot/dev-authorize", async (req, res) => {
   if (process.env.ALLOW_FREE_PILOT !== "1")
     return res.status(403).json({ error: "free pilot disabled — use the paid /pilot/:robot/start (x402)" });
-  const name = (req.body.robot ?? "courier") as RobotName;
-  const token = randomUUID();
+  const name = robotLink.requireRobotName(req.body.robot ?? "courier");
+  const publicBaseUrl = process.env.PUBLIC_SIDECAR_URL
+    || `${req.protocol}://${req.get("host")}`;
   try {
-    await fetch(`${robot(name).url}/pilot/authorize`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, ttl_secs: 300 }),
-    });
-    res.json({ token, robot: name,
-      driveWs: `${robot(name).url.replace("http", "ws")}/ws/drive` });
+    res.json(robotLink.authorizePilotSession(name, publicBaseUrl, {
+      ttlSecs: 300,
+      speedMode: robotLink.parseSpeedMode(req.body.speed_mode) ?? "medium",
+    }));
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -414,4 +575,9 @@ app.use((err: any, _req: any, res: any, _next: any) => {
 });
 
 const PORT = Number(process.env.PORT ?? 4021);
-app.listen(PORT, () => console.log(`sidecar on :${PORT} (Arc ${ARC.chainId})`));
+server.listen(PORT, () => console.log(`sidecar on :${PORT} (Arc ${ARC.chainId})`));
+
+function requireDriverSlot(value: unknown): rounds.DriverSlot {
+  if (value === "challenger" || value === "opponent") return value;
+  throw new Error("slot must be challenger or opponent");
+}

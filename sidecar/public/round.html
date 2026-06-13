@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rover GP Round Harness</title>
+<style>
+  :root {
+    --bg:#090c10; --panel:#111822; --panel2:#151f2b; --line:#273342;
+    --txt:#eef5fb; --dim:#8fa0b2; --ok:#42d17d; --warn:#f0bf4f;
+    --bad:#ff6262; --blue:#5aa7ff;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  }
+  header {
+    display:flex; align-items:flex-end; justify-content:space-between; gap:18px;
+    padding:18px 22px; border-bottom:1px solid var(--line);
+  }
+  h1 { margin:0; font-size:19px; letter-spacing:0; }
+  .sub { color:var(--dim); font-size:12px; }
+  main { max-width:1180px; margin:0 auto; padding:18px; display:grid; gap:14px; }
+  section {
+    border:1px solid var(--line); background:var(--panel); border-radius:8px;
+    padding:14px;
+  }
+  h2 { margin:0 0 12px; color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:0; }
+  .grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
+  .grid3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+  label { display:grid; gap:5px; color:var(--dim); font-size:12px; }
+  input {
+    width:100%; min-height:38px; padding:8px 9px; border-radius:7px;
+    border:1px solid var(--line); background:#0b1118; color:var(--txt); font:inherit;
+  }
+  button, a.button {
+    display:inline-flex; align-items:center; justify-content:center; min-height:36px;
+    padding:8px 11px; border-radius:7px; border:1px solid rgba(255,255,255,.08);
+    background:#1f6feb; color:#fff; font:inherit; text-decoration:none; cursor:pointer;
+  }
+  button.secondary, a.button.secondary { background:#273342; color:var(--txt); }
+  button.good { background:#238636; }
+  button.warn { background:#9a6700; }
+  button.bad { background:#a72b2b; }
+  button:disabled { opacity:.45; cursor:default; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; }
+  .kv { display:grid; grid-template-columns:170px minmax(0,1fr); gap:8px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06); }
+  .kv:last-child { border-bottom:0; }
+  .k { color:var(--dim); }
+  .v { overflow-wrap:anywhere; }
+  .pill { display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); }
+  .ok { color:var(--ok); } .warnText { color:var(--warn); } .badText { color:var(--bad); }
+  .links { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
+  .driver {
+    display:grid; gap:10px; border:1px solid var(--line); border-radius:8px; padding:12px;
+    background:var(--panel2);
+  }
+  .driver h3 { margin:0; font-size:14px; }
+  .linkbox {
+    min-height:46px; padding:8px; border-radius:7px; background:#0b1118;
+    border:1px solid var(--line); overflow-wrap:anywhere; color:var(--dim); font-size:12px;
+  }
+  .qr {
+    display:grid; place-items:center; width:156px; min-height:156px; padding:8px;
+    border:1px solid var(--line); border-radius:8px; background:#fff;
+  }
+  .qr canvas { width:140px; height:140px; }
+  .log { max-height:160px; overflow:auto; white-space:pre-wrap; color:var(--dim); font-size:12px; }
+  @media (max-width:820px) {
+    header { display:block; }
+    .grid, .grid3, .links { grid-template-columns:1fr; }
+    .kv { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Rover GP Round Harness</h1>
+    <div class="sub">two phones enter · local chain locks stakes · winner settles · treasury collects the race fee</div>
+  </div>
+  <div class="pill" id="chainPill">chain unknown</div>
+</header>
+
+<main>
+  <section>
+    <h2>Drivers</h2>
+    <div class="grid">
+      <label>Challenger wallet
+        <input id="challenger" autocomplete="off" spellcheck="false" />
+      </label>
+      <label>Opponent wallet
+        <input id="opponent" autocomplete="off" spellcheck="false" />
+      </label>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <label>Public sidecar URL for phones
+        <input id="publicSidecar" autocomplete="off" spellcheck="false" />
+      </label>
+      <label>Wallet RPC URL
+        <input id="walletRpc" readonly />
+      </label>
+    </div>
+    <div class="grid3" style="margin-top:10px">
+      <label>Stake
+        <input id="stake" value="1.00" inputmode="decimal" />
+      </label>
+      <label>Network fee
+        <input id="fee" value="0.25" inputmode="decimal" />
+      </label>
+      <label>Duration seconds
+        <input id="duration" value="30" inputmode="numeric" />
+      </label>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button id="create">Create + Accept Round</button>
+      <button id="openChain" class="good">Open Escrow</button>
+      <button id="fillLocal" class="secondary">Use Local Test Wallets</button>
+      <button id="fundDrivers" class="secondary">Fund Driver Wallets</button>
+      <button id="refresh" class="secondary">Refresh</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Round State</h2>
+    <div class="grid">
+      <div>
+        <div class="kv"><span class="k">round id</span><span class="v" id="roundId">-</span></div>
+        <div class="kv"><span class="k">local status</span><span class="v" id="localStatus">-</span></div>
+        <div class="kv"><span class="k">chain race id</span><span class="v" id="chainRaceId">-</span></div>
+        <div class="kv"><span class="k">chain status</span><span class="v" id="chainStatus">-</span></div>
+      </div>
+      <div>
+        <div class="kv"><span class="k">treasury</span><span class="v" id="treasury">-</span></div>
+        <div class="kv"><span class="k">fees collected</span><span class="v" id="fees">-</span></div>
+        <div class="kv"><span class="k">winner</span><span class="v" id="winner">-</span></div>
+        <div class="kv"><span class="k">txs</span><span class="v" id="txs">-</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Phone Links</h2>
+    <div class="links">
+      <div class="driver">
+        <h3>Challenger Phone</h3>
+        <div class="qr"><canvas id="challengerQr"></canvas></div>
+        <div class="linkbox" id="challengerLink">Create a round first.</div>
+        <div class="actions">
+          <a class="button" id="challengerOpen" target="_blank" rel="noreferrer">Open</a>
+          <button class="secondary" data-copy="challenger">Copy</button>
+        </div>
+      </div>
+      <div class="driver">
+        <h3>Opponent Phone</h3>
+        <div class="qr"><canvas id="opponentQr"></canvas></div>
+        <div class="linkbox" id="opponentLink">Create a round first.</div>
+        <div class="actions">
+          <a class="button" id="opponentOpen" target="_blank" rel="noreferrer">Open</a>
+          <button class="secondary" data-copy="opponent">Copy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Race Controls</h2>
+    <div class="actions">
+      <button id="lockChain" class="good">Lock Escrow</button>
+      <button id="lockLocal" class="secondary">Authorize Robots</button>
+      <button id="lockLocalSim" class="warn">Local Sim Lock</button>
+      <button id="countdown" class="secondary">Countdown</button>
+      <button id="startRace" class="good">Start Race</button>
+      <button id="finishChallenger" class="secondary">Challenger Wins</button>
+      <button id="finishOpponent" class="secondary">Opponent Wins</button>
+      <button id="chainStart" class="good">Start On-Chain</button>
+      <button id="settle" class="good">Settle</button>
+      <button id="cancel" class="bad">Cancel</button>
+    </div>
+    <div class="sub" style="margin-top:8px">Local Sim Lock requires <code>ALLOW_FREE_PILOT=1</code>. Use Authorize Robots when the rover APIs are live.</div>
+  </section>
+
+  <section>
+    <h2>Activity</h2>
+    <div class="log" id="log"></div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { round: null, chain: null, treasury: null };
+const localDefaults = {
+  challenger: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  opponent: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+};
+
+function log(msg) {
+  $("log").textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + $("log").textContent;
+}
+
+async function getJson(path) {
+  const res = await fetch(path);
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || `${path} failed`);
+  return json;
+}
+
+async function postJson(path, body = {}) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || `${path} failed`);
+  return json;
+}
+
+function pilotLink(slot) {
+  if (!state.round?.id) return "";
+  const robot = slot === "challenger" ? "guard" : "courier";
+  const base = $("publicSidecar").value.trim() || location.origin;
+  const url = new URL("/pilot.html", base);
+  url.searchParams.set("robot", robot);
+  url.searchParams.set("round", state.round.id);
+  url.searchParams.set("slot", slot);
+  url.searchParams.set("camera", "local");
+  return url.toString();
+}
+
+function renderQr(canvasId, url) {
+  const canvas = $(canvasId);
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!url || !window.QRCode) return;
+  window.QRCode.toCanvas(canvas, url, { width: 140, margin: 1 }, (err) => {
+    if (err) log(`QR failed: ${err.message || err}`);
+  });
+}
+
+function txSummary(round) {
+  const txs = round?.txHashes || {};
+  const names = Object.keys(txs);
+  if (!names.length) return "-";
+  return names.map((name) => `${name}:${String(txs[name]).slice(0, 10)}...`).join(" · ");
+}
+
+function render() {
+  const round = state.round;
+  $("roundId").textContent = round?.id || "-";
+  $("localStatus").textContent = round?.status || "-";
+  $("chainRaceId").textContent = round?.chainRaceId || "-";
+  $("chainStatus").textContent = round?.chainStatus || "-";
+  $("winner").textContent = round?.winner || "-";
+  $("txs").textContent = txSummary(round);
+  $("treasury").textContent = state.treasury?.treasury || state.chain?.treasury || "-";
+  $("fees").textContent = state.treasury ? `${state.treasury.totalFees} local units` : "-";
+  if (!$("challenger").value && round?.drivers?.challenger?.wallet) $("challenger").value = round.drivers.challenger.wallet;
+  if (!$("opponent").value && round?.drivers?.opponent?.wallet) $("opponent").value = round.drivers.opponent.wallet;
+
+  const ok = state.chain?.ok;
+  $("chainPill").textContent = ok ? `local chain ${state.chain.chainId} · block ${state.chain.blockNumber}` : "chain unavailable";
+  $("chainPill").className = `pill ${ok ? "ok" : "badText"}`;
+  $("walletRpc").value = state.config?.rpcUrl || "";
+
+  const challengerUrl = pilotLink("challenger");
+  const opponentUrl = pilotLink("opponent");
+  $("challengerLink").textContent = challengerUrl || "Create a round first.";
+  $("opponentLink").textContent = opponentUrl || "Create a round first.";
+  $("challengerOpen").href = challengerUrl || "#";
+  $("opponentOpen").href = opponentUrl || "#";
+  renderQr("challengerQr", challengerUrl);
+  renderQr("opponentQr", opponentUrl);
+}
+
+async function refresh() {
+  try {
+    const [config, chain, treasury] = await Promise.all([
+      getJson("/chain/config").catch(() => null),
+      getJson("/chain/health").catch((err) => ({ ok: false, error: err.message })),
+      getJson("/treasury/local").catch(() => null),
+    ]);
+    state.config = config;
+    state.chain = chain;
+    state.treasury = treasury;
+    if (config?.sidecarUrl && !$("publicSidecar").value.trim()) $("publicSidecar").value = config.sidecarUrl;
+    if (!$("publicSidecar").value.trim()) $("publicSidecar").value = location.origin;
+    if (state.round?.id) state.round = await getJson(`/race/round/${state.round.id}`);
+    render();
+  } catch (err) {
+    log(err.message);
+  }
+}
+
+async function createRound() {
+  const challenger = $("challenger").value.trim();
+  const opponent = $("opponent").value.trim();
+  const created = await postJson("/race/round/challenge", {
+    wallet: challenger && opponent ? challenger : undefined,
+    displayName: "challenger",
+    stakeUsdc: $("stake").value.trim(),
+    feeUsdc: $("fee").value.trim(),
+    durationSecs: Number($("duration").value || 30),
+  });
+  state.round = created;
+  if (challenger && !opponent) {
+    state.round = await postJson(`/race/round/${created.id}/claim-slot`, {
+      slot: "challenger",
+      wallet: challenger,
+      displayName: "challenger",
+    });
+  }
+  if (opponent && !challenger) {
+    state.round = await postJson(`/race/round/${created.id}/claim-slot`, {
+      slot: "opponent",
+      wallet: opponent,
+      displayName: "opponent",
+    });
+  }
+  if (challenger && opponent) {
+    state.round = await postJson(`/race/round/${created.id}/accept`, {
+      wallet: opponent,
+      displayName: "opponent",
+    });
+  }
+  log(`round ${state.round.id} accepted`);
+  render();
+}
+
+async function fundDrivers() {
+  const wallets = [
+    ["challenger", walletForSlot("challenger")],
+    ["opponent", walletForSlot("opponent")],
+  ];
+  for (const [label, wallet] of wallets) {
+    if (!wallet) {
+      log(`skip ${label}: no wallet claimed`);
+      continue;
+    }
+    const funded = await postJson("/chain/faucet", { wallet, amount: "100" });
+    log(`funded ${label}: balance ${funded.balance}`);
+  }
+  return state.round;
+}
+
+function walletForSlot(slot) {
+  return $("" + slot).value.trim() || state.round?.drivers?.[slot]?.wallet || "";
+}
+
+async function step(label, fn) {
+  try {
+    state.round = await fn();
+    log(label);
+    await refresh();
+  } catch (err) {
+    log(`${label} failed: ${err.message}`);
+  }
+}
+
+$("create").onclick = () => step("created round", createRound);
+$("openChain").onclick = () => step("opened escrow", () => postJson(`/race/round/${state.round.id}/chain/open`));
+$("fillLocal").onclick = () => {
+  $("challenger").value = localDefaults.challenger;
+  $("opponent").value = localDefaults.opponent;
+  render();
+};
+$("fundDrivers").onclick = () => step("funded driver wallets", fundDrivers);
+$("lockChain").onclick = () => step("locked escrow", () => postJson(`/race/round/${state.round.id}/chain/lock`));
+$("lockLocal").onclick = () => step("authorized robots", () => postJson(`/race/round/${state.round.id}/lock`));
+$("lockLocalSim").onclick = () => step("local sim locked", () => postJson(`/race/round/${state.round.id}/lock`, { skipRobotAuth: true }));
+$("countdown").onclick = () => step("countdown started", () => postJson(`/race/round/${state.round.id}/countdown`));
+$("startRace").onclick = () => step("local race started", () => postJson(`/race/round/${state.round.id}/start`));
+$("finishChallenger").onclick = () => step("challenger finished", () => postJson(`/race/round/${state.round.id}/finish`, { winner: "challenger", proof: { source: "operator" } }));
+$("finishOpponent").onclick = () => step("opponent finished", () => postJson(`/race/round/${state.round.id}/finish`, { winner: "opponent", proof: { source: "operator" } }));
+$("chainStart").onclick = () => step("on-chain race started", () => postJson(`/race/round/${state.round.id}/chain/start`));
+$("settle").onclick = () => step("settled race", () => postJson(`/race/round/${state.round.id}/chain/settle`));
+$("cancel").onclick = () => step("canceled race", () => postJson(`/race/round/${state.round.id}/chain/cancel`, { reason: "operator canceled" }));
+$("refresh").onclick = refresh;
+$("publicSidecar").addEventListener("input", render);
+
+document.querySelectorAll("[data-copy]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const url = pilotLink(button.dataset.copy);
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    log(`copied ${button.dataset.copy} link`);
+  });
+});
+
+refresh();
+setInterval(refresh, 2500);
+</script>
+</body>
+</html>

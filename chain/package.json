@@ -1,0 +1,26 @@
+{
+  "name": "onchain-rover-chain",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node --hostname ${LOCAL_CHAIN_HOST:-0.0.0.0}",
+    "deploy": "tsx scripts/deploy-local.ts",
+    "export": "tsx scripts/export-local.ts",
+    "e2e:local": "tsx scripts/e2e-local-race.ts"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
+    "@nomicfoundation/hardhat-viem": "^3.0.9",
+    "@types/node": "^22.0.0",
+    "chai": "^5.1.0",
+    "hardhat": "^3.9.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

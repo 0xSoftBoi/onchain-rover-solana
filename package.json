@@ -1,0 +1,13 @@
+{
+  "name": "onchain-rover",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "chain:compile": "npm --prefix chain run compile",
+    "chain:test": "npm --prefix chain run test",
+    "chain:node": "npm --prefix chain run node",
+    "chain:deploy": "npm --prefix chain run deploy",
+    "chain:export": "npm --prefix chain run export",
+    "e2e:local-race": "bash scripts/e2e-local-race.sh"
+  }
+}

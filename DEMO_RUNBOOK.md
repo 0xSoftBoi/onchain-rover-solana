@@ -23,9 +23,10 @@ Live camera feeds are embedded in Mission Control and Rover GP (robot `/stream`)
 ---
 
 ## PRE-FLIGHT (before judges arrive — 15 min, do in order)
-1. **Robots on** + on venue WiFi. Confirm IPs (drift on DHCP):
-   `curl -s http://172.16.1.29:8000/health` (guard) and `172.16.0.105` (courier).
-   If an IP changed, update `.env` `GUARD_URL`/`COURIER_URL` + `PEER_ROBOT_URL`.
+1. **Robots on** + on venue WiFi, started with `SIDECAR_URL=http://<laptop-lan-ip>:4021`
+   in their launch env. They heartbeat their IP to the sidecar every 10s, so DHCP
+   drift is auto-handled — confirm both appear fresh at `curl -s localhost:4021/robot/registry`.
+   (Static `.env` `GUARD_URL`/`COURIER_URL` remain the fallback if a heartbeat lapses.)
 2. **Kill the camera thief** on guard (it respawns): `ssh jetson@<guard> 'pgrep -f "[c]apture_images" && sudo pkill -9 -f "[c]apture_images"'`.
 3. **Speaker volume** maxed; do one voice test: `curl -X POST http://<guard>:8000/say -d '{"text":"check"}' -H 'Content-Type: application/json'`.
 4. **Funds** (done earlier in the day via Circle booth): guard + courier + treasury

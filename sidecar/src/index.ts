@@ -31,10 +31,35 @@ const gateway = createGatewayMiddleware({
   networks: [ARC.caip2],
 });
 
+// Live robot registry — robots heartbeat their current IP here, so venue DHCP
+// drift never breaks the demo. Falls back to the static .env URL if stale.
+const liveRobots = new Map<string, { url: string; lastSeen: number; battery?: number }>();
+const FRESH_MS = 30000;
+
 const robot = (name: string) => {
   if (!(name in ROBOTS)) throw new Error("unknown robot");
-  return ROBOTS[name as RobotName];
+  const live = liveRobots.get(name);
+  const url = live && Date.now() - live.lastSeen < FRESH_MS
+    ? live.url : ROBOTS[name as RobotName].url;
+  return { ...ROBOTS[name as RobotName], url };
 };
+
+// Robots POST here every ~10s. We derive the URL from the source IP so the
+// robot doesn't need to know its own address.
+app.post("/robot/heartbeat", (req, res) => {
+  const { role, port = 8000, battery } = req.body ?? {};
+  if (!role || !(role in ROBOTS)) return res.status(400).json({ error: "unknown role" });
+  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+    || req.socket.remoteAddress?.replace(/^::ffff:/, "") || "";
+  if (!ip) return res.status(400).json({ error: "no source ip" });
+  liveRobots.set(role, { url: `http://${ip}:${port}`, lastSeen: Date.now(), battery });
+  res.json({ ok: true, registered: `http://${ip}:${port}` });
+});
+
+app.get("/robot/registry", (_req, res) => {
+  res.json(Object.fromEntries([...liveRobots.entries()].map(([k, v]) =>
+    [k, { ...v, freshSecs: Math.round((Date.now() - v.lastSeen) / 1000) }])));
+});
 
 // ---------- PAID routes (x402 / Arc nanopayments) ---------------------------
 // Hire a robot for an NL task — the core "hire over HTTP" thesis.
@@ -144,9 +169,9 @@ app.post("/race/finish", async (req, res) => {
     // immutably on Walrus — that real hash + blobId settle the market on-chain.
     let proof: { sha256?: string; blobId?: string } = {};
     try {
-      await fetch(`${ROBOTS.guard.url}/capture`, { method: "POST",
+      await fetch(`${robot("guard").url}/capture`, { method: "POST",
         signal: AbortSignal.timeout(8000) });
-      proof = await (await fetch(`${ROBOTS.guard.url}/store-proof`, { method: "POST",
+      proof = await (await fetch(`${robot("guard").url}/store-proof`, { method: "POST",
         signal: AbortSignal.timeout(20000) })).json();
     } catch (e: any) { proof = { } /* proof capture failed; settle still records winner */ ; }
     let settled;
@@ -270,12 +295,12 @@ app.post("/race/auction/start", async (req, res) => {
   // fire-and-forget orchestration; dashboard polls /race/auction/state
   (async () => {
     try {
-      await fetch(`${ROBOTS.courier.url}/negotiate/buy`, {
+      await fetch(`${robot("courier").url}/negotiate/buy`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ budget: 1.25, auctionId, timeout_secs: 70 }),
       });
       await new Promise((r) => setTimeout(r, 800));
-      await fetch(`${ROBOTS.guard.url}/negotiate/sell`, {
+      await fetch(`${robot("guard").url}/negotiate/sell`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ start: 2.0, floor: 0.5, step: 0.25, tick_secs: 4.0, auctionId }),
       });
@@ -284,7 +309,7 @@ app.post("/race/auction/start", async (req, res) => {
       for (let i = 0; i < 35; i++) {
         await new Promise((r) => setTimeout(r, 1500));
         deal = await (await fetch(
-          `${ROBOTS.guard.url}/negotiate/result?auctionId=${auctionId}`)).json();
+          `${robot("guard").url}/negotiate/result?auctionId=${auctionId}`)).json();
         if (deal.price) st.price = deal.price;
         if (deal.agreed !== undefined && !deal.pending) break;
       }

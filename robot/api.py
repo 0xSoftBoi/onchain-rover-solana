@@ -30,7 +30,28 @@ import world_verify
 from rover import Rover
 
 ROLE = os.environ.get("ROBOT_ROLE", "guard")  # guard | courier
+SIDECAR_URL = os.environ.get("SIDECAR_URL")    # e.g. http://192.168.x.x:4021
 app = FastAPI(title=f"rover-{ROLE}")
+
+
+@app.on_event("startup")
+async def _start_heartbeat():
+    """Announce our current IP to the sidecar every 10s so venue DHCP drift
+    never breaks the demo (the sidecar derives our URL from the source IP)."""
+    if not SIDECAR_URL:
+        return
+    import asyncio
+    async def beat():
+        while True:
+            try:
+                t = _live_rover().telemetry() or {}
+                requests.post(f"{SIDECAR_URL}/robot/heartbeat",
+                              json={"role": ROLE, "port": 8000,
+                                    "battery": t.get("v", 0) / 100.0}, timeout=4)
+            except Exception:
+                pass
+            await asyncio.sleep(10)
+    asyncio.get_event_loop().create_task(beat())
 
 
 class SeekReq(BaseModel):

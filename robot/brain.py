@@ -14,8 +14,27 @@ import requests
 OLLAMA = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 MODEL = os.environ.get("NEGOTIATE_MODEL", "gemma3:1b")
 BACKEND = os.environ.get("NEGOTIATE_BACKEND", "ollama").lower()  # ollama | gemini
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")          # AI Studio path (AIza…)
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+# Vertex path (Google Cloud booth project): service account via
+# GOOGLE_APPLICATION_CREDENTIALS + VERTEX_PROJECT + VERTEX_REGION.
+VERTEX_PROJECT = os.environ.get("VERTEX_PROJECT")
+VERTEX_REGION = os.environ.get("VERTEX_REGION", "us-central1")
+_genai_client = None
+
+
+def _gemini_client():
+    """google-genai client — Vertex (service account) if VERTEX_PROJECT set,
+    else AI Studio (api key). Cached."""
+    global _genai_client
+    if _genai_client is None:
+        from google import genai
+        if VERTEX_PROJECT:
+            _genai_client = genai.Client(vertexai=True, project=VERTEX_PROJECT,
+                                         location=VERTEX_REGION)
+        else:
+            _genai_client = genai.Client(api_key=GEMINI_KEY)
+    return _genai_client
 
 
 def _ask_ollama(prompt, timeout=12):
@@ -27,18 +46,17 @@ def _ask_ollama(prompt, timeout=12):
 
 
 def _ask_gemini(prompt, timeout=12):
-    if not GEMINI_KEY:
-        raise RuntimeError("no GEMINI_API_KEY")
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}")
-    r = requests.post(url, json={
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json",
-                             "temperature": 0.3, "maxOutputTokens": 200},
-    }, timeout=timeout)
-    r.raise_for_status()
-    txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(txt)
+    # Vertex (booth service account) OR AI Studio (api key) via google-genai —
+    # one path handles both auth modes.
+    if VERTEX_PROJECT or GEMINI_KEY:
+        from google.genai import types
+        resp = _gemini_client().models.generate_content(
+            model=GEMINI_MODEL, contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json", temperature=0.3,
+                max_output_tokens=200))
+        return json.loads(resp.text)
+    raise RuntimeError("no Gemini credential (set GEMINI_API_KEY or VERTEX_PROJECT)")
 
 
 def _ask(prompt, timeout=12):

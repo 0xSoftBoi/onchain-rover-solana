@@ -1213,6 +1213,57 @@ impl IntoResponse for AppError {
 mod tests {
     use super::*;
 
+    #[derive(Clone)]
+    struct RecordingRover {
+        commands: Arc<Mutex<Vec<(f64, f64)>>>,
+    }
+
+    impl RoverControl for RecordingRover {
+        fn drive(&self, left: f64, right: f64) -> Result<()> {
+            self.commands.lock().push((left, right));
+            Ok(())
+        }
+    }
+
+    fn test_state(allow_untokened_drive: bool) -> (AppState, Arc<Mutex<Vec<(f64, f64)>>>) {
+        let commands = Arc::new(Mutex::new(Vec::new()));
+        let (telemetry_tx, _) = broadcast::channel(8);
+        let state = AppState {
+            role: "courier".to_string(),
+            mode: Mode::Sim,
+            serial_port: "/dev/null".to_string(),
+            started_at: Instant::now(),
+            rover: Arc::new(RecordingRover {
+                commands: commands.clone(),
+            }),
+            raw: Arc::new(RwLock::new(RawTelemetry {
+                source: "sim",
+                ..RawTelemetry::default()
+            })),
+            command: Arc::new(Mutex::new(CommandState::default())),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            telemetry_tx,
+            allow_untokened_drive,
+            deadman_ms: DEFAULT_DEADMAN_MS,
+            camera_client: reqwest::Client::new(),
+            camera_device: None,
+            camera_stream_url: None,
+            camera_snapshot_url: None,
+        };
+        (state, commands)
+    }
+
+    fn insert_session(state: &AppState, token: &str, speed_mode: SpeedMode) {
+        state.sessions.lock().insert(
+            token.to_string(),
+            PilotSession {
+                expires_at: Instant::now() + Duration::from_secs(5),
+                not_before_epoch_ms: None,
+                speed_mode,
+            },
+        );
+    }
+
     #[test]
     fn speed_modes_define_expected_caps() {
         assert_eq!(SpeedMode::Low.cap(), 0.15);
@@ -1303,5 +1354,75 @@ mod tests {
             camera_status_name(Mode::Serial, &None, &stream, &None),
             "proxy"
         );
+    }
+
+    #[tokio::test]
+    async fn untokened_drive_requires_explicit_override() {
+        let (state, commands) = test_state(false);
+        let err = drive(
+            State(state),
+            Json(DriveReq {
+                left: 1.0,
+                right: 1.0,
+                token: None,
+            }),
+        )
+        .await
+        .expect_err("untokened drive should be rejected");
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
+        assert_eq!(err.message, "drive token is required");
+        assert!(commands.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn untokened_drive_can_be_enabled_explicitly_and_is_clamped() {
+        let (state, commands) = test_state(true);
+        let _ = drive(
+            State(state),
+            Json(DriveReq {
+                left: 1.0,
+                right: -1.0,
+                token: None,
+            }),
+        )
+        .await
+        .expect("explicitly enabled untokened drive");
+        assert_eq!(&*commands.lock(), &[(0.25, -0.25)]);
+    }
+
+    #[tokio::test]
+    async fn estop_latches_until_explicit_reset() {
+        let (state, commands) = test_state(false);
+        insert_session(&state, "pilot", SpeedMode::Low);
+
+        let _ = estop(State(state.clone())).await.expect("estop");
+        let err = drive(
+            State(state.clone()),
+            Json(DriveReq {
+                left: 0.1,
+                right: 0.1,
+                token: Some("pilot".to_string()),
+            }),
+        )
+        .await
+        .expect_err("estop should block drive");
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
+        assert_eq!(err.message, "estop is active");
+        assert_eq!(&*commands.lock(), &[(0.0, 0.0)]);
+
+        let _ = estop_reset(State(state.clone()))
+            .await
+            .expect("explicit estop reset");
+        let _ = drive(
+            State(state),
+            Json(DriveReq {
+                left: 0.5,
+                right: 0.5,
+                token: Some("pilot".to_string()),
+            }),
+        )
+        .await
+        .expect("drive after estop reset");
+        assert_eq!(&*commands.lock(), &[(0.0, 0.0), (0.0, 0.0), (0.15, 0.15)]);
     }
 }

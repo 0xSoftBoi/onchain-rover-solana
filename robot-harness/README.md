@@ -84,3 +84,16 @@ The deadman stops motors when drive commands go stale.
 `POST /stop` and `POST /estop` are latching hard stops. Use
 `POST /estop/reset` to allow future drive commands again. Use
 `POST /motors/stop` for a non-latching zero-speed command.
+
+## Physical Drive Smoke
+
+The smoke script refuses to move hardware unless the operator explicitly gates
+motion. Use it only when the robot is lifted, blocked, or otherwise safe.
+
+```bash
+ALLOW_PHYSICAL_MOTION=1 ROVER_URL=http://192.168.55.1:8000 \
+  ./scripts/drive_smoke.py --speed-mode low --left 0.05 --right 0.05 --duration-ms 250
+```
+
+The script authorizes a short-lived token, sends one tiny command, always posts
+`/motors/stop`, and fails unless wheel odometry changes.

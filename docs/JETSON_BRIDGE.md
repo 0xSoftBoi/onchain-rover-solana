@@ -107,6 +107,9 @@ locked 90-second demo by calling both APIs.
 - Hard-stop: `{"T":0}` + `drive(0,0)`; geofence via wheel odometry (odl/odr) in
   the Rust telemetry contract; speed caps and deadman are enforced by
   `robot-harness`.
+- Physical drive smoke is gated by `ALLOW_PHYSICAL_MOTION=1`:
+  `robot-harness/scripts/drive_smoke.py` authorizes a short token, sends one
+  tiny low-speed command, posts `/motors/stop`, and verifies odometry changed.
 
 ## Robot B provisioning checklist (clone of A, ~30 min)
 

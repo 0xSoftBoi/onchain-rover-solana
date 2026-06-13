@@ -7,14 +7,20 @@ const sidecarHttp = normalizeHttpUrl(process.env.SIDECAR_URL ?? "http://127.0.0.
 const sidecarWs = wsFromHttp(sidecarHttp);
 const robotHttp = normalizeHttpUrl(process.env.ROBOT_URL ?? "http://127.0.0.1:8000");
 const robotWs = wsFromHttp(robotHttp);
+const driveMode = process.env.ROBOT_DRIVE_MODE === "rest" ? "rest" : "ws";
+const telemetryMode = process.env.ROBOT_TELEMETRY_MODE === "off"
+  ? "off"
+  : process.env.ROBOT_TELEMETRY_MODE === "poll" ? "poll" : "ws";
 
 let sidecarSocket: WebSocket | null = null;
 let robotDrive: WebSocket | null = null;
 let robotTelemetry: WebSocket | null = null;
 const authorizedTokens = new Set<string>();
+let restDriveInFlight = false;
+let latestRestDrive: { left: number; right: number } | null = null;
 
 connectSidecar();
-connectRobotTelemetry();
+if (telemetryMode !== "off") connectRobotTelemetry();
 
 function connectSidecar() {
   const url = new URL("/ws/robot", sidecarWs);
@@ -29,7 +35,7 @@ function connectSidecar() {
 }
 
 function connectRobotTelemetry() {
-  if (process.env.ROBOT_TELEMETRY_MODE === "poll") {
+  if (telemetryMode === "poll") {
     pollRobotTelemetry().catch((err) => {
       console.error(`harness telemetry poll: ${err instanceof Error ? err.message : err}`);
       setTimeout(connectRobotTelemetry, 1000);
@@ -61,7 +67,9 @@ async function pollRobotTelemetry() {
   while (true) {
     await sleep(Number(process.env.ROBOT_TELEMETRY_POLL_MS ?? 100));
     if (!sidecarSocket || sidecarSocket.readyState !== WebSocket.OPEN) continue;
-    const res = await fetch(`${robotHttp}/telemetry`, { signal: AbortSignal.timeout(1000) });
+    const res = await fetch(`${robotHttp}/telemetry`, {
+      signal: AbortSignal.timeout(Number(process.env.ROBOT_TELEMETRY_TIMEOUT_MS ?? 5000)),
+    });
     const frame = await res.json();
     if (!res.ok || frame.error) throw new Error(frame.error || `robot telemetry failed ${res.status}`);
     sidecarSocket.send(JSON.stringify(toSidecarTelemetry(frame)));
@@ -74,6 +82,10 @@ async function handleSidecarControl(raw: string) {
   const token = String(frame.token ?? "");
   if (!token) return;
   await ensureHarnessToken(token, frame.speed_mode);
+  if (driveMode === "rest") {
+    queueRestDrive(finite(frame.left), finite(frame.right));
+    return;
+  }
   await ensureRobotDrive();
   if (!robotDrive || robotDrive.readyState !== WebSocket.OPEN) return;
   robotDrive.send(JSON.stringify({
@@ -82,6 +94,34 @@ async function handleSidecarControl(raw: string) {
     right: finite(frame.right),
     t: Date.now(),
   }));
+}
+
+function queueRestDrive(left: number, right: number) {
+  latestRestDrive = { left, right };
+  void flushRestDrive();
+}
+
+async function flushRestDrive() {
+  if (restDriveInFlight) return;
+  while (latestRestDrive) {
+    const command = latestRestDrive;
+    latestRestDrive = null;
+    restDriveInFlight = true;
+    try {
+      const res = await fetch(`${robotHttp}/drive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(command),
+        signal: AbortSignal.timeout(Number(process.env.ROBOT_DRIVE_TIMEOUT_MS ?? 8000)),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) throw new Error(json.error || `robot drive failed ${res.status}`);
+    } catch (err) {
+      console.error(`rest drive: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      restDriveInFlight = false;
+    }
+  }
 }
 
 async function ensureHarnessToken(token: string, speedMode: unknown) {

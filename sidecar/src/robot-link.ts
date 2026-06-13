@@ -155,6 +155,9 @@ export function installRobotLink(app: Express, server: Server) {
       const robot = requireRobotName(req.params.robot);
       const upstream = new URL("/stream", ROBOTS[robot].url).toString();
       if (req.query.proxy === "0") return res.redirect(upstream);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       const upstreamRes = await fetch(upstream);
       res.status(upstreamRes.status);
       for (const header of ["content-type", "cache-control"] as const) {

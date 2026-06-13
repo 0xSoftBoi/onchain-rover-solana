@@ -1106,6 +1106,7 @@ var videoState = "idle";
 var roundState = null;
 var currentStreamUrl = "";
 var streamReconnectTimer;
+var streamWatchdogTimer;
 var streamReconnectAttempts = 0;
 var els = {
   robotName: byId("robotName"),
@@ -1453,6 +1454,7 @@ function openTelemetrySocket(url) {
 }
 function configureVideo(driveUrl, streamUrl) {
   clearStreamReconnect();
+  clearStreamWatchdog();
   const base = httpBaseFromDriveUrl(driveUrl);
   currentStreamUrl = streamUrl || `${base}/stream`;
   if (forceLocalCamera) {
@@ -1472,6 +1474,7 @@ function connectRemoteStream() {
   els.video.onload = () => {
     videoState = "streaming";
     streamReconnectAttempts = 0;
+    startStreamWatchdog();
     els.video.classList.remove("off");
     els.video.style.display = "block";
     els.localVideo.classList.add("off");
@@ -1484,6 +1487,7 @@ function connectRemoteStream() {
 }
 function handleRemoteStreamFailure() {
   videoState = "reconnecting";
+  clearStreamWatchdog();
   els.video.classList.add("off");
   els.videoFallback.textContent = "camera reconnecting";
   els.videoFallback.style.display = "grid";
@@ -1498,6 +1502,17 @@ function scheduleStreamReconnect() {
 function clearStreamReconnect() {
   if (streamReconnectTimer) window.clearTimeout(streamReconnectTimer);
   streamReconnectTimer = void 0;
+}
+function startStreamWatchdog() {
+  clearStreamWatchdog();
+  streamWatchdogTimer = window.setInterval(() => {
+    if (!currentStreamUrl || forceLocalCamera || videoState === "local") return;
+    els.video.src = cacheBustUrl(currentStreamUrl);
+  }, 7e3);
+}
+function clearStreamWatchdog() {
+  if (streamWatchdogTimer) window.clearInterval(streamWatchdogTimer);
+  streamWatchdogTimer = void 0;
 }
 function cacheBustUrl(value) {
   const url = new URL(value, location.href);
@@ -1817,6 +1832,11 @@ if (roundId) {
 }
 if (robotUrl) {
   configureVideo(`${wsFromHttp(robotUrl)}/ws/drive`, `${robotUrl}/stream`);
+} else {
+  configureVideo(
+    `${wsFromHttp(location.origin)}/ws/drive?robot=${encodeURIComponent(robotName)}`,
+    `/robot/${encodeURIComponent(robotName)}/stream`
+  );
 }
 setupControls();
 setupJoystick();

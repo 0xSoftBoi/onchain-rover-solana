@@ -51,6 +51,7 @@ function summarizeDriverFrames(
     lastAt: last?.atMs ?? null,
     speedModes: [...new Set(frames.map((event) => String(event.frame.speed_mode ?? "")).filter(Boolean))],
     battery: numberRange(frames, "battery_v"),
+    camera: cameraSummary(frames),
     wheelCommand: {
       lastLeft: numberField(last?.frame.left_cmd),
       lastRight: numberField(last?.frame.right_cmd),
@@ -67,6 +68,38 @@ function summarizeDriverFrames(
       estopCount: frames.filter((event) => event.frame.estop === true).length,
     },
   };
+}
+
+function cameraSummary(frames: TraceFrame[]) {
+  const cameraFrames = frames
+    .map((event) => event.frame.camera)
+    .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object"));
+  const last = cameraFrames.at(-1);
+  return {
+    status: stringField(last?.status) ?? null,
+    health: stringField(last?.health) ?? null,
+    fps: numberField(last?.fps),
+    lastFrameAgeMs: numberField(last?.last_frame_age_ms),
+    resolution: stringField(last?.resolution) ?? null,
+    brightness: numberField(last?.brightness),
+    reconnectState: stringField(last?.reconnect_state) ?? null,
+    healthyCount: cameraFrames.filter((camera) => cameraHealth(camera) === "healthy").length,
+    staleCount: cameraFrames.filter((camera) => cameraHealth(camera) === "stale").length,
+    missingCount: cameraFrames.filter((camera) => cameraHealth(camera) === "missing").length,
+    degradedCount: cameraFrames.filter((camera) => cameraHealth(camera) === "degraded").length,
+  };
+}
+
+function cameraHealth(camera: Record<string, unknown>) {
+  const health = stringField(camera.health);
+  if (health) return health;
+  const status = stringField(camera.status);
+  const age = numberField(camera.last_frame_age_ms);
+  if (age !== null && age > 1500) return "stale";
+  if (status === "simulated" || status === "proxy") return "healthy";
+  if (status === "configured") return "degraded";
+  if (status === "unavailable" || status === "missing" || status === "error") return "missing";
+  return "";
 }
 
 function buildNotableEvents(
@@ -149,6 +182,10 @@ function averageOdom(frame: Record<string, unknown> | undefined) {
 function numberField(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function compactTraceFrame(event: TraceFrame) {

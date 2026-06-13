@@ -287,6 +287,7 @@ function assertTelemetryTrace(round: any, trace: any) {
   const challenger = trace.drivers?.challenger;
   if (!(challenger?.frameCount > 0)) throw new Error("challenger trace missing frames");
   if (!(Number(challenger?.odometry?.last ?? 0) > 0)) throw new Error("challenger trace missing odometry");
+  if (challenger?.camera?.health !== "healthy") throw new Error("challenger trace missing healthy camera summary");
   if (!trace.notableEvents?.some((event: { type?: string }) => event.type === "round-start")) {
     throw new Error("trace missing round-start event");
   }

@@ -325,6 +325,10 @@ Telemetry trace files are stored as `telemetry.jsonl` beside `round.json`,
 id, driver slot, robot, timestamp, command, odometry, battery, speed mode,
 deadman/estop state, camera status, and lidar status.
 
+The pilot HUD renders camera health in two compact fields: state (`healthy`,
+`stale`, `missing`, or `degraded`) and detail (`fps`, frame age, resolution, or
+reconnect state). The same camera status is preserved in telemetry traces.
+
 ## Operator Lobby
 
 Open the lobby from a laptop on the same network:

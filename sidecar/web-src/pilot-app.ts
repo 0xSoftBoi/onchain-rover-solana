@@ -160,6 +160,7 @@ const els = {
   feeState: byId("feeState"),
   source: byId("source"),
   cameraState: byId("cameraState"),
+  cameraDetail: byId("cameraDetail"),
   lidar: byId("lidar"),
   yaw: byId("yaw"),
   odo: byId("odo"),
@@ -647,6 +648,8 @@ function renderTelemetry(frame: TelemetryFrame) {
   const camera = cameraHealth(frame);
   els.cameraState.textContent = camera.label;
   els.cameraState.className = camera.tone;
+  els.cameraDetail.textContent = camera.detail;
+  els.cameraDetail.className = camera.tone;
   els.lidar.textContent = lidarLabel(frame);
   els.yaw.textContent = frame.yaw !== undefined ? `${frame.yaw.toFixed(0)}deg` : "--";
   els.odo.textContent = odometryLabel(frame);
@@ -682,24 +685,24 @@ function renderTelemetry(frame: TelemetryFrame) {
   }
 }
 
-function cameraHealth(frame: TelemetryFrame): { label: string; tone: "" | "ok" | "warn" | "bad" } {
+function cameraHealth(frame: TelemetryFrame): { label: string; detail: string; tone: "" | "ok" | "warn" | "bad" } {
   const camera = frame.camera ?? frame.sensors?.camera;
+  const detail = cameraDetail(camera, frame);
   if (forceLocalCamera || videoState === "local") {
-    return { label: camera?.status ? `local/${camera.status}` : "local", tone: "ok" };
+    return { label: camera?.status ? `local/${camera.status}` : "local", detail, tone: "ok" };
   }
-  if (videoState === "reconnecting") return { label: "reconnect", tone: "warn" };
-  if (videoState === "fallback") return { label: "missing", tone: "bad" };
+  if (videoState === "reconnecting") return { label: "reconnect", detail, tone: "warn" };
+  if (videoState === "fallback") return { label: "missing", detail, tone: "bad" };
 
   const age = camera?.last_frame_age_ms ?? frame.raw_frame_age_ms ?? frame.sensors?.raw_frame?.age_ms;
   const health = camera?.health ?? deriveCameraHealth(camera?.status, age);
-  if (age !== undefined && age > 1500) return { label: `stale ${age.toFixed(0)}ms`, tone: "warn" };
+  if (age !== undefined && age > 1500) return { label: "stale", detail, tone: "warn" };
   if (health === "healthy") {
-    const fps = camera?.fps !== undefined ? ` ${camera.fps.toFixed(0)}fps` : "";
-    return { label: `${camera?.status || "ok"}${fps}`, tone: "ok" };
+    return { label: camera?.status || "ok", detail, tone: "ok" };
   }
-  if (health === "degraded") return { label: camera?.reconnect_state || camera?.status || "degraded", tone: "warn" };
-  if (health === "missing") return { label: camera?.status || "missing", tone: "bad" };
-  return { label: camera?.status || "--", tone: "" };
+  if (health === "degraded") return { label: camera?.reconnect_state || camera?.status || "degraded", detail, tone: "warn" };
+  if (health === "missing") return { label: camera?.status || "missing", detail, tone: "bad" };
+  return { label: camera?.status || "--", detail, tone: "" };
 }
 
 function deriveCameraHealth(status?: string, age?: number): string {
@@ -708,6 +711,18 @@ function deriveCameraHealth(status?: string, age?: number): string {
   if (status === "configured") return "degraded";
   if (status === "unavailable" || status === "missing" || status === "error") return "missing";
   return "";
+}
+
+function cameraDetail(camera: CameraTelemetry | undefined, frame: TelemetryFrame): string {
+  const age = camera?.last_frame_age_ms ?? frame.raw_frame_age_ms ?? frame.sensors?.raw_frame?.age_ms;
+  const parts = [
+    camera?.fps !== undefined ? `${camera.fps.toFixed(0)}fps` : undefined,
+    age !== undefined ? `${age.toFixed(0)}ms` : undefined,
+    camera?.resolution,
+    camera?.brightness !== undefined ? `b${camera.brightness.toFixed(0)}` : undefined,
+    camera?.reconnect_state && camera.reconnect_state !== "stable" ? camera.reconnect_state : undefined,
+  ].filter(Boolean);
+  return parts.length ? parts.slice(0, 3).join(" ") : "--";
 }
 
 function lidarLabel(frame: TelemetryFrame): string {

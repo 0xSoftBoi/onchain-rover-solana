@@ -13,8 +13,7 @@ import "./env.js";
  * Re-check method signatures against the installed @privy-io/node.
  */
 import { PrivyClient } from "@privy-io/node";
-import { toAccount } from "viem/accounts";
-import { serializeTransaction, keccak256, type Hex } from "viem";
+import { createViemAccount } from "@privy-io/node/viem";
 
 const APP_ID = process.env.PRIVY_APP_ID;
 const APP_SECRET = process.env.PRIVY_APP_SECRET;
@@ -26,14 +25,14 @@ export function client(): PrivyClient {
   return _client;
 }
 
-const WALLETS: Record<string, string | undefined> = {
-  guard: process.env.PRIVY_WALLET_GUARD,
-  courier: process.env.PRIVY_WALLET_COURIER,
+const WALLETS: Record<string, { id?: string; addr?: string }> = {
+  guard: { id: process.env.PRIVY_WALLET_GUARD, addr: process.env.PRIVY_ADDR_GUARD },
+  courier: { id: process.env.PRIVY_WALLET_COURIER, addr: process.env.PRIVY_ADDR_COURIER },
 };
 
 export function config() {
   const wallets = Object.fromEntries(
-    Object.entries(WALLETS).map(([k, v]) => [k, v ? `${v.slice(0, 10)}…` : null]));
+    Object.entries(WALLETS).map(([k, v]) => [k, v.addr ?? null]));
   return {
     configured: Boolean(APP_ID && APP_SECRET),
     custody: process.env.CUSTODY === "privy" ? "privy-tee" : "local-key",
@@ -41,34 +40,15 @@ export function config() {
   };
 }
 
-/** A viem account whose signing happens inside Privy's TEE (no local key). */
+/** A viem account whose signing happens inside Privy's TEE (no local key).
+ *  Uses Privy's official viem integration (handles BigInt→hex over the wire). */
 export function privyAccount(walletId: string, address: `0x${string}`) {
-  const eth = () => client().wallets().ethereum();
-  return toAccount({
-    address,
-    async signTransaction(tx) {
-      // serialize the unsigned tx and have Privy sign it in the enclave
-      const unsigned = serializeTransaction(tx);
-      const res: any = await eth().signTransaction(walletId, {
-        transaction: tx as any,
-      } as any);
-      // SDK returns the signed serialized tx (field name may vary by version)
-      return (res.signedTransaction ?? res.signed_transaction ?? res) as Hex;
-    },
-    async signMessage({ message }) {
-      const res: any = await eth().signMessage(walletId, { message } as any);
-      return (res.signature ?? res) as Hex;
-    },
-    async signTypedData(typedData) {
-      const res: any = await eth().signTypedData(walletId, { typedData } as any);
-      return (res.signature ?? res) as Hex;
-    },
-  });
+  return createViemAccount(client(), { walletId, address });
 }
 
 /** Resolve a robot name to a Privy-backed viem account, or null if not provisioned. */
-export function accountFor(name: string, address: `0x${string}`) {
-  const id = WALLETS[name];
-  if (!APP_ID || !APP_SECRET || !id) return null;
-  return privyAccount(id, address);
+export function accountFor(name: string) {
+  const w = WALLETS[name];
+  if (!APP_ID || !APP_SECRET || !w?.id || !w?.addr) return null;
+  return privyAccount(w.id, w.addr as `0x${string}`);
 }

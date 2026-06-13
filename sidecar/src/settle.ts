@@ -54,8 +54,7 @@ function wallet(pk: string) {
 // the local key. Non-breaking — defaults to local.
 function walletFor(role: string) {
   if (process.env.CUSTODY === "privy") {
-    const addr = ROBOTS[role as keyof typeof ROBOTS]?.wallet as `0x${string}` | undefined;
-    const acct = addr ? privy.accountFor(role, addr) : null;
+    const acct = privy.accountFor(role);
     if (acct) return createWalletClient({ account: acct, chain: arcTestnet, transport: http() });
   }
   const pk = KEYS()[role];

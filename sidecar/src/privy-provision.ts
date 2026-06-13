@@ -12,7 +12,7 @@ import { client } from "./privy.js";
 
 const wallets = client().wallets();
 for (const role of ["guard", "courier"]) {
-  const w: any = await wallets.create({ chainType: "ethereum" } as any);
+  const w: any = await wallets.create({ chain_type: "ethereum" } as any);
   console.log(`${role}: id=${w.id ?? w.walletId}  address=${w.address}`);
 }
 console.log("\nAdd the ids to .env (PRIVY_WALLET_GUARD / PRIVY_WALLET_COURIER),");

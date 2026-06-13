@@ -107,6 +107,11 @@
   </div>
 
   <div class="card">
+    <h2>🔐 Proof of Action — pulled from Walrus</h2>
+    <div id="proof"><span class="addr">no proof yet</span></div>
+  </div>
+
+  <div class="card">
     <h2>🏷️ ENS Fleet (live resolve)</h2>
     <div id="ens">—</div>
   </div>
@@ -274,9 +279,24 @@ async function pollReason(){
     }
   } catch {}
 }
+async function pollProof(){
+  try {
+    const r = await (await fetch("/proof/latest")).json();
+    if (!r.proof || !r.url) return;
+    const p = r.proof;
+    if ($("proof").dataset.blob === p.blobId) return;  // only redraw on change
+    $("proof").dataset.blob = p.blobId;
+    $("proof").innerHTML =
+      `<img src="${r.url}" style="width:100%;max-width:360px;border-radius:8px;background:#000" />
+       <div class="kv"><span>${p.label||'proof'}</span><span class="v">⛓ Walrus</span></div>
+       <div class="kv"><span class="addr">blobId</span><span class="v"><a target="_blank" href="${r.url}">${p.blobId.slice(0,16)}…</a></span></div>
+       <div class="kv"><span class="addr">sha256</span><span class="v" style="color:var(--grn)">${(p.sha256||'').slice(0,16)}… ✓</span></div>`;
+  } catch {}
+}
 poll(); setInterval(poll, 4000);
 pollOnchain(); setInterval(pollOnchain, 3000);
 pollReason(); setInterval(pollReason, 1500);
+pollProof(); setInterval(pollProof, 3000);
 </script>
 </body>
 </html>

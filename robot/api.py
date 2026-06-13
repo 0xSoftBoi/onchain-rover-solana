@@ -188,6 +188,13 @@ def store_proof():
     digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
     blob_id = proofmod.walrus_put(path)
     log_event("WALRUS", f"blob {blob_id[:12]}…")
+    if SIDECAR_URL:   # surface the proof image on the dashboard (fire-and-forget)
+        try:
+            requests.post(f"{SIDECAR_URL}/proof",
+                          json={"blobId": blob_id, "sha256": digest, "label": f"{ROLE} proof"},
+                          timeout=3)
+        except Exception:
+            pass
     return {"blobId": blob_id, "sha256": digest}
 
 

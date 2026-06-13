@@ -165,6 +165,28 @@ app.get("/reason/feed", (_req, res) => {
   res.json({ events: reasoning.slice(0, 60) });
 });
 
+// --- latest proof-of-action (pulled from a public Walrus aggregator) -------
+const WALRUS_AGG = process.env.WALRUS_AGGREGATOR
+  ?? "https://aggregator.walrus-testnet.walrus.space";
+type Proof = { t: number; blobId: string; sha256?: string; label?: string };
+let latestProof: Proof | null = null;
+function setProof(p: Proof) { latestProof = { ...p, t: Date.now() }; }
+app.post("/proof", (req, res) => {
+  const { blobId, sha256, label } = req.body ?? {};
+  if (blobId) setProof({ blobId, sha256, label, t: Date.now() });
+  res.json({ ok: true });
+});
+app.get("/proof/latest", (_req, res) => {
+  // a REAL rover photo already on Walrus (guard /store-proof) for mock review
+  const p = MOCK
+    ? { t: Date.now(), blobId: "zTOQNkKtqGa-ziBkSF6Z-_oGuKYWvAQq79wkZZ-MhRw",
+        sha256: "44d5699262c4714e87e07bd65fd34f774fe253fc5ed9563ef922a08fb58e2d5a",
+        label: "courier delivery @ checkpoint" }
+    : latestProof;
+  res.json({ proof: p, aggregator: WALRUS_AGG,
+             url: p ? `${WALRUS_AGG}/v1/blobs/${p.blobId}` : null });
+});
+
 app.get("/robot/registry", (_req, res) => {
   res.json(Object.fromEntries([...liveRobots.entries()].map(([k, v]) =>
     [k, { ...v, freshSecs: Math.round((Date.now() - v.lastSeen) / 1000) }])));
@@ -284,6 +306,8 @@ app.post("/race/finish", async (req, res) => {
         signal: AbortSignal.timeout(8000) });
       proof = await (await fetch(`${robot("guard").url}/store-proof`, { method: "POST",
         signal: AbortSignal.timeout(20000) })).json();
+      if (proof?.blobId) setProof({ blobId: proof.blobId, sha256: proof.sha256,
+        label: `${winner} wins`, t: Date.now() });
     } catch (e: any) { proof = { } /* proof capture failed; settle still records winner */ ; }
     let settled;
     if (process.env.RACEMARKET_ADDRESS && onChainRaceId !== null) {

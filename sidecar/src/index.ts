@@ -15,6 +15,8 @@ import "./env.js"; // MUST be first — loads dotenv before any env-reading modu
 import { ARC, ROBOTS, type RobotName } from "./config.js";
 import * as erc8004 from "./erc8004.js";
 import * as ens from "./ens.js";
+import * as identity from "./identity.js";
+import * as worldid from "./worldid.js";
 import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
 import * as settle from "./settle.js";
@@ -65,10 +67,26 @@ app.post("/estop/:robot", async (req, res) => {
 });
 
 app.post("/race/open", (_req, res) => res.json(race.openRaceWithBets()));
-app.post("/race/bet", (req, res) => {
+
+// World ID config for the frontend IDKit widget (public app_id only).
+app.get("/worldid/config", (_req, res) => res.json(worldid.config()));
+
+// Real World ID verify -> real nullifier. Frontend posts the IDKit proof here
+// and gets back the verified nullifier to use when betting.
+app.post("/worldid/verify", async (req, res) => {
+  try { res.json(await worldid.verify(req.body.proof, req.body.signal)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Bet: requires a World-ID-verified nullifier. The proof is re-verified server
+// side here (don't trust a client-asserted nullifier), then one-per-human is
+// enforced. No proof -> no bet.
+app.post("/race/bet", async (req, res) => {
   try {
-    const { bettor = "anon", racer, amount = 1, nullifier } = req.body;
-    res.json(race.placeBet({ bettor, racer, amount: Number(amount), nullifier }));
+    const { bettor = "anon", racer, amount = 1, proof } = req.body;
+    if (!proof) throw new Error("World ID proof required to bet");
+    const v = await worldid.verify(proof, racer); // signal = racer (binds proof to choice)
+    res.json(race.placeBet({ bettor, racer, amount: Number(amount), nullifier: v.nullifier }));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 app.get("/race/odds", (_req, res) => res.json(race.odds()));
@@ -107,27 +125,29 @@ app.post("/race/finish", (req, res) =>
 // RaceMarket.settle(raceId, winnerIdx, proofHash, blobId) via judge wallet.
 // Wire after contract deploy (TODO tonight).
 
-// Checkpoint demo helpers.
-app.post("/challenge", (req, res) => {
-  const r = robot(req.body.robot);
-  res.json({
-    ens: r.ens, wallet: r.wallet, agentId: r.agentId,
-    nonce: Math.random().toString(36).slice(2, 10), ts: Date.now(),
-    // TODO tonight: sign {wallet,nonce,ts} with the robot's Privy wallet
-  });
+// Checkpoint: a robot signs a real challenge with its OWN EOA key.
+app.post("/challenge", async (req, res) => {
+  try { res.json(await identity.signChallenge(req.body.robot as RobotName)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
+// Verify an agent: real signature recovery + live AgentBook human-backing +
+// on-chain ERC-8004 reputation + EventPass hold. Every field is real.
 app.post("/verify-agent", async (req, res) => {
-  // ERC-8004 registered? + AgentBook human-backed? + holds EventPass (on Arc)?
-  const { wallet, agentId } = req.body;
-  let holdsPass = false;
-  try { holdsPass = wallet ? await settle.holdsPass(wallet) : false; } catch {}
-  res.json({
-    wallet, agentId,
-    erc8004Registered: Boolean(agentId),
-    humanBacked: null,   // TODO: AgentBook read on World Chain 480
-    holdsPass,           // real on-chain EventPass read on Arc
-  });
+  const { wallet, agentId, message, signature, nonce } = req.body;
+  const out: any = { wallet, agentId };
+  try {
+    if (message && signature) {
+      const v = await identity.verifyChallenge({ message, signature, wallet, nonce });
+      out.signatureValid = v.signatureValid; out.replay = v.replay;
+    }
+    const hb = await identity.lookupHuman(wallet);
+    out.humanBacked = hb.humanBacked; out.humanId = hb.humanId;
+    out.holdsPass = await settle.holdsPass(wallet);
+    const rep = await settle.repSummary(Number(agentId ?? 0));
+    out.reputation = rep;
+  } catch (e: any) { out.error = e.message; }
+  res.json(out);
 });
 
 // Robot-to-robot payment: courier transfers the NEGOTIATED USDC to guard on Arc.

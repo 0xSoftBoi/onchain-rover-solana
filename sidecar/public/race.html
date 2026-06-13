@@ -52,6 +52,7 @@
 </div>
 <div id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@worldcoin/idkit-standalone@1.4.2/build/index.global.js"></script>
 <script>
 const $ = (id)=>document.getElementById(id);
 const usd = (n)=>"$"+Number(n||0).toFixed(2);
@@ -98,13 +99,23 @@ function renderLanes(robots, od, race){
     const img=$("feed-"+name); if(img && robots[name].url && !img.src.includes("/stream")) img.src=robots[name].url+"/stream";
   }
 }
+// REAL World ID: IDKit proof -> server verify -> nullifier-gated bet. No fakes.
+let worldCfg = null;
+async function loadWorld(){ try { worldCfg = await (await fetch("/worldid/config")).json(); } catch {} }
 async function bet(racer,amount){
-  // one-bet-per-human: in production the nullifier comes from World ID verify
-  const nullifier = localStorage.getItem("nullifier") || ("dev-"+Math.random().toString(36).slice(2));
-  localStorage.setItem("nullifier", nullifier);
-  const r = await (await fetch("/race/bet",{method:"POST",headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({racer,amount,nullifier})})).json();
-  toast(r.error ? ("✋ "+r.error) : `bet ${usd(amount)} on ${racer} — odds now ${r.odds[racer]}×`);
+  if (!worldCfg || !worldCfg.configured){ toast("✋ World ID not configured (set WORLD_APP_ID)"); return; }
+  if (!window.IDKit){ toast("loading World ID…"); return; }
+  // open the real IDKit widget; signal binds the proof to the chosen racer
+  IDKit.init({ app_id: worldCfg.appId, action: worldCfg.action, signal: racer,
+    verification_level: "device",
+    handleVerify: async (proof) => {
+      const r = await (await fetch("/race/bet",{method:"POST",headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({racer,amount,proof})})).json();
+      if (r.error) throw new Error(r.error);
+      toast(`✅ verified bet ${usd(amount)} on ${racer} — odds now ${r.odds[racer]}×`);
+    },
+    onSuccess: ()=>{} });
+  IDKit.open();
 }
 async function countdown(){
   await api("/race/arm","");
@@ -119,7 +130,7 @@ async function finish(winner){
   await fetch("/race/finish",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({winner})});
   toast("🏁 "+winner+" wins — settle on-chain when funded");
 }
-poll(); setInterval(poll, 1500);
+loadWorld(); poll(); setInterval(poll, 1500);
 </script>
 </body>
 </html>

@@ -41,7 +41,10 @@ def buyer_decision(price, budget, history, secs_left):
     try:
         d = _ask(prompt)
         action = "accept" if str(d.get("action", "")).lower().startswith("a") else "wait"
-        return {"action": action, "reason": str(d.get("reason", ""))[:60]}
+        txt = str(d.get("reason", "")).strip()[:60] or (
+            "at budget, low risk in waiting" if action == "accept"
+            else "price still falling, hold")
+        return {"action": action, "reason": txt}
     except Exception:
         # fallback: accept once we're within ~one decrement of budget or low on time
         margin = budget - price
@@ -60,13 +63,28 @@ def seller_reserve(start, floor, demand):
         f"{demand:.2f} (0=nobody waiting, 1=crowd). Pick a reserve price (won't "
         f"sell below) and a per-round price step. High demand: hold value, small "
         f'steps. Low demand: move it. JSON: {{"reserve":<num>,"step":<num>,"reason":"<8 words>"}}.')
+    # A Dutch auction MUST descend AND land in the buyer's range, so bound the
+    # reserve low (gemma3:1b tends to "maintain value" = no deal) and keep the
+    # step fine enough that an offer can hit the buyer's budget. The LLM still
+    # picks within these guardrails (demand-sensitive) — real, but terminating.
+    reserve_cap = floor + (start - floor) * 0.35  # reserve in [floor, ~35% of range]
     try:
         d = _ask(prompt)
-        reserve = max(floor, min(start, float(d.get("reserve", floor))))
-        step = max(0.05, min(start - floor or 0.25, float(d.get("step", 0.25))))
+        reserve = max(floor, min(reserve_cap, float(d.get("reserve", floor))))
+        step = max(0.15, min(0.25, float(d.get("step", 0.25))))
         return {"reserve": round(reserve, 2), "step": round(step, 2),
                 "reason": str(d.get("reason", ""))[:60]}
     except Exception:
-        reserve = floor + (start - floor) * demand * 0.5
+        reserve = floor + (start - floor) * demand * 0.4
         return {"reserve": round(reserve, 2), "step": 0.25,
                 "reason": "demand-scaled reserve"}
+
+
+def warmup():
+    """Load gemma3 into RAM with a tiny prompt so the first real decision isn't
+    a ~9s cold-load. Call at robot startup (we now have the headroom)."""
+    try:
+        requests.post(OLLAMA, json={"model": MODEL, "prompt": "ok", "stream": False,
+                                    "options": {"num_predict": 1}}, timeout=60)
+    except Exception:
+        pass

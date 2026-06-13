@@ -68,11 +68,17 @@ def telemetry():
 @app.on_event("startup")
 async def _configure_rover():
     """Raise the firmware motion failsafe (default 3s) so brief command gaps
-    don't cut the motors — belt-and-suspenders with rover.py's sustain thread."""
+    don't cut the motors — belt-and-suspenders with rover.py's sustain thread.
+    Also warm gemma3 so the first negotiation decision isn't a ~9s cold-load."""
     try:
         _live_rover().set_heartbeat(15000)
     except Exception as e:
         print(f"set_heartbeat failed: {e}")
+    try:
+        import threading, brain
+        threading.Thread(target=brain.warmup, daemon=True).start()
+    except Exception as e:
+        print(f"gemma3 warmup skip: {e}")
 
 
 @app.on_event("startup")

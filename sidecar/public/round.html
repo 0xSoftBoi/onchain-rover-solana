@@ -320,7 +320,7 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { round: null, chain: null, treasury: null, evidence: null, detections: [], rounds: [], replay: null };
+const state = { round: null, chain: null, treasury: null, evidence: null, detections: [], rounds: [], replay: null, trace: null };
 let calibrationDirty = false;
 const localDefaults = {
   challenger: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -410,8 +410,10 @@ function settlementSummary(round) {
 }
 
 function telemetryTraceSummary(round) {
-  const trace = round?.telemetryTraceId || round?.proof?.telemetryTraceId;
-  return trace || "-";
+  const trace = state.trace?.traceId || round?.telemetryTraceId || round?.proof?.telemetryTraceId;
+  if (!trace) return "-";
+  const frames = state.trace?.frameCount;
+  return frames === undefined ? trace : `${trace} · ${frames} frames`;
 }
 
 function render() {
@@ -482,10 +484,12 @@ async function refresh() {
       const finishDetections = await getJson(`/race/round/${state.round.id}/finish-detections`).catch(() => null);
       state.detections = finishDetections?.detections || [];
       state.replay = await getJson(`/race/round/${state.round.id}/evidence`).catch(() => null);
+      state.trace = await getJson(`/race/round/${state.round.id}/telemetry-trace`).catch(() => null);
     } else {
       state.evidence = null;
       state.detections = [];
       state.replay = null;
+      state.trace = null;
     }
     render();
   } catch (err) {
@@ -712,11 +716,20 @@ function renderReplay() {
     ["round", evidence.roundId],
     ["proof", evidence.proofHash || "-"],
     ["packet", evidence.evidenceHash || "-"],
-    ["trace", evidence.resultProof?.result?.telemetryTraceId || "-"],
+    ["trace", state.trace?.traceId || evidence.resultProof?.result?.telemetryTraceId || "-"],
+    ["trace frames", state.trace ? `${state.trace.frameCount} frames · ${state.trace.eventCount} events` : "-"],
     ["settlement", evidence.resultProof?.result?.settlementState?.status || "-"],
     ["detections", String(evidence.finishDetections?.length || 0)],
     ["lifecycle", (evidence.lifecycle || []).map((event) => `${event.event}@${new Date(event.atMs).toLocaleTimeString()}`).join(" -> ") || "-"],
   ];
+  for (const slot of ["challenger", "opponent"]) {
+    const summary = state.trace?.drivers?.[slot];
+    if (!summary) continue;
+    rows.push([
+      `${slot} trace`,
+      `${summary.robot || "-"} · ${summary.frameCount} frames · odom ${summary.odometry?.last ?? "-"}`,
+    ]);
+  }
   const latest = evidence.finishDetections?.at?.(-1);
   if (latest) {
     rows.push(["latest", `${latest.slot} ${latest.source}/${latest.method} ${Math.round(latest.confidence * 100)}%`]);
@@ -743,7 +756,7 @@ function operatorFinishProof(winner) {
     winner,
     operatorActionId: actionId,
     submittedAtMs: now,
-    telemetryTraceId: `trace-${state.round.id}-${now}`,
+    telemetryTraceId: `trace-${state.round.id}`,
     finishDetectionId: latest?.id,
     frameHash: latest?.frameHash,
     frameSource: latest?.source,

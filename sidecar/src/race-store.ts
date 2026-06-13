@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import type { Round } from "./rounds.js";
 import type { EvidenceRecord } from "./evidence.js";
+import type { RobotName } from "./config.js";
+import type { DriverSlot } from "./rounds.js";
 
 type PersistedEvent = {
   schema: "onchain-rover.race-ledger-event.v1";
@@ -11,6 +13,19 @@ type PersistedEvent = {
   kind: string;
   roundId: string;
   payload: unknown;
+};
+
+export type TelemetryTraceEvent = {
+  schema: "onchain-rover.telemetry-trace-event.v1";
+  traceId: string;
+  roundId: string;
+  atMs: number;
+  type: "frame" | "event";
+  slot: DriverSlot;
+  robot: RobotName;
+  event?: string;
+  frame?: Record<string, unknown>;
+  detail?: Record<string, unknown>;
 };
 
 const DEFAULT_DATA_DIR = new URL("../data/races", import.meta.url).pathname;
@@ -32,6 +47,18 @@ export function loadEvidenceRecords(): EvidenceRecord[] {
     .filter((record): record is EvidenceRecord => Boolean(record?.roundId));
 }
 
+export function loadTelemetryTrace(roundId: string): TelemetryTraceEvent[] {
+  try {
+    return readFileSync(telemetryFile(roundId), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as TelemetryTraceEvent)
+      .filter((event) => event?.schema === "onchain-rover.telemetry-trace-event.v1");
+  } catch {
+    return [];
+  }
+}
+
 export function saveRound(round: Round, kind: string) {
   const persisted = sanitizeRoundForDisk(round);
   writeJsonAtomic(roundFile(round.id), persisted);
@@ -43,12 +70,18 @@ export function saveEvidence(record: EvidenceRecord, kind: string) {
   appendEvent(record.roundId, kind, record);
 }
 
+export function appendTelemetryTrace(event: TelemetryTraceEvent) {
+  ensureDir(telemetryFile(event.roundId));
+  appendFileSync(telemetryFile(event.roundId), `${JSON.stringify(event)}\n`);
+}
+
 export function persistedRoundPaths(roundId: string) {
   return {
     dir: roundDir(roundId),
     round: roundFile(roundId),
     evidence: evidenceFile(roundId),
     events: eventsFile(roundId),
+    telemetry: telemetryFile(roundId),
   };
 }
 
@@ -105,6 +138,10 @@ function evidenceFile(roundId: string) {
 
 function eventsFile(roundId: string) {
   return join(roundDir(roundId), "events.jsonl");
+}
+
+function telemetryFile(roundId: string) {
+  return join(roundDir(roundId), "telemetry.jsonl");
 }
 
 function ensureDir(file: string) {

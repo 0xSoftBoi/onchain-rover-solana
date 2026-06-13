@@ -412,7 +412,7 @@ export function finishRound(id: string, winner: DriverSlot, proof?: Record<strin
   requireStatus(round, "racing");
   requireDriver(round, winner);
   const finishedAt = Date.now();
-  const telemetryTraceId = finishTelemetryTraceId(round, proof, finishedAt);
+  const telemetryTraceId = finishTelemetryTraceId(round, proof);
   round.status = "finished";
   round.winner = winner;
   round.finishedAt = finishedAt;
@@ -883,9 +883,9 @@ function finiteNumber(value: unknown, fallback: number, min: number, max: number
   return Math.max(min, Math.min(max, Number(number.toFixed(3))));
 }
 
-function finishTelemetryTraceId(round: Round, proof: Record<string, unknown> | undefined, finishedAt: number): string {
+function finishTelemetryTraceId(round: Round, proof: Record<string, unknown> | undefined): string {
   return firstString(proof?.telemetryTraceId, proof?.traceId)
-    ?? `trace-${round.id}-${finishedAt}`;
+    ?? `trace-${round.id}`;
 }
 
 function normalizeFinishProof(

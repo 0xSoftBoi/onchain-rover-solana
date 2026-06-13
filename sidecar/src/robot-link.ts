@@ -5,6 +5,9 @@ import type { Express } from "express";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 import { ROBOTS, type RobotName } from "./config.js";
+import * as raceStore from "./race-store.js";
+import * as rounds from "./rounds.js";
+import { traceIdForRound } from "./telemetry-trace.js";
 
 export type SpeedMode = "low" | "medium" | "high";
 
@@ -330,6 +333,7 @@ function handleRobotSocket(ws: WebSocket, url: URL) {
   runtime.robotSocket = ws;
   runtime.robotConnectedAt = Date.now();
   runtime.lastRobotSeenAt = Date.now();
+  recordRobotTraceEvent(runtime, "robot-connected");
   broadcastTelemetry(runtime, "bridge");
 
   ws.on("message", (raw) => {
@@ -344,6 +348,7 @@ function handleRobotSocket(ws: WebSocket, url: URL) {
   });
   ws.on("close", () => {
     if (runtime.robotSocket === ws) runtime.robotSocket = undefined;
+    recordRobotTraceEvent(runtime, "robot-disconnected");
     safeStop(runtime, "robot disconnected", false);
     broadcastTelemetry(runtime, "bridge");
   });
@@ -516,6 +521,7 @@ function recordTelemetry(runtime: RobotRuntime, frame: RobotTelemetry) {
   if (runtime.telemetryHistory.length > TELEMETRY_HISTORY_MAX) {
     runtime.telemetryHistory.splice(0, runtime.telemetryHistory.length - TELEMETRY_HISTORY_MAX);
   }
+  recordRoundTelemetry(runtime, frame);
 }
 
 function sendToRobot(runtime: RobotRuntime, command: DriveCommand) {
@@ -526,6 +532,7 @@ function sendToRobot(runtime: RobotRuntime, command: DriveCommand) {
 
 function safeStop(runtime: RobotRuntime, _reason: string, sendRobot = true) {
   runtime.stoppedByDeadman = true;
+  recordRobotTraceEvent(runtime, "safe-stop", { reason: _reason });
   runtime.lastCommand = {
     ...runtime.lastCommand,
     ts_ms: Date.now(),
@@ -534,6 +541,68 @@ function safeStop(runtime: RobotRuntime, _reason: string, sendRobot = true) {
   };
   if (sendRobot) sendToRobot(runtime, runtime.lastCommand);
   broadcastTelemetry(runtime, "bridge");
+}
+
+function recordRoundTelemetry(runtime: RobotRuntime, frame: RobotTelemetry) {
+  for (const target of activeTraceTargets(runtime.robot)) {
+    raceStore.appendTelemetryTrace({
+      schema: "onchain-rover.telemetry-trace-event.v1",
+      traceId: traceIdForRound(target.round),
+      roundId: target.round.id,
+      atMs: frame.ts_ms,
+      type: "frame",
+      slot: target.slot,
+      robot: runtime.robot,
+      frame: compactTelemetryFrame(frame),
+    });
+  }
+}
+
+function recordRobotTraceEvent(runtime: RobotRuntime, event: string, detail?: Record<string, unknown>) {
+  const atMs = Date.now();
+  for (const target of activeTraceTargets(runtime.robot)) {
+    raceStore.appendTelemetryTrace({
+      schema: "onchain-rover.telemetry-trace-event.v1",
+      traceId: traceIdForRound(target.round),
+      roundId: target.round.id,
+      atMs,
+      type: "event",
+      slot: target.slot,
+      robot: runtime.robot,
+      event,
+      detail,
+    });
+  }
+}
+
+function activeTraceTargets(robot: RobotName): Array<{ round: rounds.Round; slot: rounds.DriverSlot }> {
+  return rounds.listRounds()
+    .filter((round) => ["locked", "countdown", "racing"].includes(round.status))
+    .flatMap((round) => (["challenger", "opponent"] as const)
+      .filter((slot) => round.drivers[slot]?.robot === robot)
+      .map((slot) => ({ round, slot })));
+}
+
+function compactTelemetryFrame(frame: RobotTelemetry): Record<string, unknown> {
+  return {
+    ts_ms: frame.ts_ms,
+    robot: frame.robot,
+    battery_v: frame.battery_v,
+    left_cmd: frame.left_cmd,
+    right_cmd: frame.right_cmd,
+    odometry_left: frame.odometry_left,
+    odometry_right: frame.odometry_right,
+    yaw: frame.yaw,
+    session_id: frame.session_id,
+    deadman_ok: frame.deadman_ok,
+    estop: frame.estop,
+    stopped_by_deadman: frame.stopped_by_deadman,
+    speed_mode: frame.speed_mode,
+    max_speed: frame.max_speed,
+    source: frame.source,
+    camera: frame.camera,
+    lidar: frame.lidar,
+  };
 }
 
 function startDeadmanLoop() {

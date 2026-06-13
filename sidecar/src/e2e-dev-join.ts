@@ -59,12 +59,12 @@ async function main() {
     proof: {
       source: "e2e-dev-join",
       method: "operator-confirmation-button",
-      telemetryTraceId: `trace-${round.id}-e2e`,
+      telemetryTraceId: `trace-${round.id}`,
       frameHash: "0xe2e",
     },
   });
   assert(round.status === "finished", `expected finished round, got ${round.status}`);
-  assert(round.telemetryTraceId === `trace-${round.id}-e2e`, "finish telemetry trace id missing");
+  assert(round.telemetryTraceId === `trace-${round.id}`, "finish telemetry trace id missing");
   assert(round.proof?.operatorActionId, "operator finish action id missing");
   assert(round.proof?.proofFrame?.status === "captured", "proof frame metadata missing");
   assert(round.settlementState?.status === "ready", "settlement state should be ready after finish");
@@ -78,6 +78,12 @@ async function main() {
   round = await postJson(`/race/round/${round.id}/chain/settle`);
   assert(round.status === "settled", `expected settled round, got ${round.status}`);
   assert(round.settlementState?.status === "settled", "settlement state should be settled after payout");
+  const trace = await getJson(`/race/round/${round.id}/telemetry-trace`);
+  assert(trace.traceId === round.telemetryTraceId, "telemetry trace id mismatch");
+  assert(trace.frameCount > 0, "telemetry trace should include frames");
+  assert(trace.drivers?.challenger?.frameCount > 0, "challenger telemetry trace missing");
+  assert(trace.notableEvents?.some((event: { type?: string }) => event.type === "round-start"), "round start trace event missing");
+  assert(trace.notableEvents?.some((event: { type?: string }) => event.type === "round-finish"), "round finish trace event missing");
 
   console.log("Local dev wallet rehearsal e2e passed");
   console.log(`  roundId:     ${round.id}`);

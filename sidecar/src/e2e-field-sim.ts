@@ -122,8 +122,10 @@ async function main() {
   round = detection.round;
   round = await postJson(`/race/round/${round.id}/chain/settle`);
   const evidence = await getJson(`/race/round/${round.id}/evidence/hash`);
+  const trace = await getJson(`/race/round/${round.id}/telemetry-trace`);
   const preflight = await getJson("/field/preflight");
   assertPersistedLedger(round, evidence);
+  assertTelemetryTrace(round, trace);
   cleanup();
 
   console.log("Field simulator e2e passed");
@@ -277,6 +279,20 @@ function assertPersistedLedger(round: any, evidence: any) {
   if (persistedEvidence.proofHash !== evidence.proofHash) throw new Error("persisted evidence proof mismatch");
   if (!events.includes("\"kind\":\"round.chain_settled\"")) throw new Error("missing settlement event");
   if (!events.includes("\"source\":\"field-sim\"")) throw new Error("missing field sim evidence event");
+}
+
+function assertTelemetryTrace(round: any, trace: any) {
+  if (trace.traceId !== round.telemetryTraceId) throw new Error("trace id mismatch");
+  if (!(trace.frameCount > 0)) throw new Error("trace has no frames");
+  const challenger = trace.drivers?.challenger;
+  if (!(challenger?.frameCount > 0)) throw new Error("challenger trace missing frames");
+  if (!(Number(challenger?.odometry?.last ?? 0) > 0)) throw new Error("challenger trace missing odometry");
+  if (!trace.notableEvents?.some((event: { type?: string }) => event.type === "round-start")) {
+    throw new Error("trace missing round-start event");
+  }
+  if (!trace.notableEvents?.some((event: { type?: string }) => event.type === "round-finish")) {
+    throw new Error("trace missing round-finish event");
+  }
 }
 
 function readJson(path: string): any {

@@ -28,6 +28,7 @@ import * as robotLink from "./robot-link.js";
 import * as rounds from "./rounds.js";
 import * as settle from "./settle.js";
 import * as stakeAdapters from "./stake-adapter.js";
+import * as telemetryTrace from "./telemetry-trace.js";
 import * as treasuryLedger from "./treasury-ledger.js";
 
 // Never let one bad call take down the demo: log unhandled errors, stay up.
@@ -683,6 +684,13 @@ app.post("/race/round/:id/finish-detection", (req, res) => {
 app.get("/race/round/:id/finish-detections", (req, res) => {
   try { res.json({ detections: evidence.listFinishDetections(rounds.getRound(req.params.id)) }); }
   catch (e: any) { res.status(404).json({ error: e.message }); }
+});
+
+app.get("/race/round/:id/telemetry-trace", (req, res) => {
+  try {
+    const includeFrames = req.query.frames === "1" || req.query.frames === "true";
+    res.json(telemetryTrace.buildTelemetryTraceSummary(rounds.getRound(req.params.id), includeFrames));
+  } catch (e: any) { res.status(404).json({ error: e.message }); }
 });
 
 app.get("/race/round/:id/evidence", (req, res) => {

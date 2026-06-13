@@ -122,6 +122,7 @@ after a restart.
 - `GET /treasury/local`: local treasury fee balance.
 - `GET /race/round/:id/evidence`: canonical evidence packet, lifecycle snapshots, and telemetry windows.
 - `GET /race/round/:id/evidence/hash`: stable result proof hash plus current packet hash.
+- `GET /race/round/:id/telemetry-trace`: persisted per-round telemetry summary; add `?frames=1` to include compact frames.
 - `POST /race/round/:id/finish-detection`: finish camera, robot, lidar, or simulator event; auto-finishes by default.
 - `GET /race/round/:id/finish-detections`: recorded finish detector events for the round.
 - `GET /robot-link/state`: current bridge sessions, attached robots, telemetry, and last command.
@@ -318,6 +319,11 @@ metadata on the round. The proof includes the confirmed winner, operator action
 id, optional finish-frame hash, telemetry trace id, and a `settlementState`
 that moves from `blocked` to `ready` at winner confirmation and then to
 `settled` after payout submission.
+
+Telemetry trace files are stored as `telemetry.jsonl` beside `round.json`,
+`evidence.json`, and `events.jsonl`. Each frame is tagged with round id, trace
+id, driver slot, robot, timestamp, command, odometry, battery, speed mode,
+deadman/estop state, camera status, and lidar status.
 
 ## Operator Lobby
 

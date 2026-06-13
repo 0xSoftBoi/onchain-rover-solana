@@ -75,8 +75,27 @@ class Rover:
     # ROVER_DRIVE_INVERT=1 to flip so positive = forward. Verified per robot.
     _INVERT = -1.0 if os.environ.get("ROVER_DRIVE_INVERT") == "1" else 1.0
 
+    # The ESP32 has a command-timeout failsafe: it STOPS the motors if a drive
+    # command isn't resent within a few hundred ms. So we hold a target velocity
+    # and a daemon thread resends it ~12 Hz — one-shot drive() calls now produce
+    # sustained motion (fixes turns, forward, autonomous moves).
+    _target = (0.0, 0.0)
+    _sustain_started = False
+
+    def _sustain(self):
+        while True:
+            l, r = self._target
+            if l or r:
+                self._send({"T": 1, "L": l * self._INVERT, "R": r * self._INVERT})
+            time.sleep(0.08)
+
     def drive(self, left, right):
-        """Set wheel speeds. left/right roughly -1.0..1.0 (positive = forward)."""
+        """Set target wheel speeds (-1..1, + = forward). Held + resent by the
+        sustain thread so the firmware failsafe doesn't cut the motors."""
+        self._target = (float(left), float(right))
+        if not self._sustain_started:
+            self._sustain_started = True
+            threading.Thread(target=self._sustain, daemon=True).start()
         self._send({"T": 1, "L": float(left) * self._INVERT,
                     "R": float(right) * self._INVERT})
 
@@ -86,6 +105,54 @@ class Rover:
     def turn(self, speed=0.2):
         """Positive = spin right in place."""
         self.drive(speed, -speed)
+
+    # --- sensor-driven motion (uses the 9-axis IMU we were ignoring) -------
+    def heading(self):
+        """Fused yaw in degrees from the attitude frame (0-360)."""
+        a = self.attitude()
+        return (a.get("y") if a else None)
+
+    def tilt(self):
+        """(roll, pitch) degrees — detect ramps / being picked up / stuck."""
+        a = self.attitude()
+        return (a.get("r"), a.get("p")) if a else (None, None)
+
+    # Raw gyro_z integrates to angle. The fused yaw (T:1002) is dead on these
+    # units, but raw gyro is strong (~-876 at spin). SCALE maps raw·s -> degrees;
+    # tune ROVER_GYRO_SCALE against a camera-measured 360° (motion_check).
+    _GYRO_SCALE = float(os.environ.get("ROVER_GYRO_SCALE", "0.0164"))
+
+    def turn_by(self, degrees, speed=0.28, timeout=6.0):
+        """CLOSED-LOOP turn by integrating the raw gyro — stops at the actual
+        rotated angle (robust to battery sag/friction), not a blind timer.
+        +degrees = right. Returns the integrated angle achieved."""
+        direction = 1 if degrees >= 0 else -1
+        target = abs(degrees)
+        angle = 0.0
+        t_prev = time.time()
+        t0 = t_prev
+        self.turn(speed * direction)
+        while time.time() - t0 < timeout:
+            t = self.telemetry()
+            now = time.time()
+            dt = now - t_prev
+            t_prev = now
+            if t:
+                angle += abs(t.get("gz", 0)) * dt * self._GYRO_SCALE
+            if angle >= target:
+                break
+            time.sleep(0.02)
+        self.stop()
+        return angle * direction
+
+    def bumped(self, baseline_az=9800, thresh=4000):
+        """Collision/jolt check: horizontal accel spike beyond gravity baseline.
+        Returns True on a bump (use to auto-stop during autonomous moves)."""
+        t = self.telemetry()
+        if not t:
+            return False
+        ax, ay = abs(t.get("ax", 0)), abs(t.get("ay", 0))
+        return (ax + ay) > thresh   # large horizontal accel = jolt/impact
 
     def stop(self):
         self.drive(0, 0)

@@ -272,6 +272,33 @@ def drive(req: DriveReq):
     return {"ok": True}
 
 
+class TurnReq(BaseModel):
+    degrees: float       # + = right, - = left
+    speed: float = 0.25
+
+
+@app.post("/turn")
+def turn(req: TurnReq):
+    """CLOSED-LOOP turn by N degrees — integrates the raw gyro so it stops at
+    the actual rotated angle (robust to battery/friction), not a blind timer."""
+    achieved = _live_rover().turn_by(req.degrees, speed=req.speed)
+    log_event("TURN", f"req {req.degrees:+.0f}° got {achieved:+.0f}°")
+    return {"ok": True, "requested_deg": req.degrees, "achieved_deg": round(achieved, 1)}
+
+
+@app.get("/imu")
+def imu():
+    """Live IMU — the sensors we now use: gyro, accel, bump state. (Fused yaw
+    is dead on this firmware; raw gyro/accel are strong and what we drive on.)"""
+    r = _live_rover()
+    t = r.telemetry() or {}
+    return {"gyro": [t.get("gx"), t.get("gy"), t.get("gz")],
+            "accel": [t.get("ax"), t.get("ay"), t.get("az")],
+            "mag": [t.get("mx"), t.get("my"), t.get("mz")],
+            "odom": [t.get("odl"), t.get("odr")],
+            "bumped": r.bumped()}
+
+
 # Pilot session tokens — sidecar registers one after x402 payment; the WS
 # below refuses connections without a live token. One pilot per robot.
 _pilot_tokens: dict[str, float] = {}  # token -> expiry epoch

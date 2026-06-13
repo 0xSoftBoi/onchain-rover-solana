@@ -15,8 +15,11 @@ import time
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+import threading
+
 import agent
 import gibber
+import negotiate
 import perception
 import proof as proofmod
 import voice
@@ -223,6 +226,53 @@ async def ws_drive(ws):
     finally:
         task.cancel()
         r.stop()
+
+
+# --- Dutch auction (robot-to-robot negotiation over GibberLink) -------------
+_auction_results: dict[str, dict] = {}  # auctionId -> deal
+
+
+class SellReq(BaseModel):
+    item: str = "EventPass"
+    start: float = 2.00
+    floor: float = 0.50
+    step: float = 0.25
+    tick_secs: float = 4.0
+    auctionId: str = "a1"
+
+
+class BuyReq(BaseModel):
+    budget: float = 1.25
+    auctionId: str = "a1"
+    timeout_secs: float = 40
+
+
+@app.post("/negotiate/sell")
+def negotiate_sell(req: SellReq):
+    """GUARD: run the Dutch auction seller in the background. Poll /negotiate/result."""
+    def _run():
+        _auction_results[req.auctionId] = negotiate.run_seller(
+            item=req.item, start=req.start, floor=req.floor, step=req.step,
+            tick_secs=req.tick_secs, auction_id=req.auctionId)
+    threading.Thread(target=_run, daemon=True).start()
+    return {"started": True, "role": "seller", "auctionId": req.auctionId}
+
+
+@app.post("/negotiate/buy")
+def negotiate_buy(req: BuyReq):
+    """COURIER: run the Dutch auction buyer in the background."""
+    def _run():
+        _auction_results[req.auctionId] = negotiate.run_buyer(
+            budget=req.budget, auction_id=req.auctionId,
+            timeout_secs=req.timeout_secs)
+    threading.Thread(target=_run, daemon=True).start()
+    return {"started": True, "role": "buyer", "auctionId": req.auctionId}
+
+
+@app.get("/negotiate/result")
+def negotiate_result(auctionId: str = "a1"):
+    """Poll for the settled deal (agreed price)."""
+    return _auction_results.get(auctionId, {"pending": True, "auctionId": auctionId})
 
 
 class FinishWatchReq(BaseModel):

@@ -57,13 +57,38 @@ def run():
     if not verify.get("holdsPass"):
         step("guard: DENY (imposter beat)", lambda: requests.post(
             f"{GUARD}/deny", timeout=30).json())
-        # 5. courier pays guard robot-to-robot (x402 on Arc) -> mint pass
-        step("courier pays guard (x402/Arc)", lambda: requests.post(
+
+        # 5. DUTCH AUCTION: the robots negotiate the pass price over GibberLink.
+        #    Guard ticks the price down by voice+chirp; courier accepts at budget.
+        aid = "checkpoint1"
+        step("guard: start Dutch auction", lambda: requests.post(
+            f"{GUARD}/negotiate/sell",
+            json={"item": "EventPass", "start": 2.00, "floor": 0.50,
+                  "step": 0.25, "tick_secs": 4.0, "auctionId": aid},
+            timeout=10).json())
+        step("courier: join auction (budget $1.25)", lambda: requests.post(
+            f"{COURIER}/negotiate/buy",
+            json={"budget": 1.25, "auctionId": aid, "timeout_secs": 40},
+            timeout=10).json())
+
+        # poll until they strike a deal (price discovered live)
+        deal = {}
+        for _ in range(20):
+            time.sleep(2)
+            deal = requests.get(f"{GUARD}/negotiate/result",
+                                params={"auctionId": aid}, timeout=10).json()
+            if deal.get("agreed") is not None and not deal.get("pending"):
+                break
+        print(f"  >> AGREED PRICE: ${deal.get('price')}")
+
+        # 6. settle the NEGOTIATED price robot-to-robot (x402 on Arc) -> mint
+        agreed = str(deal.get("price", 0.50))
+        step("courier pays guard (x402/Arc, negotiated)", lambda: requests.post(
             f"{SIDECAR}/pay",
-            json={"from": "courier", "to": "guard", "amt": "0.50"},
+            json={"from": "courier", "to": "guard", "amt": agreed},
             timeout=120).json())
         step("mint EventPass", lambda: requests.post(
-            f"{SIDECAR}/mint-pass", json={"robot": "courier"},
+            f"{SIDECAR}/mint-pass", json={"robot": "courier", "price": agreed},
             timeout=120).json())
 
     # 6. re-check -> ADMIT

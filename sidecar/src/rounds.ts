@@ -15,6 +15,8 @@ export type RoundStatus =
   | "canceled";
 
 export type DriverSlot = "challenger" | "opponent";
+export type LaneName = "left" | "right";
+export type SpeedMode = "low" | "medium" | "high";
 
 export type Driver = {
   wallet: string;
@@ -27,7 +29,7 @@ export type Driver = {
   permitSignature?: string;
   joinedTx?: string;
   robot?: RobotName;
-  lane?: "left" | "right";
+  lane?: LaneName;
   token?: string;
 };
 
@@ -54,6 +56,31 @@ export type ChainRoundStatus =
   | "settled"
   | "canceled";
 
+export type StageCalibration = {
+  schema: "onchain-rover.stage-calibration.v1";
+  units: "ft";
+  laneLengthFt: number;
+  laneWidthFt: number;
+  startLineFt: number;
+  finishLineFt: number;
+  robotAssignments: Record<DriverSlot, { robot: RobotName; lane: LaneName }>;
+  sensorOffsets: Record<RobotName, {
+    cameraForwardFt: number;
+    cameraRightFt: number;
+    lidarForwardFt: number;
+    lidarRightFt: number;
+  }>;
+  speedDefaults: {
+    defaultSpeedMode: SpeedMode;
+    maxSpeedMode: SpeedMode;
+  };
+  safetyDefaults: {
+    obstacleStopDistanceFt: number;
+    warningDistanceFt: number;
+  };
+  updatedAt: number;
+};
+
 export type Round = {
   id: string;
   status: RoundStatus;
@@ -79,6 +106,7 @@ export type Round = {
   evidenceHash?: string;
   chainRaceId?: string;
   chainStatus?: ChainRoundStatus;
+  stageCalibration: StageCalibration;
   txHashes?: Partial<Record<
     | "open"
     | "challengerJoin"
@@ -101,6 +129,7 @@ type CreateRoundInput = {
   durationSecs?: number;
   countdownSecs?: number;
   challengeTtlSecs?: number;
+  stageCalibration?: Record<string, unknown>;
 };
 
 type AcceptRoundInput = {
@@ -126,14 +155,21 @@ const ROBOT_ASSIGNMENT: Record<DriverSlot, RobotName> = {
   challenger: "guard",
   opponent: "courier",
 };
-const LANE_ASSIGNMENT: Record<DriverSlot, "left" | "right"> = {
+const LANE_ASSIGNMENT: Record<DriverSlot, LaneName> = {
   challenger: "left",
   opponent: "right",
+};
+
+const SPEED_RANK: Record<SpeedMode, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
 };
 
 export function createRound(input: CreateRoundInput): Round {
   const now = Date.now();
   const wallet = input.wallet ? normalizeWallet(input.wallet) : "";
+  const stageCalibration = normalizeStageCalibration(input.stageCalibration, undefined, now);
   const round: Round = {
     id: randomUUID().slice(0, 8),
     status: wallet ? "challenge" : "accepted",
@@ -145,14 +181,15 @@ export function createRound(input: CreateRoundInput): Round {
     challengeExpiresAt:
       now + clampInt(input.challengeTtlSecs, 5, 600, DEFAULT_CHALLENGE_TTL_SECS) * 1000,
     createdAt: now,
+    stageCalibration,
     drivers: {
       challenger: {
         wallet,
         displayName: input.displayName,
         feePaid: false,
         stakeAuthorized: false,
-        robot: ROBOT_ASSIGNMENT.challenger,
-        lane: LANE_ASSIGNMENT.challenger,
+        robot: stageCalibration.robotAssignments.challenger.robot,
+        lane: stageCalibration.robotAssignments.challenger.lane,
       },
       opponent: wallet
         ? undefined
@@ -160,8 +197,8 @@ export function createRound(input: CreateRoundInput): Round {
             wallet: "",
             feePaid: false,
             stakeAuthorized: false,
-            robot: ROBOT_ASSIGNMENT.opponent,
-            lane: LANE_ASSIGNMENT.opponent,
+            robot: stageCalibration.robotAssignments.opponent.robot,
+            lane: stageCalibration.robotAssignments.opponent.lane,
           },
     },
   };
@@ -182,8 +219,8 @@ export function acceptRound(id: string, input: AcceptRoundInput): Round {
     displayName: input.displayName,
     feePaid: false,
     stakeAuthorized: false,
-    robot: ROBOT_ASSIGNMENT.opponent,
-    lane: LANE_ASSIGNMENT.opponent,
+    robot: round.stageCalibration.robotAssignments.opponent.robot,
+    lane: round.stageCalibration.robotAssignments.opponent.lane,
   };
   round.status = "accepted";
   round.acceptedAt = Date.now();
@@ -202,8 +239,8 @@ export function claimSlot(id: string, slot: DriverSlot, input: ClaimSlotInput): 
       wallet: "",
       feePaid: false,
       stakeAuthorized: false,
-      robot: ROBOT_ASSIGNMENT[slot],
-      lane: LANE_ASSIGNMENT[slot],
+      robot: round.stageCalibration.robotAssignments[slot].robot,
+      lane: round.stageCalibration.robotAssignments[slot].lane,
     };
     round.drivers[slot] = driver;
   }
@@ -249,6 +286,21 @@ export function authorizeStake(id: string, slot: DriverSlot, authorization?: Rec
   }
   updateReady(round);
   return persistSnapshot(round, `round.${slot}_stake_authorized`);
+}
+
+export function getStageCalibration(id: string): StageCalibration {
+  const round = getMutableRound(id);
+  round.stageCalibration ??= normalizeStageCalibration(undefined, undefined, Date.now());
+  applyCalibrationAssignments(round);
+  return structuredClone(round.stageCalibration);
+}
+
+export function updateStageCalibration(id: string, input?: Record<string, unknown>): Round {
+  const round = getMutableRound(id);
+  requireCalibrationEditable(round);
+  round.stageCalibration = normalizeStageCalibration(input, round.stageCalibration, Date.now());
+  applyCalibrationAssignments(round);
+  return persistSnapshot(round, "round.stage_calibrated");
 }
 
 export async function lockRound(id: string, robotUrl: (name: RobotName) => string): Promise<Round> {
@@ -425,7 +477,11 @@ export function getRound(id: string): Round {
 export function listRounds(): Round[] {
   return [...rounds.values()]
     .sort((a, b) => b.createdAt - a.createdAt)
-    .map(snapshot);
+    .map((round) => {
+      round.stageCalibration ??= normalizeStageCalibration(undefined, undefined, Date.now());
+      applyCalibrationAssignments(round);
+      return snapshot(round);
+    });
 }
 
 function updateReady(round: Round) {
@@ -456,7 +512,7 @@ async function authorizeRobots(round: Round, robotUrl: (name: RobotName) => stri
       body: JSON.stringify({
         token: driver.token,
         ttl_secs: round.durationSecs + round.countdownSecs + 15,
-        speed_mode: "medium",
+        speed_mode: round.stageCalibration.speedDefaults.defaultSpeedMode,
         not_before_epoch_ms: roundStartsAt,
       }),
       signal: AbortSignal.timeout(4000),
@@ -470,6 +526,12 @@ async function authorizeRobots(round: Round, robotUrl: (name: RobotName) => stri
 function requireJoinable(round: Round) {
   if (round.status !== "accepted" && round.status !== "ready") {
     throw new Error(`round is not joinable in ${round.status}`);
+  }
+}
+
+function requireCalibrationEditable(round: Round) {
+  if (["locked", "countdown", "racing", "finished", "settled", "canceled"].includes(round.status)) {
+    throw new Error(`cannot calibrate stage in ${round.status}`);
   }
 }
 
@@ -490,6 +552,8 @@ function requireDriver(round: Round, slot: DriverSlot): Driver {
 function getMutableRound(id: string): Round {
   const round = rounds.get(id);
   if (!round) throw new Error("round not found");
+  round.stageCalibration ??= normalizeStageCalibration(undefined, undefined, Date.now());
+  applyCalibrationAssignments(round);
   return round;
 }
 
@@ -504,6 +568,142 @@ function normalizeWallet(wallet?: string): string {
 function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(Number(value))));
+}
+
+function normalizeStageCalibration(
+  input?: Record<string, unknown>,
+  base?: StageCalibration,
+  updatedAt = Date.now(),
+): StageCalibration {
+  const merged = { ...(base ?? defaultStageCalibration(updatedAt)), ...(input ?? {}) };
+  const laneLengthFt = finiteNumber(merged.laneLengthFt, 60, 5, 500);
+  const laneWidthFt = finiteNumber(merged.laneWidthFt, 4, 1, 40);
+  const startLineFt = finiteNumber(merged.startLineFt, 0, 0, laneLengthFt - 1);
+  const finishLineFt = finiteNumber(merged.finishLineFt, laneLengthFt, startLineFt + 1, laneLengthFt);
+  const robotAssignments = normalizeRobotAssignments(merged.robotAssignments);
+  const sensorOffsets = normalizeSensorOffsets(merged.sensorOffsets);
+  const speedDefaults = normalizeSpeedDefaults(merged.speedDefaults);
+  const safetyDefaults = normalizeSafetyDefaults(merged.safetyDefaults);
+  return {
+    schema: "onchain-rover.stage-calibration.v1",
+    units: "ft",
+    laneLengthFt,
+    laneWidthFt,
+    startLineFt,
+    finishLineFt,
+    robotAssignments,
+    sensorOffsets,
+    speedDefaults,
+    safetyDefaults,
+    updatedAt,
+  };
+}
+
+function defaultStageCalibration(updatedAt = Date.now()): StageCalibration {
+  return {
+    schema: "onchain-rover.stage-calibration.v1",
+    units: "ft",
+    laneLengthFt: 60,
+    laneWidthFt: 4,
+    startLineFt: 0,
+    finishLineFt: 60,
+    robotAssignments: {
+      challenger: { robot: ROBOT_ASSIGNMENT.challenger, lane: LANE_ASSIGNMENT.challenger },
+      opponent: { robot: ROBOT_ASSIGNMENT.opponent, lane: LANE_ASSIGNMENT.opponent },
+    },
+    sensorOffsets: {
+      guard: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
+      courier: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
+    },
+    speedDefaults: { defaultSpeedMode: "medium", maxSpeedMode: "medium" },
+    safetyDefaults: { obstacleStopDistanceFt: 2, warningDistanceFt: 5 },
+    updatedAt,
+  };
+}
+
+function normalizeRobotAssignments(value: unknown): StageCalibration["robotAssignments"] {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const challenger = normalizeSlotAssignment(input.challenger, "challenger");
+  const opponent = normalizeSlotAssignment(input.opponent, "opponent");
+  if (challenger.robot === opponent.robot) throw new Error("challenger and opponent must use different robots");
+  if (challenger.lane === opponent.lane) throw new Error("challenger and opponent must use different lanes");
+  return { challenger, opponent };
+}
+
+function normalizeSlotAssignment(value: unknown, slot: DriverSlot): { robot: RobotName; lane: LaneName } {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    robot: parseRobotName(input.robot) ?? ROBOT_ASSIGNMENT[slot],
+    lane: parseLane(input.lane) ?? LANE_ASSIGNMENT[slot],
+  };
+}
+
+function normalizeSensorOffsets(value: unknown): StageCalibration["sensorOffsets"] {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    guard: normalizeRobotOffsets(input.guard),
+    courier: normalizeRobotOffsets(input.courier),
+  };
+}
+
+function normalizeRobotOffsets(value: unknown): StageCalibration["sensorOffsets"][RobotName] {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    cameraForwardFt: finiteNumber(input.cameraForwardFt, 0, -20, 20),
+    cameraRightFt: finiteNumber(input.cameraRightFt, 0, -20, 20),
+    lidarForwardFt: finiteNumber(input.lidarForwardFt, 0, -20, 20),
+    lidarRightFt: finiteNumber(input.lidarRightFt, 0, -20, 20),
+  };
+}
+
+function normalizeSpeedDefaults(value: unknown): StageCalibration["speedDefaults"] {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const maxSpeedMode = parseSpeedMode(input.maxSpeedMode) ?? "medium";
+  const requestedDefault = parseSpeedMode(input.defaultSpeedMode) ?? maxSpeedMode;
+  const defaultSpeedMode = SPEED_RANK[requestedDefault] > SPEED_RANK[maxSpeedMode]
+    ? maxSpeedMode
+    : requestedDefault;
+  return { defaultSpeedMode, maxSpeedMode };
+}
+
+function normalizeSafetyDefaults(value: unknown): StageCalibration["safetyDefaults"] {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const obstacleStopDistanceFt = finiteNumber(input.obstacleStopDistanceFt, 2, 0.5, 30);
+  const warningDistanceFt = finiteNumber(input.warningDistanceFt, 5, obstacleStopDistanceFt, 60);
+  return { obstacleStopDistanceFt, warningDistanceFt };
+}
+
+function applyCalibrationAssignments(round: Round) {
+  for (const slot of ["challenger", "opponent"] as const) {
+    const driver = round.drivers[slot];
+    if (!driver) continue;
+    driver.robot = round.stageCalibration.robotAssignments[slot].robot;
+    driver.lane = round.stageCalibration.robotAssignments[slot].lane;
+  }
+}
+
+function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Number(number.toFixed(3))));
+}
+
+function parseRobotName(value: unknown): RobotName | null {
+  if (value === "guard" || value === "courier") return value;
+  if (value === undefined || value === null || value === "") return null;
+  throw new Error("robot must be guard or courier");
+}
+
+function parseLane(value: unknown): LaneName | null {
+  if (value === "left" || value === "right") return value;
+  if (value === undefined || value === null || value === "") return null;
+  throw new Error("lane must be left or right");
+}
+
+function parseSpeedMode(value: unknown): SpeedMode | null {
+  if (value === "low" || value === "medium" || value === "high") return value;
+  if (value === undefined || value === null || value === "") return null;
+  throw new Error("speed mode must be low, medium, or high");
 }
 
 function normalizeFeePayment(round: Round, payment?: Record<string, unknown>): FeePayment {

@@ -14,6 +14,7 @@ type PilotSession = {
   expiresAt: number;
   notBeforeMs?: number;
   speedMode: SpeedMode;
+  maxSpeedMode: SpeedMode;
   lastCmdAt: number;
   lastPilotSeenAt: number;
 };
@@ -101,13 +102,20 @@ export function installRobotLink(app: Express, server: Server) {
     try {
       const runtime = runtimeFor(requireRobotName(req.params.robot));
       const token = String(req.body?.token ?? "");
-      const speedMode = requireSpeedMode(req.body?.speed_mode);
+      const requestedSpeedMode = requireSpeedMode(req.body?.speed_mode);
       const session = requireSession(runtime, token);
+      const speedMode = capSpeedMode(requestedSpeedMode, session.maxSpeedMode);
       session.speedMode = speedMode;
       runtime.lastCommand = makeCommand(runtime, session, runtime.lastCommand.left, runtime.lastCommand.right);
       sendToRobot(runtime, runtime.lastCommand);
       broadcastTelemetry(runtime, "bridge");
-      res.json({ ok: true, robot: runtime.robot, speed_mode: speedMode, max_speed: SPEED_CAPS[speedMode] });
+      res.json({
+        ok: true,
+        robot: runtime.robot,
+        speed_mode: speedMode,
+        max_speed_mode: session.maxSpeedMode,
+        max_speed: SPEED_CAPS[speedMode],
+      });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -172,7 +180,7 @@ export function installRobotLink(app: Express, server: Server) {
 export function authorizePilotSession(
   robot: RobotName,
   publicBaseUrl: string,
-  opts: { ttlSecs?: number; speedMode?: SpeedMode; notBeforeMs?: number } = {},
+  opts: { ttlSecs?: number; speedMode?: SpeedMode; maxSpeedMode?: SpeedMode; notBeforeMs?: number } = {},
 ) {
   const runtime = runtimeFor(robot);
   retireExpiredSessions(runtime);
@@ -182,13 +190,15 @@ export function authorizePilotSession(
 
   const token = randomUUID();
   const ttlSecs = opts.ttlSecs ?? SESSION_SECS;
-  const speedMode = opts.speedMode ?? "medium";
+  const maxSpeedMode = opts.maxSpeedMode ?? opts.speedMode ?? "medium";
+  const speedMode = capSpeedMode(opts.speedMode ?? maxSpeedMode, maxSpeedMode);
   runtime.sessions.set(token, {
     token,
     robot,
     expiresAt: Date.now() + ttlSecs * 1000,
     notBeforeMs: opts.notBeforeMs,
     speedMode,
+    maxSpeedMode,
     lastCmdAt: 0,
     lastPilotSeenAt: 0,
   });
@@ -207,6 +217,7 @@ export function authorizePilotSession(
     streamUrl: `${base}/robot/${encodeURIComponent(robot)}/stream`,
     speedModeUrl: `${base}/robot/${encodeURIComponent(robot)}/pilot/speed-mode`,
     stopUrl: `${base}/robot/${encodeURIComponent(robot)}/stop`,
+    maxSpeedMode,
     bridge: true,
   };
 }
@@ -248,7 +259,7 @@ function handlePilotDrive(ws: WebSocket, url: URL) {
       session.lastCmdAt = Date.now();
       session.lastPilotSeenAt = Date.now();
       const speedMode = parseSpeedMode(body.speed_mode);
-      if (speedMode) session.speedMode = speedMode;
+      if (speedMode) session.speedMode = capSpeedMode(speedMode, session.maxSpeedMode);
       const left = Number.isFinite(Number(body.left)) ? Number(body.left) : 0;
       const right = Number.isFinite(Number(body.right)) ? Number(body.right) : 0;
       runtime.stoppedByDeadman = false;
@@ -386,6 +397,11 @@ function makeCommand(runtime: RobotRuntime, session: PilotSession, left: number,
     max_speed: max,
     deadman_ms: DEADMAN_MS,
   };
+}
+
+function capSpeedMode(mode: SpeedMode, maxMode: SpeedMode): SpeedMode {
+  const rank: Record<SpeedMode, number> = { low: 0, medium: 1, high: 2 };
+  return rank[mode] > rank[maxMode] ? maxMode : mode;
 }
 
 function normalizeTelemetry(runtime: RobotRuntime, body: Record<string, any>): RobotTelemetry {

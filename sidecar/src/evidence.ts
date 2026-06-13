@@ -183,6 +183,7 @@ function buildResultProof(record: EvidenceRecord, round: Round) {
     roundId: round.id,
     createdAtMs: record.updatedAtMs,
     chainRaceId: round.chainRaceId ?? null,
+    stageCalibration: sortedClone(round.stageCalibration),
     result: {
       winner: round.winner ?? null,
       finishMs: round.finishMs ?? null,
@@ -269,6 +270,7 @@ function sanitizeRound(round: Round) {
     winner: round.winner ?? null,
     proofHash: round.proofHash ?? null,
     evidenceHash: round.evidenceHash ?? null,
+    stageCalibration: sortedClone(round.stageCalibration),
     txHashes: round.txHashes ?? {},
     drivers: {
       challenger: sanitizeDriver(round, "challenger"),

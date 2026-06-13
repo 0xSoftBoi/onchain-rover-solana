@@ -569,6 +569,16 @@ app.post("/race/round/:id/stake-authorize", (req, res) => {
   catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
+app.get("/race/round/:id/calibration", (req, res) => {
+  try { res.json({ roundId: req.params.id, stageCalibration: rounds.getStageCalibration(req.params.id) }); }
+  catch (e: any) { res.status(404).json({ error: e.message }); }
+});
+
+app.post("/race/round/:id/calibration", (req, res) => {
+  try { res.json(rounds.updateStageCalibration(req.params.id, req.body.stageCalibration ?? req.body)); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
 app.post("/race/round/:id/lock", async (req, res) => {
   try {
     if (req.body?.skipRobotAuth) {
@@ -683,7 +693,8 @@ app.post("/race/round/:id/pilot/session", (req, res) => {
     const notBeforeMs = round.status === "racing" ? undefined : round.roundStartsAt;
     res.json(robotLink.authorizePilotSession(driver.robot, publicBaseUrl, {
       ttlSecs,
-      speedMode: robotLink.parseSpeedMode(req.body.speed_mode) ?? "medium",
+      speedMode: calibratedSpeedMode(round, robotLink.parseSpeedMode(req.body.speed_mode)),
+      maxSpeedMode: round.stageCalibration.speedDefaults.maxSpeedMode,
       notBeforeMs,
     }));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -767,10 +778,18 @@ app.get("/field/preflight", async (req, res) => {
   }
 
   const latestRounds = rounds.listRounds().slice(0, 8);
+  const latestCalibration = latestRounds[0]?.stageCalibration ?? null;
   checks.push({
     name: "durable ledger",
     ok: true,
     detail: `${latestRounds.length} recent round${latestRounds.length === 1 ? "" : "s"} loaded`,
+  });
+  checks.push({
+    name: "stage calibration",
+    ok: Boolean(latestCalibration),
+    detail: latestCalibration
+      ? `${latestCalibration.finishLineFt - latestCalibration.startLineFt}ft run · ${latestCalibration.laneWidthFt}ft lane`
+      : "no round calibration yet",
   });
 
   const urls = {
@@ -788,6 +807,7 @@ app.get("/field/preflight", async (req, res) => {
     checks,
     chain: chainHealth,
     treasury,
+    stageCalibration: latestCalibration,
     robots: bridge,
     rounds: latestRounds,
     urls,
@@ -841,6 +861,17 @@ function ensureResultEvidence(round: rounds.Round): rounds.Round {
   if (round.proofHash) return round;
   const finalized = evidence.finalizeResultProof(round, round.proof);
   return rounds.markEvidenceHashes(round.id, finalized.proofHash, finalized.evidenceHash);
+}
+
+function calibratedSpeedMode(
+  round: rounds.Round,
+  requested: robotLink.SpeedMode | null | undefined,
+): robotLink.SpeedMode {
+  const max = round.stageCalibration.speedDefaults.maxSpeedMode;
+  const fallback = round.stageCalibration.speedDefaults.defaultSpeedMode;
+  const mode = requested ?? fallback;
+  const rank: Record<robotLink.SpeedMode, number> = { low: 0, medium: 1, high: 2 };
+  return rank[mode] > rank[max] ? max : mode;
 }
 
 function finishRoundWithEvidence(

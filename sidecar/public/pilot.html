@@ -82,6 +82,28 @@
     position:absolute; left:13px; bottom:76px; color:var(--muted);
     font-size:12px; text-shadow:0 1px 2px #000;
   }
+  .minimap {
+    position:absolute; right:12px; top:128px; width:172px; padding:8px;
+    border:1px solid var(--line); border-radius:8px; background:var(--glass);
+    backdrop-filter:blur(10px); text-shadow:0 1px 2px #000;
+  }
+  .minimap-head {
+    display:flex; justify-content:space-between; gap:8px; margin-bottom:7px;
+    color:var(--muted); font-size:11px;
+  }
+  .minimap-head span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stage-track {
+    position:relative; height:18px; border:1px solid rgba(223,235,255,.24);
+    border-radius:6px; background:rgba(5,8,12,.72); overflow:hidden;
+  }
+  .stage-track::before {
+    content:""; position:absolute; inset:7px 8px; height:2px; background:rgba(223,235,255,.32);
+  }
+  .stage-marker {
+    position:absolute; top:3px; left:0%; width:10px; height:10px; border-radius:50%;
+    background:var(--ok); box-shadow:0 0 12px rgba(73,209,125,.8);
+    transform:translateX(-50%);
+  }
   .throttle {
     pointer-events:auto; position:absolute; left:12px; bottom:14px; display:flex; gap:6px;
     padding:6px; border:1px solid var(--line); border-radius:9px;
@@ -127,6 +149,7 @@
     .data-panel { width:min(206px, 62vw); padding:7px 8px; }
     .data-grid { grid-template-columns:31px minmax(0,1fr) 32px minmax(0,1fr); font-size:10px; }
     .direction { max-width:48vw; bottom:20px; font-size:13px; }
+    .minimap { top:120px; right:10px; width:148px; }
     .throttle button { width:43px; height:34px; }
     .estop { width:78px; height:78px; }
   }
@@ -135,6 +158,7 @@
     .data-panel { width:178px; }
     .data-head { font-size:11px; }
     .data-grid { grid-template-columns:28px minmax(0,1fr) 29px minmax(0,1fr); column-gap:4px; }
+    .minimap { width:132px; }
   }
 </style>
 </head>
@@ -164,6 +188,10 @@
     </div>
 
     <div class="direction" id="direction">Tap start to drive</div>
+    <div class="minimap" id="minimap">
+      <div class="minimap-head"><span id="stageLabel">stage</span><span id="stageProgress">--</span></div>
+      <div class="stage-track"><i class="stage-marker" id="stageMarker"></i></div>
+    </div>
     <div class="wheel-readout">L <span id="left">0.00</span> / R <span id="right">0.00</span></div>
     <div class="throttle" id="throttle">
       <button data-speed="low">LOW</button>

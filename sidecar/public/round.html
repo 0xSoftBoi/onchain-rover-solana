@@ -29,11 +29,13 @@
   h2 { margin:0 0 12px; color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:0; }
   .grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
   .grid3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+  .grid4 { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
   label { display:grid; gap:5px; color:var(--dim); font-size:12px; }
-  input {
+  input, select {
     width:100%; min-height:38px; padding:8px 9px; border-radius:7px;
     border:1px solid var(--line); background:#0b1118; color:var(--txt); font:inherit;
   }
+  select option { background:#0b1118; color:var(--txt); }
   button, a.button {
     display:inline-flex; align-items:center; justify-content:center; min-height:36px;
     padding:8px 11px; border-radius:7px; border:1px solid rgba(255,255,255,.08);
@@ -86,7 +88,7 @@
   .replay-item span:last-child { overflow-wrap:anywhere; }
   @media (max-width:820px) {
     header { display:block; }
-    .grid, .grid3, .links { grid-template-columns:1fr; }
+    .grid, .grid3, .grid4, .links { grid-template-columns:1fr; }
     .history-row { grid-template-columns:1fr; }
     .kv { grid-template-columns:1fr; }
   }
@@ -142,6 +144,83 @@
   </section>
 
   <section>
+    <h2>Stage Calibration</h2>
+    <div class="grid4">
+      <label>Lane length ft
+        <input id="laneLengthFt" data-calibration value="60" inputmode="decimal" />
+      </label>
+      <label>Lane width ft
+        <input id="laneWidthFt" data-calibration value="4" inputmode="decimal" />
+      </label>
+      <label>Start line ft
+        <input id="startLineFt" data-calibration value="0" inputmode="decimal" />
+      </label>
+      <label>Finish line ft
+        <input id="finishLineFt" data-calibration value="60" inputmode="decimal" />
+      </label>
+      <label>Challenger robot
+        <select id="challengerRobot" data-calibration>
+          <option value="guard">guard</option>
+          <option value="courier">courier</option>
+        </select>
+      </label>
+      <label>Challenger lane
+        <select id="challengerLane" data-calibration>
+          <option value="left">left</option>
+          <option value="right">right</option>
+        </select>
+      </label>
+      <label>Opponent robot
+        <select id="opponentRobot" data-calibration>
+          <option value="courier">courier</option>
+          <option value="guard">guard</option>
+        </select>
+      </label>
+      <label>Opponent lane
+        <select id="opponentLane" data-calibration>
+          <option value="right">right</option>
+          <option value="left">left</option>
+        </select>
+      </label>
+      <label>Default speed
+        <select id="defaultSpeedMode" data-calibration>
+          <option value="low">low</option>
+          <option value="medium" selected>medium</option>
+          <option value="high">high</option>
+        </select>
+      </label>
+      <label>Max speed
+        <select id="maxSpeedMode" data-calibration>
+          <option value="low">low</option>
+          <option value="medium" selected>medium</option>
+          <option value="high">high</option>
+        </select>
+      </label>
+      <label>Stop distance ft
+        <input id="obstacleStopDistanceFt" data-calibration value="2" inputmode="decimal" />
+      </label>
+      <label>Warning distance ft
+        <input id="warningDistanceFt" data-calibration value="5" inputmode="decimal" />
+      </label>
+      <label>Guard cam fwd/rt ft
+        <input id="guardCameraOffsetFt" data-calibration value="0,0" />
+      </label>
+      <label>Guard lidar fwd/rt ft
+        <input id="guardLidarOffsetFt" data-calibration value="0,0" />
+      </label>
+      <label>Courier cam fwd/rt ft
+        <input id="courierCameraOffsetFt" data-calibration value="0,0" />
+      </label>
+      <label>Courier lidar fwd/rt ft
+        <input id="courierLidarOffsetFt" data-calibration value="0,0" />
+      </label>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button id="saveCalibration" class="secondary">Save Calibration</button>
+    </div>
+  </section>
+
+  <section>
     <h2>Round State</h2>
     <div class="grid">
       <div>
@@ -149,6 +228,7 @@
         <div class="kv"><span class="k">local status</span><span class="v" id="localStatus">-</span></div>
         <div class="kv"><span class="k">chain race id</span><span class="v" id="chainRaceId">-</span></div>
         <div class="kv"><span class="k">chain status</span><span class="v" id="chainStatus">-</span></div>
+        <div class="kv"><span class="k">stage</span><span class="v" id="stageGeometry">-</span></div>
       </div>
       <div>
         <div class="kv"><span class="k">treasury</span><span class="v" id="treasury">-</span></div>
@@ -238,6 +318,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const state = { round: null, chain: null, treasury: null, evidence: null, detections: [], rounds: [], replay: null };
+let calibrationDirty = false;
 const localDefaults = {
   challenger: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   opponent: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -312,10 +393,14 @@ function detectionSummary() {
 
 function render() {
   const round = state.round;
+  const calibration = round?.stageCalibration;
   $("roundId").textContent = round?.id || "-";
   $("localStatus").textContent = round?.status || "-";
   $("chainRaceId").textContent = round?.chainRaceId || "-";
   $("chainStatus").textContent = round?.chainStatus || "-";
+  $("stageGeometry").textContent = calibration
+    ? `${calibration.finishLineFt - calibration.startLineFt}ft run · ${calibration.laneWidthFt}ft lane · ${calibration.speedDefaults.defaultSpeedMode}/${calibration.speedDefaults.maxSpeedMode}`
+    : "-";
   $("winner").textContent = round?.winner || "-";
   $("txs").textContent = txSummary(round);
   $("finishDetection").textContent = detectionSummary();
@@ -346,6 +431,7 @@ function render() {
   renderQr("opponentQr", opponentUrl);
   renderHistory();
   renderReplay();
+  renderCalibration(calibration);
 }
 
 async function refresh() {
@@ -390,6 +476,7 @@ async function createRound() {
     stakeUsdc: $("stake").value.trim(),
     feeUsdc: $("fee").value.trim(),
     durationSecs: Number($("duration").value || 30),
+    stageCalibration: calibrationFromInputs(),
   });
   state.round = created;
   if (challenger && !opponent) {
@@ -415,6 +502,16 @@ async function createRound() {
   log(`round ${state.round.id} accepted`);
   history.replaceState(null, "", `?round=${encodeURIComponent(state.round.id)}`);
   render();
+}
+
+async function saveCalibration() {
+  if (!state.round?.id) throw new Error("create or load a round first");
+  const round = await postJson(`/race/round/${state.round.id}/calibration`, {
+    stageCalibration: calibrationFromInputs(),
+  });
+  calibrationDirty = false;
+  state.round = round;
+  return round;
 }
 
 async function fundDrivers() {
@@ -450,6 +547,102 @@ async function devJoinLocalWallets() {
 
 function walletForSlot(slot) {
   return $("" + slot).value.trim() || state.round?.drivers?.[slot]?.wallet || "";
+}
+
+function renderCalibration(calibration) {
+  if (calibrationDirty) return;
+  const next = calibration || defaultCalibration();
+  $("laneLengthFt").value = String(next.laneLengthFt);
+  $("laneWidthFt").value = String(next.laneWidthFt);
+  $("startLineFt").value = String(next.startLineFt);
+  $("finishLineFt").value = String(next.finishLineFt);
+  $("challengerRobot").value = next.robotAssignments.challenger.robot;
+  $("challengerLane").value = next.robotAssignments.challenger.lane;
+  $("opponentRobot").value = next.robotAssignments.opponent.robot;
+  $("opponentLane").value = next.robotAssignments.opponent.lane;
+  $("defaultSpeedMode").value = next.speedDefaults.defaultSpeedMode;
+  $("maxSpeedMode").value = next.speedDefaults.maxSpeedMode;
+  $("obstacleStopDistanceFt").value = String(next.safetyDefaults.obstacleStopDistanceFt);
+  $("warningDistanceFt").value = String(next.safetyDefaults.warningDistanceFt);
+  $("guardCameraOffsetFt").value = offsetValue(next.sensorOffsets.guard.cameraForwardFt, next.sensorOffsets.guard.cameraRightFt);
+  $("guardLidarOffsetFt").value = offsetValue(next.sensorOffsets.guard.lidarForwardFt, next.sensorOffsets.guard.lidarRightFt);
+  $("courierCameraOffsetFt").value = offsetValue(next.sensorOffsets.courier.cameraForwardFt, next.sensorOffsets.courier.cameraRightFt);
+  $("courierLidarOffsetFt").value = offsetValue(next.sensorOffsets.courier.lidarForwardFt, next.sensorOffsets.courier.lidarRightFt);
+}
+
+function calibrationFromInputs() {
+  const guardCamera = parseOffset($("guardCameraOffsetFt").value);
+  const guardLidar = parseOffset($("guardLidarOffsetFt").value);
+  const courierCamera = parseOffset($("courierCameraOffsetFt").value);
+  const courierLidar = parseOffset($("courierLidarOffsetFt").value);
+  return {
+    laneLengthFt: num("laneLengthFt"),
+    laneWidthFt: num("laneWidthFt"),
+    startLineFt: num("startLineFt"),
+    finishLineFt: num("finishLineFt"),
+    robotAssignments: {
+      challenger: { robot: $("challengerRobot").value, lane: $("challengerLane").value },
+      opponent: { robot: $("opponentRobot").value, lane: $("opponentLane").value },
+    },
+    sensorOffsets: {
+      guard: {
+        cameraForwardFt: guardCamera.forward,
+        cameraRightFt: guardCamera.right,
+        lidarForwardFt: guardLidar.forward,
+        lidarRightFt: guardLidar.right,
+      },
+      courier: {
+        cameraForwardFt: courierCamera.forward,
+        cameraRightFt: courierCamera.right,
+        lidarForwardFt: courierLidar.forward,
+        lidarRightFt: courierLidar.right,
+      },
+    },
+    speedDefaults: {
+      defaultSpeedMode: $("defaultSpeedMode").value,
+      maxSpeedMode: $("maxSpeedMode").value,
+    },
+    safetyDefaults: {
+      obstacleStopDistanceFt: num("obstacleStopDistanceFt"),
+      warningDistanceFt: num("warningDistanceFt"),
+    },
+  };
+}
+
+function defaultCalibration() {
+  return {
+    laneLengthFt: 60,
+    laneWidthFt: 4,
+    startLineFt: 0,
+    finishLineFt: 60,
+    robotAssignments: {
+      challenger: { robot: "guard", lane: "left" },
+      opponent: { robot: "courier", lane: "right" },
+    },
+    sensorOffsets: {
+      guard: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
+      courier: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
+    },
+    speedDefaults: { defaultSpeedMode: "medium", maxSpeedMode: "medium" },
+    safetyDefaults: { obstacleStopDistanceFt: 2, warningDistanceFt: 5 },
+  };
+}
+
+function parseOffset(value) {
+  const parts = String(value || "").split(",").map((part) => Number(part.trim()));
+  return {
+    forward: Number.isFinite(parts[0]) ? parts[0] : 0,
+    right: Number.isFinite(parts[1]) ? parts[1] : 0,
+  };
+}
+
+function offsetValue(forward, right) {
+  return `${forward || 0},${right || 0}`;
+}
+
+function num(id) {
+  const value = Number($(id).value);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function renderHistory() {
@@ -536,6 +729,7 @@ $("fillLocal").onclick = () => {
 };
 $("fundDrivers").onclick = () => step("funded driver wallets", fundDrivers);
 $("devJoinLocal").onclick = () => step("local dev wallets joined and escrow locked", devJoinLocalWallets);
+$("saveCalibration").onclick = () => step("saved calibration", saveCalibration);
 $("lockChain").onclick = () => step("locked escrow", () => postJson(`/race/round/${state.round.id}/chain/lock`));
 $("lockLocal").onclick = () => step("authorized robots", () => postJson(`/race/round/${state.round.id}/lock`));
 $("lockLocalSim").onclick = () => step("local sim locked", () => postJson(`/race/round/${state.round.id}/lock`, { skipRobotAuth: true }));
@@ -570,6 +764,10 @@ $("settle").onclick = () => step("settled race", () => postJson(`/race/round/${s
 $("cancel").onclick = () => step("canceled race", () => postJson(`/race/round/${state.round.id}/chain/cancel`, { reason: "operator canceled" }));
 $("refresh").onclick = refresh;
 $("publicSidecar").addEventListener("input", render);
+document.querySelectorAll("[data-calibration]").forEach((field) => {
+  field.addEventListener("input", () => { calibrationDirty = true; });
+  field.addEventListener("change", () => { calibrationDirty = true; });
+});
 $("copyProof").onclick = async () => {
   const hash = state.evidence?.proofHash || state.round?.proofHash;
   if (!hash) return;

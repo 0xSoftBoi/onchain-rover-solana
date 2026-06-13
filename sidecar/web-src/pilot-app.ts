@@ -14,6 +14,15 @@ type AuthResponse = {
 };
 
 type DriverSlot = "challenger" | "opponent";
+type StageCalibration = {
+  laneLengthFt: number;
+  laneWidthFt: number;
+  startLineFt: number;
+  finishLineFt: number;
+  robotAssignments: Record<DriverSlot, { robot: string; lane: "left" | "right" }>;
+  speedDefaults: { defaultSpeedMode: SpeedMode; maxSpeedMode: SpeedMode };
+  safetyDefaults: { obstacleStopDistanceFt: number; warningDistanceFt: number };
+};
 
 type TelemetryFrame = {
   ts_ms?: number;
@@ -83,6 +92,8 @@ let lastTelemetryAt = 0;
 let localStream: MediaStream | null = null;
 let raceEntryComplete = false;
 let controlUrls: { speedMode?: string; stop?: string } = {};
+let stageCalibration: StageCalibration | null = null;
+let stageCalibrationLoaded = false;
 
 const els = {
   robotName: byId("robotName"),
@@ -101,6 +112,9 @@ const els = {
   lidar: byId("lidar"),
   yaw: byId("yaw"),
   odo: byId("odo"),
+  stageLabel: byId("stageLabel"),
+  stageProgress: byId("stageProgress"),
+  stageMarker: byId("stageMarker"),
   left: byId("left"),
   right: byId("right"),
   estop: byId("estop") as HTMLButtonElement,
@@ -151,6 +165,7 @@ function setModalStatus(text: string, tone: "dim" | "ok" | "bad" = "dim") {
 }
 
 async function authorize(): Promise<AuthResponse> {
+  if (roundId && !stageCalibrationLoaded) await loadStageCalibration();
   if (robotUrl) {
     const nextToken = providedToken || `dev-${Date.now()}`;
     if (!providedToken) {
@@ -198,6 +213,21 @@ async function authorize(): Promise<AuthResponse> {
     ...body,
     telemetryWs: body.telemetryWs || (body.driveWs ? deriveTelemetryWs(body.driveWs) : undefined),
   };
+}
+
+async function loadStageCalibration() {
+  if (!roundId) return;
+  try {
+    const res = await fetch(`/race/round/${encodeURIComponent(roundId)}/calibration`);
+    const body = await res.json();
+    if (!res.ok || body.error) throw new Error(body.error || `calibration failed ${res.status}`);
+    stageCalibration = body.stageCalibration ?? null;
+    stageCalibrationLoaded = true;
+    renderStageProgress();
+  } catch {
+    stageCalibrationLoaded = true;
+    stageCalibration = null;
+  }
 }
 
 async function connect() {
@@ -458,6 +488,7 @@ function renderTelemetry(frame: TelemetryFrame) {
   els.lidar.textContent = lidarLabel(frame);
   els.yaw.textContent = frame.yaw !== undefined ? `${frame.yaw.toFixed(0)}deg` : "--";
   els.odo.textContent = odometryLabel(frame);
+  renderStageProgress(frame);
   speedMode = frame.speed_mode || speedMode;
   renderSpeedMode(speedMode);
 
@@ -504,6 +535,32 @@ function odometryLabel(frame: TelemetryFrame): string {
   if (left === undefined && right === undefined) return "--";
   if (left !== undefined && right !== undefined) return `${((left + right) / 2).toFixed(1)}m`;
   return `${(left ?? right ?? 0).toFixed(1)}m`;
+}
+
+function renderStageProgress(frame?: TelemetryFrame) {
+  const calibration = stageCalibration;
+  if (!calibration) {
+    els.stageLabel.textContent = "stage";
+    els.stageProgress.textContent = "--";
+    (els.stageMarker as HTMLElement).style.left = "0%";
+    return;
+  }
+  const runFt = Math.max(1, calibration.finishLineFt - calibration.startLineFt);
+  const odometryFt = odometryMeters(frame) * 3.28084;
+  const progress = Math.max(0, Math.min(1, (odometryFt - calibration.startLineFt) / runFt));
+  const traveledFt = Math.max(0, Math.min(runFt, odometryFt - calibration.startLineFt));
+  const slotAssignment = calibration.robotAssignments[driverSlot];
+  els.stageLabel.textContent = `${runFt.toFixed(0)}ft / ${calibration.laneWidthFt.toFixed(1)}ft ${slotAssignment?.lane ?? ""}`.trim();
+  els.stageProgress.textContent = `${traveledFt.toFixed(1)}ft`;
+  (els.stageMarker as HTMLElement).style.left = `${(progress * 100).toFixed(1)}%`;
+}
+
+function odometryMeters(frame?: TelemetryFrame): number {
+  if (!frame) return 0;
+  const left = frame.odometry_left;
+  const right = frame.odometry_right;
+  if (left !== undefined && right !== undefined) return (left + right) / 2;
+  return left ?? right ?? 0;
 }
 
 function setupJoystick() {
@@ -591,6 +648,7 @@ if (roundId) {
   els.modalTitle.textContent = "Enter Race";
   els.modalCopy.textContent = `Sign entry for ${driverSlot}. Camera stays live once your entry is confirmed.`;
   setModalStatus("Wallet signature required");
+  void loadStageCalibration();
 }
 if (robotUrl) {
   configureVideo(`${wsFromHttp(robotUrl)}/ws/drive`, `${robotUrl}/stream`);

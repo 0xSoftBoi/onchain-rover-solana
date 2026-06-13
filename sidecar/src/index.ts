@@ -140,14 +140,22 @@ app.post("/race/finish", async (req, res) => {
   try {
     const winner = req.body.winner as RobotName;
     const r = race.recordFinish(winner);
+    // The GUARD is the race oracle: capture its finish-line photo and anchor it
+    // immutably on Walrus — that real hash + blobId settle the market on-chain.
+    let proof: { sha256?: string; blobId?: string } = {};
+    try {
+      await fetch(`${ROBOTS.guard.url}/capture`, { method: "POST",
+        signal: AbortSignal.timeout(8000) });
+      proof = await (await fetch(`${ROBOTS.guard.url}/store-proof`, { method: "POST",
+        signal: AbortSignal.timeout(20000) })).json();
+    } catch (e: any) { proof = { } /* proof capture failed; settle still records winner */ ; }
     let settled;
     if (process.env.RACEMARKET_ADDRESS && onChainRaceId !== null) {
       const winnerIdx = r.racers.indexOf(winner);
-      // proof: the guard's finish photo sha256 + Walrus blobId (req may carry them)
       settled = await settle.settleRaceOnChain(
-        onChainRaceId, winnerIdx, req.body.sha256 ?? "", req.body.blobId ?? "");
+        onChainRaceId, winnerIdx, proof.sha256 ?? "", proof.blobId ?? "");
     }
-    res.json({ ...r, settled });
+    res.json({ ...r, proof, settled });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 // /race/finish settles on-chain via RaceMarket.settle (judge=guard) with the

@@ -7,6 +7,7 @@ import { createPublicClient, http, parseAbi, getAddress } from "viem";
 import { mainnet, sepolia, worldchain } from "viem/chains";
 import { ARC, ROBOTS } from "./config.js";
 import { arcTestnet } from "./settle.js";
+import { buildFieldPreflight } from "./field-preflight.js";
 
 const ok = (b: boolean) => (b ? "✅" : "❌");
 const rows: { ok: boolean; label: string; detail: string }[] = [];
@@ -15,7 +16,19 @@ const check = (label: string, pass: boolean, detail = "") => rows.push({ ok: pas
 const arc = createPublicClient({ chain: arcTestnet, transport: http() });
 const usdcAbi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
 const codeAt = (c: any, a?: string) => a ? c.getBytecode({ address: a as `0x${string}` }).then((b: any) => !!b && b !== "0x").catch(() => false) : Promise.resolve(false);
-const usdc = (a: string) => arc.readContract({ address: ARC.usdc as `0x${string}`, abi: usdcAbi, functionName: "balanceOf", args: [getAddress(a)] }).catch(() => -1n);
+const usdc = async (a: string) => {
+  try {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(a)) return -1n;
+    return await arc.readContract({
+      address: ARC.usdc as `0x${string}`,
+      abi: usdcAbi,
+      functionName: "balanceOf",
+      args: [getAddress(a)],
+    });
+  } catch {
+    return -1n;
+  }
+};
 
 async function main() {
   // Arc RPC
@@ -80,5 +93,19 @@ async function main() {
   const blockers = rows.filter((r) => !r.ok).length;
   console.log("  " + "─".repeat(46));
   console.log(blockers === 0 ? "  🟢 ALL SYSTEMS GO" : `  🟡 ${blockers} blocker(s) — see ❌ above\n`);
+
+  const field = await buildFieldPreflight({
+    publicBaseUrl: process.env.PUBLIC_SIDECAR_URL ?? "http://127.0.0.1:4021",
+    allowFreePilot: process.env.ALLOW_FREE_PILOT === "1",
+    allowLocalDevWallets: process.env.ALLOW_LOCAL_DEV_WALLETS === "1" || process.env.ALLOW_FREE_PILOT === "1",
+  });
+  console.log("\n  FIELD READINESS\n  " + "─".repeat(46));
+  for (const check of field.checks) {
+    const icon = check.status === "pass" ? "✅" : check.status === "warn" ? "⚠️ " : "❌";
+    console.log(`  ${icon} ${check.name.padEnd(26)} ${check.detail}`);
+    if (check.status !== "pass") console.log(`     fix: ${check.remediation}`);
+  }
+  console.log("  " + "─".repeat(46));
+  console.log(field.ok ? "  🟢 FIELD READY" : `  🟡 ${field.summary.fail} fail / ${field.summary.warn} warn\n`);
 }
 main();

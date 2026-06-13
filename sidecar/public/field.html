@@ -31,7 +31,7 @@
   .grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
   .checks, .rounds, .links { display:grid; gap:8px; }
   .row {
-    display:grid; grid-template-columns:118px minmax(0,1fr); gap:10px;
+    display:grid; grid-template-columns:150px minmax(0,1fr); gap:10px;
     align-items:center; min-height:42px; padding:8px; border:1px solid var(--line);
     border-radius:8px; background:var(--panel2);
   }
@@ -44,6 +44,8 @@
   .pill.warn { color:var(--warn); }
   .pill.bad { color:var(--bad); }
   .detail { min-width:0; overflow-wrap:anywhere; }
+  .detail b { display:block; font-weight:600; }
+  .detail span { display:block; color:var(--dim); font-size:12px; margin-top:2px; }
   .dim { color:var(--dim); }
   .actions { display:flex; flex-wrap:wrap; gap:8px; }
   code { color:var(--warn); }
@@ -103,7 +105,8 @@ const stamp = document.getElementById("stamp");
 async function refresh() {
   const res = await fetch("/field/preflight");
   const body = await res.json();
-  stamp.textContent = `${body.ok ? "ready enough" : "needs attention"} · ${new Date(body.generatedAt).toLocaleTimeString()} · ${body.publicBaseUrl}`;
+  const summary = body.summary || { pass: 0, warn: 0, fail: 0 };
+  stamp.textContent = `${body.ok ? "ready enough" : "needs attention"} · ${summary.pass} pass / ${summary.warn} warn / ${summary.fail} fail · ${new Date(body.generatedAt).toLocaleTimeString()} · ${body.publicBaseUrl}`;
   renderChecks(body.checks || []);
   renderLinks(body.urls || {});
   renderRobots(body.robots || {});
@@ -115,7 +118,7 @@ function renderChecks(items) {
   for (const item of items) {
     const row = document.createElement("div");
     row.className = "row";
-    row.append(pill(item.ok ? "ok" : "bad", item.name), detail(item.detail));
+    row.append(pill(toneFor(item), item.name), detail(item.detail, item.remediation, item.category));
     checks.append(row);
   }
 }
@@ -173,11 +176,24 @@ function pill(tone, text) {
   return el;
 }
 
-function detail(text) {
+function detail(text, remediation = "", category = "") {
   const el = document.createElement("div");
   el.className = "detail";
-  el.textContent = text;
+  const main = document.createElement("b");
+  main.textContent = text;
+  el.append(main);
+  if (remediation || category) {
+    const hint = document.createElement("span");
+    hint.textContent = [category, remediation].filter(Boolean).join(" · ");
+    el.append(hint);
+  }
   return el;
+}
+
+function toneFor(item) {
+  if (item.status === "pass") return "ok";
+  if (item.status === "warn") return "warn";
+  return item.ok ? "ok" : "bad";
 }
 
 document.getElementById("refresh").onclick = refresh;

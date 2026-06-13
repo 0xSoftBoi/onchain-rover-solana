@@ -22,6 +22,7 @@ import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
 import * as chain from "./chain.js";
 import * as evidence from "./evidence.js";
+import * as fieldPreflight from "./field-preflight.js";
 import * as localDevWallets from "./local-dev-wallets.js";
 import * as robotLink from "./robot-link.js";
 import * as rounds from "./rounds.js";
@@ -745,80 +746,11 @@ app.get("/status", async (_req, res) => {
 app.get("/field/preflight", async (req, res) => {
   const publicBaseUrl = process.env.PUBLIC_SIDECAR_URL
     || `${req.protocol}://${req.get("host")}`;
-  const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
-  const chainHealth = await chain.localChainHealth()
-    .catch((e: any) => ({ ok: false, error: e.message }));
-  checks.push({
-    name: "local chain",
-    ok: Boolean((chainHealth as any).ok),
-    detail: (chainHealth as any).ok
-      ? `chain ${(chainHealth as any).chainId} block ${(chainHealth as any).blockNumber}`
-      : String((chainHealth as any).error ?? "unavailable"),
-  });
-
-  const treasury = await chain.localTreasuryInfo().catch((e: any) => ({ error: e.message }));
-  checks.push({
-    name: "treasury",
-    ok: !("error" in treasury),
-    detail: "error" in treasury
-      ? treasury.error
-      : `${treasury.totalFees} local units collected`,
-  });
-
-  const bridge = robotLink.robotLinkState();
-  for (const name of ["guard", "courier"] as const) {
-    const robotState = bridge[name] as any;
-    checks.push({
-      name: `${name} bridge`,
-      ok: Boolean(robotState?.robotConnected),
-      detail: robotState?.robotConnected
-        ? `telemetry ${robotState.telemetry?.source ?? "unknown"} age ${robotState.robotAgeMs ?? 0}ms`
-        : "not attached",
-    });
-  }
-
-  const latestRounds = rounds.listRounds().slice(0, 8);
-  const latestCalibration = latestRounds[0]?.stageCalibration ?? null;
-  checks.push({
-    name: "durable ledger",
-    ok: true,
-    detail: `${latestRounds.length} recent round${latestRounds.length === 1 ? "" : "s"} loaded`,
-  });
-  checks.push({
-    name: "stage calibration",
-    ok: Boolean(latestCalibration),
-    detail: latestCalibration
-      ? `${latestCalibration.finishLineFt - latestCalibration.startLineFt}ft run · ${latestCalibration.laneWidthFt}ft lane`
-      : "no round calibration yet",
-  });
-
-  const urls = {
-    lobby: `${publicBaseUrl}/lobby.html`,
-    round: `${publicBaseUrl}/round.html`,
-    finishCamera: `${publicBaseUrl}/finish-camera.html`,
-    pilotChallengerTemplate: `${publicBaseUrl}/pilot.html?robot=guard&round=<roundId>&slot=challenger&camera=local`,
-    pilotOpponentTemplate: `${publicBaseUrl}/pilot.html?robot=courier&round=<roundId>&slot=opponent&camera=local`,
-  };
-
-  res.json({
-    ok: checks.every((check) => check.ok || check.name.endsWith("bridge")),
-    generatedAt: Date.now(),
+  res.json(await fieldPreflight.buildFieldPreflight({
     publicBaseUrl,
-    checks,
-    chain: chainHealth,
-    treasury,
-    stageCalibration: latestCalibration,
-    robots: bridge,
-    rounds: latestRounds,
-    urls,
-    env: {
-      allowFreePilot: process.env.ALLOW_FREE_PILOT === "1",
-      allowLocalDevWallets: localDevWalletsEnabled(),
-      raceDataDir: process.env.RACE_DATA_DIR ?? "sidecar/data/races",
-      publicSidecarUrl: process.env.PUBLIC_SIDECAR_URL ?? null,
-      publicLocalChainRpcUrl: process.env.PUBLIC_LOCAL_CHAIN_RPC_URL ?? null,
-    },
-  });
+    allowFreePilot: process.env.ALLOW_FREE_PILOT === "1",
+    allowLocalDevWallets: localDevWalletsEnabled(),
+  }));
 });
 
 app.use(express.static(new URL("../public", import.meta.url).pathname));

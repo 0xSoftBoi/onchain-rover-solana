@@ -35,15 +35,23 @@ ROBOT_ROLE=courier ROVER_MODE=serial ROVER_SERIAL_PORT=/dev/ttyTHS1 \
   cargo run --release -- --listen 0.0.0.0:8000
 ```
 
-Camera endpoints are controlled by environment. Without camera configuration,
-the Rust server returns a deterministic placeholder stream and reports camera
-status as `placeholder`.
+Camera endpoints are controlled by environment. In sim mode, the Rust server
+returns a deterministic synthetic camera stream for local tests. In serial mode,
+the server does not fake a physical camera feed: without a live source it reports
+camera status as `unavailable`, or `configured` when a device path is present but
+direct capture is not enabled.
 
 ```bash
 ROVER_CAMERA_DEVICE=/dev/video0
 ROVER_CAMERA_STREAM_URL=http://127.0.0.1:8000/stream
 ROVER_CAMERA_SNAPSHOT_URL=http://127.0.0.1:8000/camera/snapshot
 ```
+
+When `ROVER_CAMERA_STREAM_URL` or `ROVER_CAMERA_SNAPSHOT_URL` is set, camera
+status reports `proxy` and the Rust server relays the configured upstream body
+from `/stream` and `/camera/snapshot`. If only one proxy URL is set, both
+camera endpoints relay that source. Direct `/dev/video0` capture is intentionally
+deferred until the Jetson camera stack is stable.
 
 ## API
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
+import { Readable } from "node:stream";
 import type { Express } from "express";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
@@ -115,14 +116,27 @@ export function installRobotLink(app: Express, server: Server) {
     }
   });
 
-  app.get("/robot/:robot/stream", (req, res) => {
+  app.get("/robot/:robot/stream", async (req, res) => {
     try {
       const robot = requireRobotName(req.params.robot);
       const upstream = new URL("/stream", ROBOTS[robot].url).toString();
       if (req.query.proxy === "0") return res.redirect(upstream);
-      res.type("image/svg+xml").send(cameraPlaceholder(robot));
+      const upstreamRes = await fetch(upstream);
+      res.status(upstreamRes.status);
+      for (const header of ["content-type", "cache-control"] as const) {
+        const value = upstreamRes.headers.get(header);
+        if (value) res.setHeader(header, value);
+      }
+      if (!upstreamRes.body) return res.end();
+      Readable.fromWeb(upstreamRes.body as any)
+        .on("error", () => {
+          if (!res.headersSent) res.status(502);
+          res.end();
+        })
+        .pipe(res);
     } catch (e: any) {
-      res.status(404).json({ error: e.message });
+      if (res.headersSent) return res.end();
+      res.status(502).json({ error: e.message });
     }
   });
 
@@ -524,21 +538,4 @@ function clamp(value: number, min: number, max: number) {
 
 function wsFromHttp(url: string) {
   return url.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
-}
-
-function cameraPlaceholder(robot: RobotName) {
-  const runtime = runtimeFor(robot);
-  const state = runtime.robotSocket?.readyState === WebSocket.OPEN ? "robot link online" : "waiting for robot camera";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
-  <rect width="720" height="1280" fill="#05070a"/>
-  <path d="M0 0h720v1280H0z" fill="#07111a"/>
-  <g stroke="rgba(255,255,255,.08)" stroke-width="1">
-    ${Array.from({ length: 17 }, (_, i) => `<path d="M${i * 45} 0v1280"/>`).join("")}
-    ${Array.from({ length: 29 }, (_, i) => `<path d="M0 ${i * 45}h720"/>`).join("")}
-  </g>
-  <g fill="#f2f7fb" font-family="Menlo, Consolas, monospace" text-anchor="middle">
-    <text x="360" y="598" font-size="28">${robot.toUpperCase()}</text>
-    <text x="360" y="640" font-size="18" fill="#9baec2">${state}</text>
-  </g>
-</svg>`;
 }

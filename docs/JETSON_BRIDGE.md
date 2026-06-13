@@ -45,6 +45,11 @@ COURIER (mobile).
 ## Camera & perception
 
 - `/dev/video0` (USB cam) via OpenCV. Shared with stock app — same kill rule.
+- Rust `robot-harness` owns the field-facing camera contract now: sim mode has a
+  synthetic test feed, but serial mode does not fake camera output. With
+  `ROVER_CAMERA_STREAM_URL` / `ROVER_CAMERA_SNAPSHOT_URL` it relays the upstream
+  stream or snapshot through `/stream` and `/camera/snapshot`; without a live
+  source it reports the camera as unavailable or configured-only.
 - Seek loop = HYBRID (locked): Gemini open-vocab locate (`gemini-2.5-flash`,
   bbox+confidence ≥ 0.6) with **AprilTag fallback every frame** (cv2.aruco
   `DICT_APRILTAG_36h11`; printed tags on all demo targets). Gemini also issues
@@ -80,6 +85,8 @@ Node sidecar exposes:
 `GET /ens/resolve` · `POST /ens/issue` · `GET /nft/holds/:addr` · `GET /leaderboard`
 plus the **paid public routes** `POST /task/:robot` (x402-gated → proxies to
 that robot's `/seek`+`/capture`+proof pipeline).
+The sidecar `/robot/:robot/stream` route relays the Rust robot stream response;
+it does not synthesize a field camera image.
 
 The checkpoint orchestrator (`robot/checkpoint.py`, runs on GUARD) sequences the
 locked 90-second demo by calling both APIs.

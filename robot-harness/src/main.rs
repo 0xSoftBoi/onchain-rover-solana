@@ -9,12 +9,16 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use axum::{
+    body::Body,
     extract::{
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
     },
-    http::StatusCode,
-    response::{IntoResponse, Redirect, Response},
+    http::{
+        header::{CACHE_CONTROL, CONTENT_TYPE},
+        HeaderValue, StatusCode,
+    },
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -302,6 +306,7 @@ struct AppState {
     telemetry_tx: broadcast::Sender<TelemetryFrame>,
     allow_untokened_drive: bool,
     deadman_ms: u64,
+    camera_client: reqwest::Client,
     camera_device: Option<String>,
     camera_stream_url: Option<String>,
     camera_snapshot_url: Option<String>,
@@ -412,6 +417,10 @@ async fn main() -> Result<()> {
         Mode::Serial => SerialRover::open(&opts.serial_port, opts.serial_baud, raw.clone())?,
     };
     let (telemetry_tx, _) = broadcast::channel(128);
+    let camera_client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .build()
+        .context("build camera proxy client")?;
 
     let state = AppState {
         role: opts.role,
@@ -425,6 +434,7 @@ async fn main() -> Result<()> {
         telemetry_tx,
         allow_untokened_drive: opts.allow_untokened_drive,
         deadman_ms: opts.deadman_ms,
+        camera_client,
         camera_device: opts.camera_device,
         camera_stream_url: opts.camera_stream_url,
         camera_snapshot_url: opts.camera_snapshot_url,
@@ -580,9 +590,16 @@ async fn estop_reset(State(state): State<AppState>) -> Result<Json<Value>, AppEr
 }
 
 async fn stream(State(state): State<AppState>) -> Response {
-    if let Some(url) = &state.camera_stream_url {
-        return Redirect::temporary(url).into_response();
+    if let Some(url) = camera_stream_proxy_url(&state) {
+        return proxy_camera(&state, url, "multipart/x-mixed-replace").await;
     }
+    if matches!(state.mode, Mode::Sim) {
+        return simulated_camera_stream(&state);
+    }
+    camera_unavailable_response(&state, "stream")
+}
+
+fn simulated_camera_stream(state: &AppState) -> Response {
     let raw = state.raw.read().clone();
     let command = state.command.lock().clone();
     let svg = format!(
@@ -619,10 +636,96 @@ async fn camera_status(State(state): State<AppState>) -> Json<CameraStatus> {
 }
 
 async fn camera_snapshot(State(state): State<AppState>) -> Response {
-    if let Some(url) = &state.camera_snapshot_url {
-        return Redirect::temporary(url).into_response();
+    if let Some(url) = camera_snapshot_proxy_url(&state) {
+        return proxy_camera(&state, url, "image/jpeg").await;
     }
-    stream(State(state)).await
+    if matches!(state.mode, Mode::Sim) {
+        return simulated_camera_stream(&state);
+    }
+    camera_unavailable_response(&state, "snapshot")
+}
+
+fn camera_stream_proxy_url(state: &AppState) -> Option<&str> {
+    first_camera_proxy_url(&state.camera_stream_url, &state.camera_snapshot_url)
+}
+
+fn camera_snapshot_proxy_url(state: &AppState) -> Option<&str> {
+    first_camera_proxy_url(&state.camera_snapshot_url, &state.camera_stream_url)
+}
+
+fn first_camera_proxy_url<'a>(
+    primary: &'a Option<String>,
+    fallback: &'a Option<String>,
+) -> Option<&'a str> {
+    primary.as_deref().or_else(|| fallback.as_deref())
+}
+
+async fn proxy_camera(state: &AppState, url: &str, default_content_type: &'static str) -> Response {
+    let upstream = match state.camera_client.get(url).send().await {
+        Ok(upstream) => upstream,
+        Err(err) => {
+            warn!(%url, ?err, "camera proxy request failed");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "ok": false,
+                    "error": "camera proxy request failed",
+                    "url": url,
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let status =
+        StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let content_type = upstream
+        .headers()
+        .get(CONTENT_TYPE)
+        .cloned()
+        .unwrap_or_else(|| HeaderValue::from_static(default_content_type));
+    let cache_control = upstream.headers().get(CACHE_CONTROL).cloned();
+
+    let mut builder = Response::builder().status(status);
+    if let Some(headers) = builder.headers_mut() {
+        headers.insert(CONTENT_TYPE, content_type);
+        if let Some(cache_control) = cache_control {
+            headers.insert(CACHE_CONTROL, cache_control);
+        }
+    }
+
+    builder
+        .body(Body::from_stream(upstream.bytes_stream()))
+        .unwrap_or_else(|err| {
+            error!(?err, "failed to build camera proxy response");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "ok": false,
+                    "error": "failed to build camera proxy response",
+                })),
+            )
+                .into_response()
+        })
+}
+
+fn camera_unavailable_response(state: &AppState, endpoint: &'static str) -> Response {
+    let camera = camera_status_for(state);
+    let status = if camera.device.is_some() {
+        StatusCode::NOT_IMPLEMENTED
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "ok": false,
+            "error": "camera source unavailable",
+            "endpoint": endpoint,
+            "camera": camera,
+        })),
+    )
+        .into_response()
 }
 
 async fn pilot_authorize(
@@ -948,19 +1051,33 @@ fn estop_inner(state: &AppState) -> Result<(), AppError> {
 }
 
 fn camera_status_for(state: &AppState) -> CameraStatus {
-    let has_proxy = state.camera_stream_url.is_some() || state.camera_snapshot_url.is_some();
-    let has_device = state.camera_device.is_some();
     CameraStatus {
-        status: if has_proxy {
-            "proxy"
-        } else if has_device {
-            "configured"
-        } else {
-            "placeholder"
-        },
+        status: camera_status_name(
+            state.mode,
+            &state.camera_device,
+            &state.camera_stream_url,
+            &state.camera_snapshot_url,
+        ),
         device: state.camera_device.clone(),
         stream_url: state.camera_stream_url.clone(),
         snapshot_url: state.camera_snapshot_url.clone(),
+    }
+}
+
+fn camera_status_name(
+    mode: Mode,
+    device: &Option<String>,
+    stream_url: &Option<String>,
+    snapshot_url: &Option<String>,
+) -> &'static str {
+    if stream_url.is_some() || snapshot_url.is_some() {
+        "proxy"
+    } else if matches!(mode, Mode::Sim) {
+        "simulated"
+    } else if device.is_some() {
+        "configured"
+    } else {
+        "unavailable"
     }
 }
 
@@ -1143,5 +1260,48 @@ mod tests {
     fn ignores_unknown_or_invalid_frames() {
         assert!(parse_esp32_telemetry(r#"{"T":999}"#).is_none());
         assert!(parse_esp32_telemetry("not-json").is_none());
+    }
+
+    #[test]
+    fn camera_proxy_url_prefers_specific_endpoint_and_falls_back() {
+        let stream = Some("http://camera.local/stream".to_string());
+        let snapshot = Some("http://camera.local/snapshot.jpg".to_string());
+
+        assert_eq!(
+            first_camera_proxy_url(&stream, &snapshot),
+            Some("http://camera.local/stream")
+        );
+        assert_eq!(
+            first_camera_proxy_url(&snapshot, &stream),
+            Some("http://camera.local/snapshot.jpg")
+        );
+        assert_eq!(
+            first_camera_proxy_url(&None, &stream),
+            Some("http://camera.local/stream")
+        );
+        assert_eq!(first_camera_proxy_url(&None, &None), None);
+    }
+
+    #[test]
+    fn camera_status_separates_simulated_from_physical_unavailable() {
+        let device = Some("/dev/video0".to_string());
+        let stream = Some("http://camera.local/stream".to_string());
+
+        assert_eq!(
+            camera_status_name(Mode::Sim, &None, &None, &None),
+            "simulated"
+        );
+        assert_eq!(
+            camera_status_name(Mode::Serial, &None, &None, &None),
+            "unavailable"
+        );
+        assert_eq!(
+            camera_status_name(Mode::Serial, &device, &None, &None),
+            "configured"
+        );
+        assert_eq!(
+            camera_status_name(Mode::Serial, &None, &stream, &None),
+            "proxy"
+        );
     }
 }

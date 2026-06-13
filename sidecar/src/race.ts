@@ -116,3 +116,37 @@ export function recordFinish(winner: RobotName) {
   current.finishMs = Date.now() - (current.startedAt ?? Date.now());
   return current;
 }
+
+// --- parimutuel betting (off-chain mirror for live odds; on-chain via
+// RaceMarket.sol once funded). One bet per human enforced by World nullifier. ---
+type Bet = { bettor: string; racer: RobotName; amount: number; nullifier?: string };
+let bets: Bet[] = [];
+const seenNullifiers = new Set<string>();
+
+export function openRaceWithBets() {
+  bets = []; seenNullifiers.clear();
+  return openRace();
+}
+
+export function placeBet(b: Bet) {
+  if (!current || current.status !== "betting")
+    throw new Error("betting closed");
+  if (b.nullifier) {
+    if (seenNullifiers.has(b.nullifier)) throw new Error("human already bet");
+    seenNullifiers.add(b.nullifier);
+  }
+  bets.push(b);
+  return odds();
+}
+
+export function odds() {
+  const pool: Record<string, number> = {};
+  let total = 0;
+  for (const r of (current?.racers ?? [])) pool[r] = 0;
+  for (const b of bets) { pool[b.racer] = (pool[b.racer] ?? 0) + b.amount; total += b.amount; }
+  // parimutuel decimal odds = total / pool_on_racer (1x if empty)
+  const o: Record<string, number> = {};
+  for (const r of (current?.racers ?? []))
+    o[r] = pool[r] > 0 ? +(total / pool[r]).toFixed(2) : 1;
+  return { pool, total, odds: o, count: bets.length };
+}

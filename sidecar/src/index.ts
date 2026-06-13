@@ -64,7 +64,14 @@ app.post("/estop/:robot", async (req, res) => {
   res.json({ stopped: true });
 });
 
-app.post("/race/open", (_req, res) => res.json(race.openRace()));
+app.post("/race/open", (_req, res) => res.json(race.openRaceWithBets()));
+app.post("/race/bet", (req, res) => {
+  try {
+    const { bettor = "anon", racer, amount = 1, nullifier } = req.body;
+    res.json(race.placeBet({ bettor, racer, amount: Number(amount), nullifier }));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+app.get("/race/odds", (_req, res) => res.json(race.odds()));
 app.get("/race/state", (_req, res) => res.json(race.raceState()));
 app.post("/race/arm", (_req, res) => res.json(race.armRace()));
 app.post("/race/start", (_req, res) => res.json(race.startRace()));

@@ -12,6 +12,7 @@ talk through gibber.send/recv so the audio chirp is the show and the network
 mirror is the reliable channel (same design as the checkpoint handshake).
 """
 import json
+import os
 import time
 
 import gibber
@@ -35,12 +36,17 @@ def _auctioneer_line(item, price, first):
 
 def run_seller(item="EventPass", start=2.00, floor=0.50, step=0.25,
                tick_secs=4.0, auction_id="a1", speak=True):
-    """Dutch auction seller — a Texas auctioneer. Returns the deal dict, or a
-    no-deal dict if no buyer by the floor. Announces each price (voice +
-    mirror), then listens one tick for an ACCEPT."""
+    """Dutch auction seller — a Texas auctioneer that REASONS. The onboard LLM
+    sets a demand-based reserve + step (not a fixed decrement). Returns the deal
+    dict, or a no-deal dict if no buyer by the reserve."""
+    import brain
+    demand = float(os.environ.get("AUCTION_DEMAND", "0.5"))  # live signal: bidders waiting
+    plan = brain.seller_reserve(start, floor, demand)
+    reserve, step = plan["reserve"], plan["step"]
+    print(f"SELLER reasoning: reserve=${reserve} step=${step} — {plan['reason']}")
     price = start
     first = True
-    while price >= floor - 1e-9:
+    while price >= reserve - 1e-9:
         offer = {"type": "offer", "item": item, "price": round(price, 2),
                  "auctionId": auction_id, "seller": "guard.rover.eth"}
         if speak:
@@ -69,16 +75,17 @@ def run_seller(item="EventPass", start=2.00, floor=0.50, step=0.25,
         price -= step
 
     if speak:
-        voice.say("No takers. Auction closed.")
-    return {"agreed": False, "auctionId": auction_id}
+        voice.say("No takers above my reserve. Auction closed.", voice="texas")
+    return {"agreed": False, "auctionId": auction_id, "reserve": reserve}
 
 
 def run_buyer(budget=1.25, auction_id="a1", timeout_secs=40, speak=True):
-    """Dutch auction buyer. Accepts the first offer at or below `budget`.
-
-    Returns the deal dict, or None on timeout.
-    """
+    """Dutch auction buyer that REASONS: for each offer at/under budget, the
+    onboard LLM weighs accepting now vs waiting for a lower price (risk: a rival
+    buyer or the reserve). Not 'grab first under budget'. Returns the deal."""
+    import brain
     deadline = time.time() + timeout_secs
+    history = []
     while time.time() < deadline:
         raw = gibber.recv(timeout_secs=max(0.5, deadline - time.time()), network_only=True)
         if not raw:
@@ -90,15 +97,20 @@ def run_buyer(budget=1.25, auction_id="a1", timeout_secs=40, speak=True):
         if msg.get("type") != "offer" or msg.get("auctionId") != auction_id:
             continue
         price = float(msg.get("price", 1e9))
-        if price <= budget + 1e-9:
+        history.append(round(price, 2))
+        if price > budget + 1e-9:
+            continue  # over budget, no decision needed
+        d = brain.buyer_decision(price, budget, history, deadline - time.time())
+        print(f"BUYER reasoning @ ${price:.2f}: {d['action']} — {d['reason']}")
+        if d["action"] == "accept":
             accept = {"type": "accept", "auctionId": auction_id,
                       "price": price, "buyer": "courier.rover.eth"}
             gibber.send(json.dumps(accept))          # signal FIRST (chirp + mirror)
             if speak:
-                voice.say(f"Deal. I'll take it for {price:.2f} dollars.")  # theater after
+                voice.say(f"Deal — {d['reason']}. I'll take it for {price:.2f} dollars.")
             return {"agreed": True, "price": price, "item": msg.get("item"),
-                    "auctionId": auction_id}
-        # else: too pricey, wait for the next lower offer
+                    "auctionId": auction_id, "reason": d["reason"]}
+        # else: LLM chose to wait for a better price
     if speak:
-        voice.say("Too rich for me. Walking away.")
+        voice.say("Held out too long. Walking away.")
     return {"agreed": False, "auctionId": auction_id}

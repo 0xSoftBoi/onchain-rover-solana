@@ -896,7 +896,10 @@ function normalizeFinishProof(
   finishedAt: number,
 ): Record<string, unknown> {
   const input = plainObject(proof) ?? {};
-  const frameHash = firstString(input.frameHash, input.proofFrameHash);
+  const inputProofFrame = plainObject(input.proofFrame);
+  const frameHash = firstString(input.frameHash, input.proofFrameHash, inputProofFrame?.frameHash, inputProofFrame?.hash);
+  const frameStatus = firstString(inputProofFrame?.status, input.frameCaptureStatus)
+    ?? (frameHash ? "captured" : "not-provided");
   const finishDetectionId = firstString(input.finishDetectionId, input.detectionId);
   return {
     schema: "onchain-rover.operator-finish-proof.v1",
@@ -909,20 +912,40 @@ function normalizeFinishProof(
     telemetryTraceId,
     finishDetectionId,
     proofFrame: {
-      status: frameHash ? "captured" : "not-provided",
+      status: frameStatus,
       frameHash,
-      source: firstString(input.frameSource) ?? firstString(input.source) ?? "operator",
-      capturedAtMs: timestampMs(input.frameCapturedAtMs, finishedAt),
+      source: firstString(input.frameSource, inputProofFrame?.source) ?? firstString(input.source) ?? "operator",
+      capturedAtMs: timestampMs(input.frameCapturedAtMs, inputProofFrame?.capturedAtMs, finishedAt),
+      robot: parseRobotName(inputProofFrame?.robot) ?? parseRobotName(input.frameRobot),
+      cameraId: firstString(inputProofFrame?.cameraId, input.cameraId),
+      blobRef: firstString(inputProofFrame?.blobRef, input.frameBlobRef),
+      url: firstString(inputProofFrame?.url, input.frameUrl),
+      contentType: firstString(inputProofFrame?.contentType, input.frameContentType),
+      byteLength: optionalPositiveInt(inputProofFrame?.byteLength, input.frameByteLength),
+      burstCount: optionalPositiveInt(inputProofFrame?.burstCount, input.frameBurstCount),
+      frameAgeMs: optionalPositiveInt(inputProofFrame?.frameAgeMs, input.frameAgeMs),
+      error: firstString(inputProofFrame?.error, input.frameError),
     },
     note: firstString(input.note),
     metrics: plainObject(input.metrics),
   };
 }
 
-function timestampMs(value: unknown, fallback: number): number {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return fallback;
-  return Math.floor(number);
+function timestampMs(...values: unknown[]): number {
+  const fallback = Number(values.at(-1));
+  for (const value of values.slice(0, -1)) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return Math.floor(number);
+  }
+  return Number.isFinite(fallback) && fallback > 0 ? Math.floor(fallback) : Date.now();
+}
+
+function optionalPositiveInt(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number >= 0) return Math.floor(number);
+  }
+  return undefined;
 }
 
 function parseRobotName(value: unknown): RobotName | null {

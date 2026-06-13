@@ -719,6 +719,7 @@ function renderReplay() {
     ["trace", state.trace?.traceId || evidence.resultProof?.result?.telemetryTraceId || "-"],
     ["trace frames", state.trace ? `${state.trace.frameCount} frames · ${state.trace.eventCount} events` : "-"],
     ["event sequence", traceEventSequence(state.trace)],
+    ["proof frame", proofFrameSummary(evidence.resultProof?.operatorProof?.proofFrame), proofFrameUrl(evidence.resultProof?.operatorProof?.proofFrame)],
     ["settlement", evidence.resultProof?.result?.settlementState?.status || "-"],
     ["detections", String(evidence.finishDetections?.length || 0)],
     ["lifecycle", (evidence.lifecycle || []).map((event) => `${event.event}@${new Date(event.atMs).toLocaleTimeString()}`).join(" -> ") || "-"],
@@ -735,14 +736,37 @@ function renderReplay() {
   if (latest) {
     rows.push(["latest", `${latest.slot} ${latest.source}/${latest.method} ${Math.round(latest.confidence * 100)}%`]);
   }
-  for (const [label, value] of rows) {
+  for (const [label, value, href] of rows) {
     const row = document.createElement("div");
     row.className = "replay-item";
     row.innerHTML = `<span></span><span></span>`;
     row.children[0].textContent = label;
-    row.children[1].textContent = value;
+    if (href) {
+      const link = document.createElement("a");
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = value;
+      row.children[1].append(link);
+    } else {
+      row.children[1].textContent = value;
+    }
     root.append(row);
   }
+}
+
+function proofFrameSummary(frame) {
+  if (!frame) return "-";
+  if (frame.status === "captured") {
+    const size = frame.byteLength ? `${Math.round(frame.byteLength / 1024)}KB` : "stored";
+    return `${frame.source || "camera"} ${size}`;
+  }
+  if (frame.status === "failed") return `failed: ${frame.error || "camera unavailable"}`;
+  return frame.status || "-";
+}
+
+function proofFrameUrl(frame) {
+  return frame?.status === "captured" && frame?.url ? frame.url : "";
 }
 
 function traceEventSequence(trace) {

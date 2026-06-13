@@ -9,6 +9,7 @@
  * 🚨 Buyer wallets must be plain EOAs (Privy server wallets are).
  */
 import express from "express";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 
@@ -24,6 +25,7 @@ import * as chain from "./chain.js";
 import * as evidence from "./evidence.js";
 import * as fieldPreflight from "./field-preflight.js";
 import * as localDevWallets from "./local-dev-wallets.js";
+import * as raceStore from "./race-store.js";
 import * as robotLink from "./robot-link.js";
 import * as rounds from "./rounds.js";
 import * as settle from "./settle.js";
@@ -658,14 +660,14 @@ app.post("/race/round/:id/start", (req, res) => {
   catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/race/round/:id/finish", (req, res) => {
+app.post("/race/round/:id/finish", async (req, res) => {
   try {
-    res.json(finishRoundWithEvidence(req.params.id, requireDriverSlot(req.body.winner), req.body.proof));
+    res.json(await finishRoundWithEvidence(req.params.id, requireDriverSlot(req.body.winner), req.body.proof));
   }
   catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/race/round/:id/finish-detection", (req, res) => {
+app.post("/race/round/:id/finish-detection", async (req, res) => {
   try {
     let round = rounds.getRound(req.params.id);
     const detection = evidence.recordFinishDetection(round, req.body);
@@ -688,7 +690,7 @@ app.post("/race/round/:id/finish-detection", (req, res) => {
       round = rounds.markEvidenceHashes(req.params.id, hashes.proofHash, hashes.evidenceHash);
       return res.json({ round, detection, detections: evidence.listFinishDetections(round) });
     }
-    round = finishRoundWithEvidence(req.params.id, detection.slot, {
+    round = await finishRoundWithEvidence(req.params.id, detection.slot, {
       source: "finish-detection",
       detectionId: detection.id,
       detection,
@@ -724,6 +726,14 @@ app.get("/race/round/:id/evidence", (req, res) => {
 app.get("/race/round/:id/evidence/hash", (req, res) => {
   try { res.json(evidence.getEvidenceHash(rounds.getRound(req.params.id))); }
   catch (e: any) { res.status(404).json({ error: e.message }); }
+});
+
+app.get("/race/round/:id/proof-frame/:file", (req, res) => {
+  try {
+    rounds.getRound(req.params.id);
+    res.type("image/jpeg");
+    res.sendFile(raceStore.proofFramePath(req.params.id, req.params.file));
+  } catch (e: any) { res.status(404).json({ error: e.message }); }
 });
 
 app.post("/race/round/:id/cancel", (req, res) => {
@@ -1039,17 +1049,19 @@ function pilotRoundState(round: rounds.Round, slot: rounds.DriverSlot) {
   };
 }
 
-function finishRoundWithEvidence(
+async function finishRoundWithEvidence(
   roundId: string,
   winner: rounds.DriverSlot,
   proof?: Record<string, unknown>,
-): rounds.Round {
-  let round = rounds.finishRound(roundId, winner, proof);
+): Promise<rounds.Round> {
+  const preFinishRound = rounds.getRound(roundId);
+  const proofWithFrame = await enrichFinishProofWithCameraFrame(preFinishRound, winner, proof);
+  let round = rounds.finishRound(roundId, winner, proofWithFrame);
   evidence.recordRoundSnapshot(round, "finished");
-  const finalized = evidence.finalizeResultProof(round, proof);
+  const finalized = evidence.finalizeResultProof(round, proofWithFrame);
   round = rounds.markEvidenceHashes(roundId, finalized.proofHash, finalized.evidenceHash);
-  telemetryTrace.appendDriverTraceEvent(round, winner, "finish-proof-captured", finishProofTraceDetail(round.proof ?? proof), {
-    atMs: finishProofAtMs(round.proof ?? proof) ?? round.finishedAt,
+  telemetryTrace.appendDriverTraceEvent(round, winner, "finish-proof-captured", finishProofTraceDetail(round.proof ?? proofWithFrame), {
+    atMs: finishProofAtMs(round.proof ?? proofWithFrame) ?? round.finishedAt,
   });
   telemetryTrace.appendRoundTraceEvent(round, "race-finish", {
     winner,
@@ -1059,6 +1071,178 @@ function finishRoundWithEvidence(
   }, { atMs: round.finishedAt });
   revokeRoundPilots(round);
   return round;
+}
+
+async function enrichFinishProofWithCameraFrame(
+  round: rounds.Round,
+  winner: rounds.DriverSlot,
+  proof?: Record<string, unknown>,
+): Promise<Record<string, unknown> | undefined> {
+  const base = proof ? structuredClone(proof) : {};
+  const existingFrame = base.proofFrame && typeof base.proofFrame === "object"
+    ? base.proofFrame as Record<string, unknown>
+    : {};
+  const existingHash = typeof base.frameHash === "string"
+    ? base.frameHash
+    : typeof existingFrame.frameHash === "string"
+      ? existingFrame.frameHash
+      : undefined;
+  const capture = await captureFinishProofFrame(round, winner);
+  if (capture.status === "captured") {
+    return {
+      ...base,
+      frameHash: capture.frameHash,
+      frameSource: capture.source,
+      frameCapturedAtMs: capture.capturedAtMs,
+      proofFrame: capture,
+    };
+  }
+  if (existingHash) {
+    return {
+      ...base,
+      proofFrame: {
+        ...existingFrame,
+        status: existingFrame.status ?? "captured",
+        frameHash: existingHash,
+        robotCapture: capture,
+      },
+    };
+  }
+  return {
+    ...base,
+    proofFrame: capture,
+    frameCaptureStatus: capture.status,
+    frameError: capture.error,
+  };
+}
+
+async function captureFinishProofFrame(round: rounds.Round, winner: rounds.DriverSlot): Promise<Record<string, unknown>> {
+  const driver = round.drivers[winner];
+  if (!driver?.robot) {
+    return {
+      status: "failed",
+      source: "robot-camera",
+      capturedAtMs: Date.now(),
+      error: `missing robot for ${winner}`,
+    };
+  }
+  const robotName = driver.robot;
+  const frames: Array<{ bytes: Buffer; contentType: string; source: string; capturedAtMs: number }> = [];
+  const errors: string[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    try {
+      frames.push(await captureRobotCameraFrame(robotName));
+    } catch (e: any) {
+      errors.push(e?.message || String(e));
+    }
+    if (index < 2) await sleep(120);
+  }
+  const best = frames.sort((a, b) => b.bytes.length - a.bytes.length).at(0);
+  if (!best) {
+    return {
+      status: "failed",
+      source: "robot-camera",
+      robot: robotName,
+      cameraId: `${robotName}/camera`,
+      capturedAtMs: Date.now(),
+      burstCount: 0,
+      error: errors.at(-1) ?? "camera capture failed",
+    };
+  }
+  const frameHash = `0x${createHash("sha256").update(best.bytes).digest("hex")}`;
+  const filename = `${winner}-${best.capturedAtMs}-${frameHash.slice(2, 10)}.jpg`;
+  const stored = raceStore.saveProofFrame(round.id, filename, best.bytes);
+  return {
+    status: "captured",
+    frameHash,
+    source: best.source,
+    robot: robotName,
+    cameraId: `${robotName}/camera`,
+    capturedAtMs: best.capturedAtMs,
+    blobRef: stored.blobRef,
+    url: `/race/round/${encodeURIComponent(round.id)}/proof-frame/${encodeURIComponent(filename)}`,
+    contentType: best.contentType,
+    byteLength: best.bytes.length,
+    burstCount: frames.length,
+    frameAgeMs: Math.max(0, Date.now() - best.capturedAtMs),
+  };
+}
+
+async function captureRobotCameraFrame(robotName: RobotName) {
+  const baseUrl = robot(robotName).url;
+  const snapshotUrl = new URL("/camera/snapshot", baseUrl).toString();
+  const snapshot = await fetch(snapshotUrl, { signal: AbortSignal.timeout(1800) }).catch(() => null);
+  if (snapshot?.ok && isImageResponse(snapshot)) {
+    const bytes = Buffer.from(await snapshot.arrayBuffer());
+    if (bytes.length > 0) {
+      return {
+        bytes,
+        contentType: snapshot.headers.get("content-type") ?? "image/jpeg",
+        source: "robot-camera-snapshot",
+        capturedAtMs: Date.now(),
+      };
+    }
+  }
+
+  const streamUrl = new URL("/stream", baseUrl).toString();
+  const stream = await fetch(streamUrl, { signal: AbortSignal.timeout(3500) });
+  if (!stream.ok || !stream.body) throw new Error(`camera stream failed ${stream.status}`);
+  const bytes = await readFirstJpeg(stream.body);
+  return {
+    bytes,
+    contentType: "image/jpeg",
+    source: "robot-camera-stream",
+    capturedAtMs: Date.now(),
+  };
+}
+
+function isImageResponse(res: Response) {
+  return String(res.headers.get("content-type") ?? "").startsWith("image/");
+}
+
+async function readFirstJpeg(body: ReadableStream<Uint8Array>): Promise<Buffer> {
+  const reader = body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const maxBytes = 2_500_000;
+  const deadline = Date.now() + 3000;
+  try {
+    while (Date.now() < deadline && total < maxBytes) {
+      const remaining = Math.max(1, deadline - Date.now());
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => setTimeout(() => reject(new Error("camera frame read timeout")), remaining)),
+      ]);
+      if (result.done) break;
+      const chunk = Buffer.from(result.value);
+      chunks.push(chunk);
+      total += chunk.length;
+      const frame = firstJpeg(Buffer.concat(chunks, total));
+      if (frame) return frame;
+    }
+  } finally {
+    reader.cancel().catch(() => undefined);
+  }
+  throw new Error("no jpeg frame in camera stream");
+}
+
+function firstJpeg(buffer: Buffer): Buffer | null {
+  let start = -1;
+  for (let i = 0; i < buffer.length - 1; i += 1) {
+    if (buffer[i] === 0xff && buffer[i + 1] === 0xd8) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return null;
+  for (let i = start + 2; i < buffer.length - 1; i += 1) {
+    if (buffer[i] === 0xff && buffer[i + 1] === 0xd9) return buffer.subarray(start, i + 2);
+  }
+  return null;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function finishDetectionTraceDetail(detection: evidence.FinishDetectionEvent): Record<string, unknown> {
@@ -1083,6 +1267,9 @@ function finishProofTraceDetail(proof?: Record<string, unknown>): Record<string,
     operatorActionId: typeof proof?.operatorActionId === "string" ? proof.operatorActionId : null,
     frameHash: typeof proof?.frameHash === "string" ? proof.frameHash : proofFrame?.hash ?? null,
     proofFrameStatus: proofFrame?.status ?? null,
+    blobRef: proofFrame?.blobRef ?? null,
+    url: proofFrame?.url ?? null,
+    error: proofFrame?.error ?? null,
   };
 }
 

@@ -120,6 +120,7 @@ async function main() {
     metrics: { odometry, threshold: finishThreshold },
   });
   round = detection.round;
+  assertProofFrame(round.proof?.proofFrame);
   round = await postJson(`/race/round/${round.id}/chain/settle`);
   const evidence = await getJson(`/race/round/${round.id}/evidence/hash`);
   const trace = await getJson(`/race/round/${round.id}/telemetry-trace`);
@@ -136,6 +137,21 @@ async function main() {
   console.log(`  evidenceHash: ${evidence.evidenceHash}`);
   console.log(`  guard odo:    ${odometry.toFixed(3)}`);
   console.log(`  preflight:    ${preflight.ok ? "ready enough" : "needs attention"}`);
+}
+
+function assertProofFrame(frame: any) {
+  if (!frame) throw new Error("round proof missing proofFrame metadata");
+  if (frame.status === "captured") {
+    if (!frame.frameHash) throw new Error("captured proof frame missing hash");
+    if (!frame.blobRef || !frame.url) throw new Error("captured proof frame missing blob reference");
+    if (!(Number(frame.byteLength ?? 0) > 0)) throw new Error("captured proof frame missing byte length");
+    return;
+  }
+  if (frame.status === "failed") {
+    if (!frame.error) throw new Error("failed proof frame missing error");
+    return;
+  }
+  throw new Error(`unexpected proof frame status: ${frame.status}`);
 }
 
 function startHarness(robot: RobotName, port: number) {

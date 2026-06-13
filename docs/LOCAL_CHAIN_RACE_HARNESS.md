@@ -320,6 +320,13 @@ id, optional finish-frame hash, telemetry trace id, and a `settlementState`
 that moves from `blocked` to `ready` at winner confirmation and then to
 `settled` after payout submission.
 
+On finish, the sidecar tries to capture a short burst from the winner robot's
+camera. Captured proof frames are stored under the round directory in
+`proof-frames/`, linked from the replay panel, and included in the normalized
+proof metadata with frame hash, camera source, capture time, byte length, and
+blob reference. If capture fails, the proof frame status is `failed` with an
+error instead of silently claiming an image exists.
+
 Telemetry trace files are stored as `telemetry.jsonl` beside `round.json`,
 `evidence.json`, and `events.jsonl`. Each frame is tagged with round id, trace
 id, driver slot, robot, timestamp, command, odometry, battery, speed mode,

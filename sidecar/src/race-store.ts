@@ -75,6 +75,21 @@ export function appendTelemetryTrace(event: TelemetryTraceEvent) {
   appendFileSync(telemetryFile(event.roundId), `${JSON.stringify(event)}\n`);
 }
 
+export function saveProofFrame(roundId: string, filename: string, bytes: Buffer) {
+  const safeName = safeProofFrameName(filename);
+  const file = join(roundDir(roundId), "proof-frames", safeName);
+  ensureDir(file);
+  writeFileSync(file, bytes);
+  return {
+    path: file,
+    blobRef: `proof-frames/${safeName}`,
+  };
+}
+
+export function proofFramePath(roundId: string, filename: string) {
+  return join(roundDir(roundId), "proof-frames", safeProofFrameName(filename));
+}
+
 export function persistedRoundPaths(roundId: string) {
   return {
     dir: roundDir(roundId),
@@ -151,6 +166,11 @@ function ensureDir(file: string) {
 function safeRoundId(roundId: string) {
   if (!isSafeRoundId(roundId)) throw new Error("unsafe round id");
   return roundId;
+}
+
+function safeProofFrameName(filename: string) {
+  if (!/^[a-zA-Z0-9_.-]{1,96}$/.test(filename)) throw new Error("unsafe proof frame filename");
+  return filename;
 }
 
 function isSafeRoundId(roundId: string) {

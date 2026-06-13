@@ -23,6 +23,7 @@ npm --prefix chain install
 npm run chain:compile
 npm run chain:test
 npm run e2e:local-race
+npm run e2e:sidecar-round
 ```
 
 For manual sidecar development:
@@ -50,6 +51,14 @@ To auto-finish a race from simulated telemetry:
 cd sidecar
 SIDECAR_URL=http://127.0.0.1:4021 FINISH_ROBOTS=guard,courier \
   FINISH_ODOMETRY=6 npm run sim:finish -- <roundId>
+```
+
+To prove the sidecar, local chain, robot bridge, detector ingestion, evidence,
+and settlement path together against an already running sidecar and Hardhat
+node:
+
+```bash
+SIDECAR_URL=http://127.0.0.1:4021 npm run e2e:sidecar-round
 ```
 
 The deploy step writes `sidecar/src/generated/contracts.local.json`. Re-run it

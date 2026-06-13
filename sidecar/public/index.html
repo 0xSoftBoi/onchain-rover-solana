@@ -60,6 +60,21 @@
   .ocstats { display:flex; gap:30px; padding:6px 4px 16px; }
   .ocstats .big { font-size:34px; font-weight:800; color:var(--grn); line-height:1; }
   .ocstats .lbl { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin-top:4px; }
+  /* Live agent reasoning (on-device LLM) */
+  .brain { grid-column:1 / -1; border:1px solid #8957e5; box-shadow:0 0 24px rgba(137,87,229,.15);
+           background:linear-gradient(180deg,#16121f,#141a24); }
+  .brain h2 { color:#bc8cff; font-size:15px; letter-spacing:1.5px; }
+  .minds { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .mind { background:#0a0e14; border:1px solid var(--line); border-radius:8px; padding:12px;
+          height:260px; overflow:auto; display:flex; flex-direction:column-reverse; }
+  .mind .who { font-weight:700; margin-bottom:8px; position:sticky; top:0; }
+  .mind.guard .who { color:var(--gold); } .mind.courier .who { color:var(--blu); }
+  .th { font-size:13.5px; line-height:1.5; margin:5px 0; padding-left:10px; border-left:2px solid var(--line); animation:slidein .3s; }
+  .th .ph { color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:.5px; }
+  .th.decision { border-left-color:var(--grn); color:#fff; font-weight:600; }
+  .th.offer { border-left-color:var(--gold); }
+  .th.plan { border-left-color:#bc8cff; color:var(--dim); }
+  .cursor { display:inline-block; width:7px; height:14px; background:#bc8cff; animation:pulse 1s infinite; vertical-align:middle; }
 </style>
 </head>
 <body>
@@ -76,6 +91,14 @@
       <div><div class="big" id="oc-agents">2</div><div class="lbl">robot agents</div></div>
     </div>
     <div id="onchain"><span class="addr">waiting for the first settlement…</span></div>
+  </div>
+
+  <div class="card brain">
+    <h2>🧠 LIVE AGENT REASONING — on-device LLM (gemma3) negotiating</h2>
+    <div class="minds">
+      <div class="mind guard"><div class="who">🤠 guard.rover.eth · seller/auctioneer</div><div id="mind-guard"></div></div>
+      <div class="mind courier"><div class="who">🤖 courier.rover.eth · buyer</div><div id="mind-courier"></div></div>
+    </div>
   </div>
 
   <div class="card">
@@ -239,8 +262,21 @@ async function pollOnchain(){
     }).join("");
   } catch {}
 }
+async function pollReason(){
+  try {
+    const f = await (await fetch("/reason/feed")).json();
+    if (!f.events) return;
+    for (const robot of ["guard","courier"]) {
+      const evs = f.events.filter(e => e.robot === robot).slice(0, 12);
+      $("mind-"+robot).innerHTML = evs.map((e,i) =>
+        `<div class="th ${e.kind}">${i===0?'<span class="cursor"></span> ':''}<span class="ph">${e.phase}</span> ${e.text}</div>`
+      ).join("");
+    }
+  } catch {}
+}
 poll(); setInterval(poll, 4000);
 pollOnchain(); setInterval(pollOnchain, 3000);
+pollReason(); setInterval(pollReason, 1500);
 </script>
 </body>
 </html>

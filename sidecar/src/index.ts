@@ -68,6 +68,31 @@ function _pushMock() {
 }
 function mockFeedLive() { return feedPayload(_mockEvents); }
 if (MOCK) { for (let i = 0; i < 8; i++) _pushMock(); setInterval(_pushMock, 4000); }
+// Mock negotiation reasoning — the two robots' local gemma3 thoughts streaming
+// as the Dutch auction plays out. Loops. Mock-only (real path = POST /reason).
+const _reasonScript: [string, string, string, string][] = [
+  ["guard", "reserve", "demand 0.6 — moderate. setting reserve $0.75, step $0.25. won't dump it.", "plan"],
+  ["guard", "offer", "EventPass. opening at $2.00. do I hear two dollars?", "offer"],
+  ["courier", "observe", "offer $2.00, my budget $1.25. over budget — hold.", "thought"],
+  ["courier", "decide", "WAIT. price falling ~$0.25/round, expect lower next.", "decision"],
+  ["guard", "offer", "no takers. dropping to $1.75.", "offer"],
+  ["courier", "observe", "$1.75 still > $1.25. risk: rival buyer? none seen. hold.", "thought"],
+  ["guard", "offer", "$1.50, going once…", "offer"],
+  ["courier", "observe", "$1.50. close. one more drop likely — but ~12s left, getting risky.", "thought"],
+  ["guard", "offer", "$1.25! last call before reserve.", "offer"],
+  ["courier", "decide", "ACCEPT @ $1.25 — at budget, low time left, waiting risks the reserve. take it.", "decision"],
+  ["guard", "settle", "SOLD to courier.rover.eth for $1.25. yeehaw.", "decision"],
+];
+let _reasonIdx = 0;
+const _reasonLog: Thought[] = [];
+function _pushReason() {
+  const [robot, phase, text, kind] = _reasonScript[_reasonIdx++ % _reasonScript.length];
+  _reasonLog.unshift({ t: Date.now(), robot, phase, text, kind });
+  if (_reasonLog.length > 60) _reasonLog.pop();
+}
+function mockReason() { return _reasonLog.slice(0, 40); }
+if (MOCK) { for (let i = 0; i < 6; i++) _pushReason(); setInterval(_pushReason, 2500); }
+
 const mockRep = () => ({
   guard: { ens: "guard.roverfleet.eth", count: 7, avg: 95 },
   courier: { ens: "courier.roverfleet.eth", count: 4, avg: 91 },
@@ -121,6 +146,24 @@ function feedPayload(events: OnchainEvent[]) {
 }
 app.get("/onchain/feed", (_req, res) =>
   res.json(MOCK ? mockFeedLive() : feedPayload(onchainFeed)));
+
+// --- live reasoning feed: each robot's LOCAL-LLM thoughts during negotiation ---
+type Thought = { t: number; robot: string; phase: string; text: string; kind: string };
+const reasoning: Thought[] = [];
+function logReason(robot: string, phase: string, text: string, kind = "thought") {
+  reasoning.unshift({ t: Date.now(), robot, phase, text, kind });
+  if (reasoning.length > 120) reasoning.pop();
+}
+// robots POST their LLM reasoning here (fire-and-forget); dashboard reads /reason/feed
+app.post("/reason", (req, res) => {
+  const { robot, phase = "", text = "", kind = "thought" } = req.body ?? {};
+  if (robot && text) logReason(robot, phase, text, kind);
+  res.json({ ok: true });
+});
+app.get("/reason/feed", (_req, res) => {
+  if (MOCK) return res.json({ events: mockReason() });
+  res.json({ events: reasoning.slice(0, 60) });
+});
 
 app.get("/robot/registry", (_req, res) => {
   res.json(Object.fromEntries([...liveRobots.entries()].map(([k, v]) =>

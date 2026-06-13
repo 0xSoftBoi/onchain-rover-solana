@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Treasury — Ledger Governance</title>
+<style>
+  body { margin:0; background:#0a0e14; color:#e6edf3; font:15px/1.6 ui-monospace,Menlo,monospace;
+         display:flex; flex-direction:column; align-items:center; padding:40px 20px; }
+  .card { background:#141a24; border:1px solid #222c3a; border-radius:14px; padding:28px;
+          max-width:520px; width:100%; }
+  h1 { font-size:20px; margin:0 0 6px; } .sub { color:#7d8aa0; font-size:13px; margin-bottom:20px; }
+  .bal { font-size:42px; font-weight:800; color:#d8a657; text-align:center; margin:10px 0; }
+  .bal small { font-size:14px; color:#7d8aa0; font-weight:400; }
+  .row { display:flex; gap:8px; margin:10px 0; }
+  input { flex:1; background:#0a0e14; border:1px solid #222c3a; color:#e6edf3;
+          padding:10px; border-radius:7px; font:inherit; }
+  button { background:#1f6feb; color:#fff; border:0; padding:12px; border-radius:8px;
+           font:inherit; cursor:pointer; width:100%; margin-top:6px; }
+  button:hover { background:#388bfd; } button:disabled { opacity:.4; }
+  .warn { background:#21262d; border:1px solid #f85149; color:#f85149; padding:10px 12px;
+          border-radius:8px; font-size:13px; margin:16px 0; }
+  #status { color:#7d8aa0; font-size:13px; margin-top:16px; min-height:20px;
+            border-top:1px solid #222c3a; padding-top:12px; }
+  .ok { color:#3fb950; } a { color:#58a6ff; }
+  .step { display:flex; align-items:center; gap:8px; color:#7d8aa0; font-size:13px; margin:6px 0; }
+  .step .n { background:#222c3a; border-radius:50%; width:20px; height:20px; display:inline-flex;
+             align-items:center; justify-content:center; font-size:11px; flex:none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔐 Fleet Treasury</h1>
+  <div class="sub">guard.rover.eth + courier.rover.eth earnings · Arc testnet</div>
+  <div class="bal"><span id="bal">—</span> <small>USDC</small></div>
+  <div class="sub" id="owner" style="text-align:center"></div>
+
+  <div class="warn">⚠️ Robots earn autonomously, but moving the treasury requires a
+    human to physically clear-sign on a Ledger. The device shows the exact intent
+    (ERC-7730): <code>Withdraw N USDC → recipient</code>.</div>
+
+  <div class="step"><span class="n">1</span> Connect &amp; unlock your Ledger, open the Ethereum app</div>
+  <button id="connect">Connect Ledger (WebHID)</button>
+
+  <div class="step" style="margin-top:18px"><span class="n">2</span> Withdraw fleet earnings</div>
+  <div class="row">
+    <input id="to" placeholder="recipient 0x…" />
+    <input id="amt" placeholder="USDC" style="max-width:90px" value="1.00" />
+  </div>
+  <button id="withdraw" disabled>Withdraw → clear-sign on device</button>
+
+  <div id="status">WebHID requires Chrome/Edge over HTTPS or localhost.</div>
+</div>
+
+<script type="module">
+import "./ledger.bundle.js";
+const $ = (id)=>document.getElementById(id);
+async function refresh(){
+  try { const i = await (await fetch("/treasury/info")).json();
+    if (i.deployed){ $("bal").textContent = (Number(i.balanceUsdc6)/1e6).toFixed(2);
+      $("owner").textContent = "owner (Ledger): " + i.owner; }
+    else $("bal").textContent = "not deployed"; } catch {}
+}
+$("connect").onclick = async () => {
+  try { const a = await window.roverLedger.connect();
+    $("withdraw").disabled = false; if(!$("to").value) $("to").value = a; }
+  catch(e){ $("status").textContent = "✗ " + e.message; }
+};
+$("withdraw").onclick = async () => {
+  try { $("withdraw").disabled = true;
+    const r = await window.roverLedger.withdraw($("to").value, $("amt").value);
+    $("status").innerHTML = '<span class="ok">✓ withdrawn</span> · <a target="_blank" href="https://testnet.arcscan.app/tx/'+r.tx+'">'+r.tx.slice(0,12)+'…</a>';
+    refresh();
+  } catch(e){ $("status").textContent = "✗ " + e.message; $("withdraw").disabled = false; }
+};
+refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

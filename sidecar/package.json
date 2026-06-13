@@ -7,17 +7,24 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "build:ledger": "esbuild web-src/ledger.ts --bundle --format=esm --outfile=public/ledger.bundle.js --platform=browser --define:global=globalThis"
   },
   "dependencies": {
     "@circle-fin/x402-batching": "^3.0.4",
     "@ensdomains/ensjs": "^4.2.3",
     "@google-cloud/bigquery": "^7.9.0",
+    "@ledgerhq/context-module": "^2.1.0",
+    "@ledgerhq/device-management-kit": "^1.6.0",
+    "@ledgerhq/device-signer-kit-ethereum": "^1.16.0",
+    "@ledgerhq/device-transport-kit-web-hid": "^1.2.3",
     "@privy-io/node": "latest",
     "@x402/core": "^2.15.0",
     "@x402/evm": "^2.15.0",
     "dotenv": "^17.4.2",
+    "esbuild": "^0.28.1",
     "express": "^4.19.0",
+    "rxjs": "^7.8.2",
     "viem": "^2.21.0"
   },
   "devDependencies": {

@@ -73,6 +73,22 @@ app.post("/race/bet", (req, res) => {
 });
 app.get("/race/odds", (_req, res) => res.json(race.odds()));
 
+// --- Treasury (Ledger clear-sign governance climax) ------------------------
+app.get("/treasury/info", async (_req, res) => {
+  try { res.json(await settle.treasuryInfo()); }
+  catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+app.get("/treasury/withdraw-tx", async (req, res) => {
+  try {
+    const { from, to, amount } = req.query as Record<string, string>;
+    res.json(await settle.buildWithdrawTx(from, to, amount));
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+app.post("/treasury/broadcast", async (req, res) => {
+  try { res.json(await settle.broadcastSigned(req.body.tx, req.body.signature)); }
+  catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // ERC-8004 reputation summary (the leaderboard score) for each robot.
 app.get("/reputation", async (_req, res) => {
   const out: Record<string, any> = {};

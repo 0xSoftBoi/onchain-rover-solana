@@ -11,7 +11,7 @@
  */
 import {
   createPublicClient, createWalletClient, defineChain, http,
-  parseAbi, parseUnits, getAddress,
+  parseAbi, parseUnits, getAddress, encodeFunctionData, serializeTransaction,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ARC, ROBOTS } from "./config.js";
@@ -135,6 +135,72 @@ export async function giveFeedback(opts: {
   });
   const receipt = await pub.waitForTransactionReceipt({ hash });
   return { tx: hash, status: receipt.status, explorer: `${ARC.explorer}/tx/${hash}` };
+}
+
+// --- Treasury: Ledger-clear-signed withdrawal (governance climax) ----------
+const treasuryAbi = parseAbi([
+  "function withdraw(address to, uint256 amount)",
+  "function balance() view returns (uint256)",
+  "function owner() view returns (address)",
+]);
+
+/** Build an UNSIGNED EIP-1559 tx for Treasury.withdraw, for the Ledger to sign.
+ * `from` = the connected Ledger address (needed for nonce). */
+export async function buildWithdrawTx(from: string, to: string, amountUsdc: string) {
+  const treasury = process.env.TREASURY_CONTRACT;
+  if (!treasury) throw new Error("TREASURY_CONTRACT not set (deploy Treasury)");
+  const data = encodeFunctionData({
+    abi: treasuryAbi, functionName: "withdraw",
+    args: [getAddress(to), parseUnits(amountUsdc, 6)],
+  });
+  const nonce = await pub.getTransactionCount({ address: getAddress(from) });
+  const fees = await pub.estimateFeesPerGas();
+  const tx = {
+    to: getAddress(treasury), data, nonce, value: 0n,
+    gas: 120000n, chainId: arcTestnet.id,
+    maxFeePerGas: fees.maxFeePerGas, maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+    type: "eip1559" as const,
+  };
+  // serialize WITHOUT signature -> the exact bytes the Ledger signs
+  const unsignedSerialized = serializeTransaction(tx);
+  return {
+    unsignedSerialized,
+    // pass the tx fields back so broadcast can re-serialize WITH the signature
+    tx: { ...tx, nonce, maxFeePerGas: tx.maxFeePerGas?.toString(),
+          maxPriorityFeePerGas: tx.maxPriorityFeePerGas?.toString(),
+          gas: tx.gas.toString(), value: "0" },
+  };
+}
+
+/** Reconstruct the signed tx from the Ledger {r,s,v} and broadcast on Arc. */
+export async function broadcastSigned(txFields: any, sig: { r: string; s: string; v: string | number }) {
+  const tx = {
+    to: getAddress(txFields.to), data: txFields.data as `0x${string}`,
+    nonce: Number(txFields.nonce), value: 0n, gas: BigInt(txFields.gas),
+    chainId: arcTestnet.id, type: "eip1559" as const,
+    maxFeePerGas: BigInt(txFields.maxFeePerGas),
+    maxPriorityFeePerGas: BigInt(txFields.maxPriorityFeePerGas),
+  };
+  const vNum = typeof sig.v === "string" ? Number(sig.v) : sig.v;
+  const yParity = vNum % 2 === 0 ? 1 : 0; // EIP-1559 uses yParity (0/1)
+  const signed = serializeTransaction(tx, {
+    r: ("0x" + sig.r.replace(/^0x/, "").padStart(64, "0")) as `0x${string}`,
+    s: ("0x" + sig.s.replace(/^0x/, "").padStart(64, "0")) as `0x${string}`,
+    yParity,
+  });
+  const hash = await pub.sendRawTransaction({ serializedTransaction: signed });
+  const receipt = await pub.waitForTransactionReceipt({ hash });
+  return { tx: hash, status: receipt.status, explorer: `${ARC.explorer}/tx/${hash}` };
+}
+
+export async function treasuryInfo() {
+  const treasury = process.env.TREASURY_CONTRACT;
+  if (!treasury) return { deployed: false };
+  const [bal, owner] = await Promise.all([
+    pub.readContract({ address: treasury as `0x${string}`, abi: treasuryAbi, functionName: "balance" }),
+    pub.readContract({ address: treasury as `0x${string}`, abi: treasuryAbi, functionName: "owner" }),
+  ]);
+  return { deployed: true, address: treasury, balanceUsdc6: (bal as bigint).toString(), owner };
 }
 
 export async function repSummary(agentId: number) {

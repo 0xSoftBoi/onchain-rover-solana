@@ -66,6 +66,26 @@ if (!rep) {
   console.log(`✅ ReputationRegistry deployed: ${rep}  (add to .env: REPUTATION_ADDRESS=${rep})`);
 }
 
+// 2c. deploy Treasury (owner = Ledger address if set, else guard for testing)
+let treasury = process.env.TREASURY_CONTRACT;
+if (!treasury) {
+  console.log("deploying Treasury...");
+  const art = JSON.parse(readFileSync(
+    new URL("../../out/Treasury.sol/Treasury.json", import.meta.url), "utf8"));
+  const account = privateKeyToAccount(process.env.GUARD_PRIVATE_KEY as `0x${string}`);
+  const w = createWalletClient({ account, chain: arcTestnet, transport: http() });
+  const pub3 = createPublicClient({ chain: arcTestnet, transport: http() });
+  const ledgerOwner = getAddress(process.env.LEDGER_ADDRESS || ROBOTS.guard.wallet);
+  const USDC = "0x3600000000000000000000000000000000000000";
+  const hash = await w.deployContract({
+    abi: art.abi, bytecode: art.bytecode.object, args: [USDC, ledgerOwner] });
+  const r = await pub3.waitForTransactionReceipt({ hash });
+  treasury = r.contractAddress!;
+  process.env.TREASURY_CONTRACT = treasury;
+  console.log(`✅ Treasury deployed: ${treasury} owner=${ledgerOwner}`);
+  console.log(`   (add to .env: TREASURY_CONTRACT=${treasury})`);
+}
+
 // 3. live Dutch auction on the robots
 const aid = `live-${cBal}`.slice(0, 16);
 console.log("🤠 starting Dutch auction on the robots...");

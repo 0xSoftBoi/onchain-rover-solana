@@ -1,0 +1,2 @@
+requests
+# VLM backend = Ollama on the laptop (ollama pull moondream). No pip VLM needed.

@@ -21,10 +21,29 @@ import requests
 
 ROBOT_API = os.environ.get("ROBOT_API", "http://localhost:8000")
 SIDECAR = os.environ.get("SIDECAR_URL", "http://localhost:4021")
+VLM_SERVICE = os.environ.get("VLM_SERVICE", "http://localhost:4031")  # laptop VLM
 ROVER = os.environ.get("ROVER", "courier")
 MODEL = os.environ.get("AGENT_MODEL", "ollama:gemma3:1b")
 
 _S = requests.Session()
+
+
+def _grab_frame_b64():
+    """Pull ONE JPEG from the local robot /stream, base64. Sent to the laptop
+    VLM so heavy perception never touches Jetson RAM (robot->laptop only)."""
+    import base64
+    try:
+        with _S.get(f"{ROBOT_API}/stream", stream=True, timeout=8) as r:
+            buf = b""
+            for chunk in r.iter_content(4096):
+                buf += chunk
+                a, b = buf.find(b"\xff\xd8"), buf.find(b"\xff\xd9", 2)
+                if a != -1 and b != -1:
+                    return base64.b64encode(buf[a:b + 2]).decode()
+                if len(buf) > 2_000_000:
+                    return None
+    except Exception:
+        return None
 
 
 def _post(base, path, body=None, timeout=120):
@@ -92,6 +111,30 @@ class skills:
         """Verify an agent on-chain (AgentBook + ERC-8004 + pass)."""
         return _post(SIDECAR, "/verify-agent", {"wallet": wallet, "agentId": agentId})
 
+    # --- perception (laptop-hosted VLM; dodges the Jetson RAM gate) ---------
+    @staticmethod
+    def look(question: str = "Describe the scene in one sentence."):
+        """See: send the current camera frame to the laptop VLM and ask about it."""
+        return _post(VLM_SERVICE, "/look",
+                     {"image_b64": _grab_frame_b64(), "question": question}, timeout=90)
+
+    @staticmethod
+    def locate(target: str):
+        """Find a target in view -> {present, x_frac, confidence} (feeds seek)."""
+        return _post(VLM_SERVICE, "/locate",
+                     {"image_b64": _grab_frame_b64(), "target": target}, timeout=90)
+
+    @staticmethod
+    def observe(label: str = ""):
+        """See + REMEMBER: describe the scene and store it in spatial memory."""
+        return _post(VLM_SERVICE, "/observe",
+                     {"image_b64": _grab_frame_b64(), "label": label}, timeout=90)
+
+    @staticmethod
+    def recall(query: str):
+        """Recall where something was seen before ('the package by the door')."""
+        return _post(VLM_SERVICE, "/recall", {"query": query}, timeout=30)
+
 
 SKILL_CATALOG = [
     ("drive", skills.drive, "move(linear m/s, angular rad/s)"),
@@ -102,15 +145,21 @@ SKILL_CATALOG = [
     ("hire", skills.hire, "hire a rover over x402"),
     ("give_feedback", skills.give_feedback, "write ERC-8004 reputation"),
     ("verify_agent", skills.verify_agent, "verify an agent on-chain"),
+    ("look", skills.look, "VLM: describe what the rover sees (laptop)"),
+    ("locate", skills.locate, "VLM: find a target -> bearing (laptop)"),
+    ("observe", skills.observe, "VLM: describe + remember the scene"),
+    ("recall", skills.recall, "spatial memory: where did I see X?"),
 ]
 
 SYSTEM_PROMPT = (
     "You are the brain of a physical rover that is a hireable on-chain agent. "
-    "You have skills to move (drive/seek), perceive (capture), speak (say), "
-    "anchor proof on Walrus (store_proof), and touch the crypto rails (hire, "
-    "give_feedback, verify_agent). Complete the user's job by calling skills, "
-    "then ALWAYS capture + store_proof so the work is provable, and "
-    "give_feedback to record reputation. Keep moves small and safe."
+    "You can perceive (look/locate/observe via a vision model, and remember "
+    "scenes with recall), move (drive/seek), speak (say), anchor proof on "
+    "Walrus (store_proof/capture), and touch the crypto rails (hire, "
+    "give_feedback, verify_agent). Approach a job by LOOKING first, then acting. "
+    "Use recall to find things you've seen before. ALWAYS finish by capturing + "
+    "storing proof and writing give_feedback so the work is provable on-chain. "
+    "Keep moves small and safe."
 )
 
 
@@ -153,7 +202,28 @@ def build_skills():
         sha256: str = Field("", description="photo sha256")
         def __call__(self): return skills.give_feedback(self.score, "deliver", self.blobId, self.sha256)
 
-    for s in (Drive, Seek, Say, Capture, StoreProof, GiveFeedback):
+    class Look(AbstractSkill):
+        """See: ask the laptop VLM what the rover is looking at right now."""
+        question: str = Field("Describe the scene in one sentence.")
+        def __call__(self): return skills.look(self.question)
+
+    class Locate(AbstractSkill):
+        """Find a target in view; returns bearing for seek."""
+        target: str = Field(..., description="what to find, e.g. 'the apple'")
+        def __call__(self): return skills.locate(self.target)
+
+    class Observe(AbstractSkill):
+        """See AND remember the scene in spatial memory."""
+        label: str = Field("", description="optional name for this place/scene")
+        def __call__(self): return skills.observe(self.label)
+
+    class Recall(AbstractSkill):
+        """Recall where something was seen ('the package by the door')."""
+        query: str = Field(...)
+        def __call__(self): return skills.recall(self.query)
+
+    for s in (Drive, Seek, Say, Capture, StoreProof, GiveFeedback,
+              Look, Locate, Observe, Recall):
         lib.add(s)
     return lib
 

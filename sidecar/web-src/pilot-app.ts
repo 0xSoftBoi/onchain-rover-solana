@@ -388,6 +388,13 @@ async function completeRaceEntryIfNeeded() {
     displayName: walletDisplayName(session),
   });
 
+  setModalStatus("Paying race fee...");
+  await signer.payRaceFee(session, {
+    roundId,
+    slot: driverSlot,
+    displayName: walletDisplayName(session),
+  });
+
   setModalStatus("Authorizing matched stake...");
   await signer.authorizeStake(session, {
     roundId,

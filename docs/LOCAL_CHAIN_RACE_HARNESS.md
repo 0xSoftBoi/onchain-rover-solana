@@ -489,6 +489,27 @@ SIDECAR_URL=http://127.0.0.1:4021 LIDAR_ROBOTS=guard,courier \
 It listens to `/ws/telemetry`, watches `lidar.front_m` or `lidar.min_m`, and
 posts a finish detection when the threshold is crossed.
 
+AprilTag finish spike:
+
+```bash
+npm --prefix sidecar run spike:apriltag-finish -- detections.jsonl
+```
+
+The spike consumes JSON or JSONL frames from a camera/CV process. Each frame can
+include `frameId`, `ts_ms`, `brightness`, and `tags` with AprilTag `id`, center
+`x`/`y`, and `confidence` or `decisionMargin`. It checks a normalized vertical
+finish band (`APRILTAG_FINISH_BAND`, default `0.46,0.54`), maps tag ids to
+drivers (`APRILTAG_CHALLENGER_IDS`, `APRILTAG_OPPONENT_IDS`), and reports:
+
+- detected tag id, frame id, timestamp, confidence, and inferred winner
+- false-positive tag events in the finish band
+- latency against an optional operator winner/time in the input
+- low-light constraints from frame brightness samples
+- whether the sample is reliable enough to promote later
+
+This is a spike report only. It does not gate v1 settlement or replace operator
+finish confirmation.
+
 ## Robot Harness Bridge
 
 The Rust `robot-harness` exposes its own `/ws/drive` and `/ws/telemetry`

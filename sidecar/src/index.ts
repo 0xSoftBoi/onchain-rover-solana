@@ -1,5 +1,5 @@
 /**
- * Rover sidecar — the crypto rails + PUBLIC paid surface (port 4021).
+ * Clanker500 sidecar — the crypto rails + PUBLIC paid surface (port 4021).
  *
  * Paid routes sit behind Circle's x402 Gateway middleware (nanopayments on
  * Arc testnet, gas-free EIP-3009). Free routes serve the demo orchestrator
@@ -357,7 +357,7 @@ app.post("/task/:robot", gateway.require("$0.50"), async (req, res) => {
   res.json({ payment: (req as any).payment, result: await r.json() });
 });
 
-// Rover GP: pay to pilot ($1 per 120s session).
+// Clanker500 GP: pay to pilot ($1 per 120s session).
 app.post("/pilot/:robot/start", gateway.require("$1.00"), async (req, res) => {
   const payer = (req as any).payment?.payer ?? "anon";
   res.json(await race.startPilotSession(req.params.robot as RobotName, payer));

@@ -388,6 +388,13 @@ async function completeRaceEntryIfNeeded() {
     displayName: walletDisplayName(session),
   });
 
+  setModalStatus("Paying race fee...");
+  await signer.payRaceFee(session, {
+    roundId,
+    slot: driverSlot,
+    displayName: walletDisplayName(session),
+  });
+
   setModalStatus("Authorizing matched stake...");
   await signer.authorizeStake(session, {
     roundId,
@@ -1218,7 +1225,7 @@ els.robotName.textContent = `/ ${robotName}`;
 renderRoundState();
 if (manualMode) {
   els.modalTitle.textContent = "Start Manual Drive";
-  els.modalCopy.textContent = "Connect to the rover camera and unlock direct low-speed control.";
+  els.modalCopy.textContent = "Connect to the Clanker500 camera and unlock direct low-speed control.";
   setModalStatus("Manual mode bypasses race timing");
   els.direction.textContent = "Tap start";
   els.raceTimer.textContent = "manual";

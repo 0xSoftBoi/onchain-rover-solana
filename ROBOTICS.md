@@ -222,6 +222,44 @@ If the rover turns the wrong way on the first real run, flip `NAV_STEER_SIGN=-1`
 
 ---
 
+## Demo operations (Phase 5)
+
+Tooling to run the stack reliably on stage — one-command bringup, a preflight
+board, auto-recovery, and tests.
+
+**Preflight — `robot/demo_doctor.py`.** Green/red checklist of every moving part
+(both rovers' `/health` + battery + serial/IMU, sidecar, Ollama, NoMaD + RoboBrain
+servers, robot registry). Never crashes; exits non-zero if any *critical* piece is
+down. Optional pieces (brain, 2nd rover) are warnings.
+```bash
+python robot/demo_doctor.py            # one-shot, exit 0 = ready
+python robot/demo_doctor.py --watch    # live board, refreshes every 3s
+```
+
+**One-command bringup + auto-recovery.**
+```bash
+# laptop — supervised servers that RESTART on crash (stub-capable, no installs)
+POLICY_BACKEND=nomad BRAIN_BACKEND=robobrain ./scripts/demo_up.sh
+./scripts/demo_down.sh                  # stop all
+
+# each rover — stops the stock app, launches api.py wired to the laptop
+ROLE=guard   LAPTOP=<laptop-ip> ./scripts/jetson_up.sh
+ROLE=courier LAPTOP=<laptop-ip> ./scripts/jetson_up.sh
+```
+`demo_up.sh` runs each server under a supervisor loop (restart with backoff). On a
+CUDA Linux box, `deploy/docker-compose.yml` does the same with
+`restart: unless-stopped` + healthchecks. **Resilience is layered:** servers
+auto-restart; the client/`NomadNavigator` retry per-frame and fall back
+(NoMaD→Nav2→primitive, brain→pure-NoMaD) on any failure.
+
+**Tests — `robot/tests/test_stack.py`.** `pytest robot/tests` covers the control
+math, odometry, shared-memory handshake, role-tagged skills, the stub servers
+end-to-end (FastAPI `TestClient`), and the navigator fallback chain. Tests
+`importorskip` heavy deps, so the pure-logic set runs anywhere and the rest run in
+the server venv / on the Jetson.
+
+---
+
 ## References (verified, 2025–2026)
 - **NoMaD / ViNT / GNM** — navigation foundation models: <https://github.com/AdityaNG/general-navigation>
 - **RoboBrain 2.0** — embodied-reasoning VLM (3B edge): <https://github.com/FlagOpen/RoboBrain2.0> · <https://huggingface.co/BAAI/RoboBrain2.0-3B> · [arXiv 2505.03673]

@@ -11,3 +11,6 @@ chain/deployments/
 chain/.local-node.log
 sidecar/data/
 .mcp.json
+runs/
+.demo-run/
+.demo-venv/

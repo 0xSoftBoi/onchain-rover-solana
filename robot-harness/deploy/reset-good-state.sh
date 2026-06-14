@@ -193,7 +193,7 @@ echo "best-effort stop before changing owners"
 curl -fsS --max-time 3 -X POST http://127.0.0.1:8000/motors/stop >/dev/null 2>&1 || true
 curl -fsS --max-time 3 -X POST http://127.0.0.1:8000/stop >/dev/null 2>&1 || true
 
-legacy_pattern='[p]ython.*(app.py|api:app|read_serial|capture|voice)|[u]vicorn.*api:app|[c]apture_images'
+legacy_pattern='[p]ython.*(app.py|api:app|read_serial|capture_images|voice)|[u]vicorn.*api:app'
 if pgrep -af "$legacy_pattern" >/dev/null 2>&1; then
   echo "stopping legacy robot owners"
   pgrep -af "$legacy_pattern" || true

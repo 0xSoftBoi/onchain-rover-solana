@@ -298,7 +298,7 @@ because role env, WiFi profiles, and camera tuning can differ.
 Stop old Python or Waveshare owners without rebooting:
 
 ```bash
-LEGACY_ROBOT_PATTERN='[p]ython.*(app.py|read_serial|capture|voice)|[u]vicorn.*api:app|[c]apture_images'
+LEGACY_ROBOT_PATTERN='[p]ython.*(app.py|api:app|read_serial|capture_images|voice)|[u]vicorn.*api:app'
 pgrep -af "$LEGACY_ROBOT_PATTERN"
 pgrep -f "$LEGACY_ROBOT_PATTERN" | xargs -r kill
 ```

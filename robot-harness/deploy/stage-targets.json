@@ -1,0 +1,36 @@
+{
+  "sidecar_url": "http://192.168.0.100:4021",
+  "ssh_user": "jetson",
+  "repo_dir": "~/onchain-rover",
+  "scan_cidrs": [
+    "192.168.55.0/24",
+    "192.168.0.0/24",
+    "172.16.0.0/20"
+  ],
+  "targets": [
+    {
+      "role": "guard",
+      "preferred_urls": [
+        "http://172.16.2.151:8000",
+        "http://192.168.55.1:8000"
+      ],
+      "profile": "wifi",
+      "drive_invert": true,
+      "drive_swap": false,
+      "lidar_enabled": true,
+      "camera_device": "/dev/video0"
+    },
+    {
+      "role": "courier",
+      "preferred_urls": [
+        "http://192.168.0.192:8000",
+        "http://192.168.55.1:8000"
+      ],
+      "profile": "wifi",
+      "drive_invert": false,
+      "drive_swap": false,
+      "lidar_enabled": true,
+      "camera_device": "/dev/video0"
+    }
+  ]
+}

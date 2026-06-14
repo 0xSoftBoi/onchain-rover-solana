@@ -8,6 +8,7 @@ Type=simple
 EnvironmentFile=@ROVER_ENV_FILE@
 WorkingDirectory=@ROVER_HARNESS_DIR@
 ExecStartPre=/bin/sh -lc "pgrep -f '[p]ython.*(app.py|read_serial|capture|voice)|[u]vicorn.*api:app|[c]apture_images' | xargs -r kill"
+ExecStartPre=/bin/sh -lc "sleep 0.5; pgrep -f '[p]ython.*(app.py|read_serial|capture|voice)|[u]vicorn.*api:app|[c]apture_images' | xargs -r kill -9"
 ExecStart=@ROVER_BIN@
 Restart=on-failure
 RestartSec=2

@@ -1002,6 +1002,9 @@ app.post("/pilot/dev-authorize", async (req, res) => {
     res.json(robotLink.authorizePilotSession(name, publicBaseUrl, {
       ttlSecs: 300,
       speedMode: robotLink.parseSpeedMode(req.body.speed_mode) ?? "medium",
+      streamUrl: process.env.DIRECT_ROBOT_STREAM === "1"
+        ? new URL("/stream", ROBOTS[name].url).toString()
+        : undefined,
     }));
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });

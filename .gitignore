@@ -14,3 +14,4 @@ sidecar/data/
 runs/
 .demo-run/
 .demo-venv/
+robot-harness/deploy/stage-fingerprints.json

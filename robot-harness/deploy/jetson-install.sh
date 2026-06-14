@@ -14,6 +14,8 @@ Options:
   --sidecar-url URL             Sidecar URL used by operator bridge commands.
   --listen ADDR:PORT            Rover listen address. Default: 0.0.0.0:8000.
   --serial-port PATH            ESP32 serial device. Default: /dev/ttyTHS1.
+  --drive-invert                Flip motor polarity so positive commands drive forward.
+  --drive-swap                  Swap left/right wheel commands before serial write.
   --camera-device PATH          Camera device marker. Default: /dev/video0.
   --camera-stream-url URL       Optional upstream MJPEG stream to proxy.
   --camera-snapshot-url URL     Optional upstream snapshot URL to proxy.
@@ -32,6 +34,7 @@ EOF
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 harness_dir="$(cd -- "$script_dir/.." && pwd)"
+export PATH="$HOME/.cargo/bin:$PATH"
 
 role="${ROBOT_ROLE:-courier}"
 profile="${ROVER_PROFILE:-wifi}"
@@ -39,6 +42,8 @@ sidecar_url="${SIDECAR_URL:-http://192.168.8.10:4021}"
 listen="${ROVER_LISTEN:-0.0.0.0:8000}"
 serial_port="${ROVER_SERIAL_PORT:-/dev/ttyTHS1}"
 serial_baud="${ROVER_SERIAL_BAUD:-115200}"
+drive_invert="${ROVER_DRIVE_INVERT:-false}"
+drive_swap="${ROVER_DRIVE_SWAP:-false}"
 camera_device="${ROVER_CAMERA_DEVICE:-/dev/video0}"
 camera_stream_url="${ROVER_CAMERA_STREAM_URL:-}"
 camera_snapshot_url="${ROVER_CAMERA_SNAPSHOT_URL:-}"
@@ -74,6 +79,14 @@ while [[ $# -gt 0 ]]; do
     --serial-port)
       serial_port="${2:?--serial-port requires a path}"
       shift 2
+      ;;
+    --drive-invert)
+      drive_invert=true
+      shift
+      ;;
+    --drive-swap)
+      drive_swap=true
+      shift
       ;;
     --camera-device)
       camera_device="${2:?--camera-device requires a path}"
@@ -141,7 +154,7 @@ fi
 mkdir -p "$bin_dir" "$(dirname "$env_file")"
 
 echo "building rover-harness from $harness_dir"
-cargo build --release --manifest-path "$harness_dir/Cargo.toml"
+cargo build --release --manifest-path "$harness_dir/Cargo.toml" --bin rover-harness
 install -m 0755 "$harness_dir/target/release/rover-harness" "$bin_dir/rover-harness"
 
 if [[ ! -f "$env_file" || "$force_env" -eq 1 ]]; then
@@ -154,6 +167,8 @@ if [[ ! -f "$env_file" || "$force_env" -eq 1 ]]; then
     echo "ROVER_MODE=serial"
     echo "ROVER_SERIAL_PORT=$serial_port"
     echo "ROVER_SERIAL_BAUD=$serial_baud"
+    echo "ROVER_DRIVE_INVERT=$drive_invert"
+    echo "ROVER_DRIVE_SWAP=$drive_swap"
     echo "ROVER_DEADMAN_MS=$deadman_ms"
     echo "ROVER_ALLOW_UNTOKENED_DRIVE=false"
     echo "ROVER_LIDAR_ENABLED=$lidar_enabled"
@@ -203,7 +218,14 @@ if [[ "$install_systemd" -eq 1 ]]; then
     systemctl --user enable robot-harness.service >/dev/null
     if [[ "$start_service" -eq 1 ]]; then
       stop_existing_harness
-      systemctl --user restart robot-harness.service
+      systemctl --user reset-failed robot-harness.service >/dev/null 2>&1 || true
+      if ! systemctl --user start robot-harness.service; then
+        echo "service start failed after reset; clearing failed state and retrying once" >&2
+        systemctl --user reset-failed robot-harness.service >/dev/null 2>&1 || true
+        pgrep -f '[r]over-harness($| )' | xargs -r kill -9
+        sleep 0.5
+        systemctl --user start robot-harness.service
+      fi
     fi
     systemctl --user --no-pager --full status robot-harness.service || true
   else
@@ -220,6 +242,8 @@ Installed rover-harness:
   env:    $env_file
   role:   $role
   listen: $listen
+  invert: $drive_invert
+  swap:   $drive_swap
 
 Verify:
   curl -s http://127.0.0.1:8000/health | python3 -m json.tool

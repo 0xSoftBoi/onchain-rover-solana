@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
+    convert::Infallible,
     io::{Read, Write},
     net::SocketAddr,
+    process::Stdio,
     sync::Arc,
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -28,13 +30,18 @@ use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tokio::{sync::broadcast, time};
+use tokio::{
+    io::AsyncReadExt,
+    process::Command,
+    sync::{broadcast, Mutex as AsyncMutex},
+    time,
+};
 use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_DEADMAN_MS: u64 = 400;
-const TELEMETRY_HZ: u64 = 10;
+const TELEMETRY_HZ: u64 = 20;
 const DEFAULT_LIDAR_PORT: &str = "/dev/ttyACM0";
 const DEFAULT_LIDAR_BAUD: u32 = 230_400;
 const LIDAR_FRAME_LEN: usize = 47;
@@ -64,14 +71,29 @@ struct Opts {
     #[arg(long, env = "ROVER_ALLOW_UNTOKENED_DRIVE", default_value_t = false)]
     allow_untokened_drive: bool,
 
+    #[arg(long, env = "ROVER_DRIVE_INVERT", default_value_t = false)]
+    drive_invert: bool,
+
+    #[arg(long, env = "ROVER_DRIVE_SWAP", default_value_t = false)]
+    drive_swap: bool,
+
     #[arg(long, env = "ROVER_DEADMAN_MS", default_value_t = DEFAULT_DEADMAN_MS)]
     deadman_ms: u64,
 
-    #[arg(long, env = "ROVER_SOFT_ODOMETRY_LIMIT_M", default_value_t = 20.0)]
+    #[arg(long, env = "ROVER_SOFT_ODOMETRY_LIMIT_M", default_value_t = 0.0)]
     soft_odometry_limit_m: f64,
 
     #[arg(long, env = "ROVER_CAMERA_DEVICE")]
     camera_device: Option<String>,
+
+    #[arg(long, env = "ROVER_CAMERA_SIZE", default_value = "320x240")]
+    camera_size: String,
+
+    #[arg(long, env = "ROVER_CAMERA_FPS", default_value_t = 30)]
+    camera_fps: u32,
+
+    #[arg(long, env = "ROVER_FFMPEG", default_value = "/usr/bin/ffmpeg")]
+    ffmpeg: String,
 
     #[arg(long, env = "ROVER_CAMERA_STREAM_URL")]
     camera_stream_url: Option<String>,
@@ -126,9 +148,9 @@ impl Default for SpeedMode {
 impl SpeedMode {
     fn cap(self) -> f64 {
         match self {
-            SpeedMode::Low => 0.15,
-            SpeedMode::Medium => 0.25,
-            SpeedMode::High => 0.35,
+            SpeedMode::Low => 0.22,
+            SpeedMode::Medium => 0.35,
+            SpeedMode::High => 1.0,
         }
     }
 }
@@ -164,6 +186,25 @@ struct CommandState {
     estop: bool,
     stopped_by_deadman: bool,
     soft_odometry_limited: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CameraAimState {
+    pan: f64,
+    tilt: f64,
+    last_cmd_at: Option<Instant>,
+    active_session_id: Option<String>,
+}
+
+impl Default for CameraAimState {
+    fn default() -> Self {
+        Self {
+            pan: 0.0,
+            tilt: 0.0,
+            last_cmd_at: None,
+            active_session_id: None,
+        }
+    }
 }
 
 impl Default for CommandState {
@@ -214,9 +255,11 @@ struct CameraStatus {
     health: &'static str,
     fps: Option<f64>,
     last_frame_age_ms: Option<u128>,
-    resolution: Option<&'static str>,
+    resolution: Option<String>,
     brightness: Option<f64>,
     reconnect_state: &'static str,
+    pan: f64,
+    tilt: f64,
     device: Option<String>,
     stream_url: Option<String>,
     snapshot_url: Option<String>,
@@ -301,6 +344,8 @@ impl RoverControl for SimRover {
 
 struct SerialRover {
     writer: Arc<Mutex<Box<dyn serialport::SerialPort>>>,
+    drive_invert: bool,
+    drive_swap: bool,
 }
 
 impl SerialRover {
@@ -308,6 +353,8 @@ impl SerialRover {
         port_path: &str,
         baud: u32,
         raw: Arc<RwLock<RawTelemetry>>,
+        drive_invert: bool,
+        drive_swap: bool,
     ) -> Result<Arc<dyn RoverControl>> {
         let port = serialport::new(port_path, baud)
             .timeout(Duration::from_millis(200))
@@ -371,12 +418,25 @@ impl SerialRover {
             }
         });
 
-        Ok(Arc::new(Self { writer }))
+        Ok(Arc::new(Self {
+            writer,
+            drive_invert,
+            drive_swap,
+        }))
     }
 }
 
 impl RoverControl for SerialRover {
     fn drive(&self, left: f64, right: f64) -> Result<()> {
+        let (mut left, mut right) = if self.drive_swap {
+            (right, left)
+        } else {
+            (left, right)
+        };
+        if self.drive_invert {
+            left = -left;
+            right = -right;
+        }
         let line = json!({"T": 1, "L": left, "R": right}).to_string() + "\n";
         let mut writer = self.writer.lock();
         writer
@@ -396,16 +456,171 @@ struct AppState {
     rover: Arc<dyn RoverControl>,
     raw: Arc<RwLock<RawTelemetry>>,
     command: Arc<Mutex<CommandState>>,
+    camera_aim: Arc<Mutex<CameraAimState>>,
     sessions: Arc<Mutex<HashMap<String, PilotSession>>>,
     telemetry_tx: broadcast::Sender<TelemetryFrame>,
     allow_untokened_drive: bool,
+    drive_invert: bool,
+    drive_swap: bool,
     deadman_ms: u64,
     soft_odometry_limit_m: f64,
     camera_client: reqwest::Client,
     camera_device: Option<String>,
+    camera_hub: Option<CameraHub>,
     camera_stream_url: Option<String>,
     camera_snapshot_url: Option<String>,
     lidar: Arc<RwLock<LidarReading>>,
+}
+
+#[derive(Clone)]
+struct CameraHub {
+    device: String,
+    size: String,
+    fps: u32,
+    ffmpeg: String,
+    latest: Arc<RwLock<Option<Vec<u8>>>>,
+    tx: broadcast::Sender<Vec<u8>>,
+    started: Arc<AsyncMutex<bool>>,
+}
+
+impl CameraHub {
+    fn new(device: String, size: String, fps: u32, ffmpeg: String) -> Self {
+        let (tx, _) = broadcast::channel(16);
+        Self {
+            device,
+            size,
+            fps,
+            ffmpeg,
+            latest: Arc::new(RwLock::new(None)),
+            tx,
+            started: Arc::new(AsyncMutex::new(false)),
+        }
+    }
+
+    async fn ensure_started(&self) {
+        let mut started = self.started.lock().await;
+        if *started {
+            return;
+        }
+        *started = true;
+        let hub = self.clone();
+        tokio::spawn(async move {
+            hub.capture_loop().await;
+        });
+    }
+
+    async fn capture_loop(self) {
+        loop {
+            let fps = self.fps.to_string();
+            let mut child = match Command::new(&self.ffmpeg)
+                .args([
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "warning",
+                    "-f",
+                    "v4l2",
+                    "-input_format",
+                    "mjpeg",
+                    "-video_size",
+                    &self.size,
+                    "-framerate",
+                    &fps,
+                    "-i",
+                    &self.device,
+                    "-an",
+                    "-c:v",
+                    "copy",
+                    "-f",
+                    "mjpeg",
+                    "pipe:1",
+                ])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(err) => {
+                    warn!(device = %self.device, ?err, "failed to start camera capture backend");
+                    time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+
+            let Some(mut stdout) = child.stdout.take() else {
+                warn!(device = %self.device, "camera capture backend had no stdout");
+                let _ = child.kill().await;
+                time::sleep(Duration::from_secs(2)).await;
+                continue;
+            };
+            if let Some(mut stderr) = child.stderr.take() {
+                tokio::spawn(async move {
+                    let mut buf = Vec::new();
+                    let _ = stderr.read_to_end(&mut buf).await;
+                    if !buf.is_empty() {
+                        warn!(
+                            stderr = %String::from_utf8_lossy(&buf),
+                            "camera capture backend exited with stderr"
+                        );
+                    }
+                });
+            }
+
+            let mut pending = Vec::<u8>::new();
+            let mut chunk = [0_u8; 64 * 1024];
+            loop {
+                match stdout.read(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        pending.extend_from_slice(&chunk[..n]);
+                        while let Some(frame) = extract_jpeg_frame(&mut pending) {
+                            *self.latest.write() = Some(frame.clone());
+                            let _ = self.tx.send(frame);
+                        }
+                    }
+                    Err(err) => {
+                        warn!(device = %self.device, ?err, "camera capture read failed");
+                        break;
+                    }
+                }
+            }
+
+            let _ = child.wait().await;
+            time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    async fn latest_frame(&self, timeout: Duration) -> Option<Vec<u8>> {
+        self.ensure_started().await;
+        if let Some(frame) = self.latest.read().clone() {
+            return Some(frame);
+        }
+        let mut rx = self.tx.subscribe();
+        match time::timeout(timeout, rx.recv()).await {
+            Ok(Ok(frame)) => Some(frame),
+            _ => None,
+        }
+    }
+
+    async fn subscribe(&self) -> broadcast::Receiver<Vec<u8>> {
+        self.ensure_started().await;
+        self.tx.subscribe()
+    }
+}
+
+fn extract_jpeg_frame(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
+    let start = buffer
+        .windows(2)
+        .position(|window| window == [0xff, 0xd8])?;
+    if start > 0 {
+        buffer.drain(..start);
+    }
+    let end = buffer
+        .windows(2)
+        .position(|window| window == [0xff, 0xd9])?;
+    let frame = buffer[..end + 2].to_vec();
+    buffer.drain(..end + 2);
+    Some(frame)
 }
 
 #[derive(Debug, Deserialize)]
@@ -448,12 +663,23 @@ struct WsDriveMsg {
     client_ts_ms: Option<u128>,
 }
 
+#[derive(Debug, Deserialize)]
+struct WsCameraMsg {
+    pan: Option<f64>,
+    tilt: Option<f64>,
+    token: Option<String>,
+    #[serde(rename = "t")]
+    client_ts_ms: Option<u128>,
+}
+
 #[derive(Debug, Serialize)]
 struct HealthResp {
     ok: bool,
     role: String,
     mode: String,
     serial_port: String,
+    drive_invert: bool,
+    drive_swap: bool,
     uptime_secs: u64,
     battery_v: Option<f64>,
     active_session: Option<String>,
@@ -469,6 +695,8 @@ struct CapabilitiesResp {
     role: String,
     mode: String,
     serial_port: String,
+    drive_invert: bool,
+    drive_swap: bool,
     deadman_ms: u64,
     soft_odometry_limit_m: f64,
     allow_untokened_drive: bool,
@@ -516,13 +744,27 @@ async fn main() -> Result<()> {
 
     let rover: Arc<dyn RoverControl> = match opts.mode {
         Mode::Sim => Arc::new(SimRover),
-        Mode::Serial => SerialRover::open(&opts.serial_port, opts.serial_baud, raw.clone())?,
+        Mode::Serial => SerialRover::open(
+            &opts.serial_port,
+            opts.serial_baud,
+            raw.clone(),
+            opts.drive_invert,
+            opts.drive_swap,
+        )?,
     };
     let (telemetry_tx, _) = broadcast::channel(128);
     let camera_client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(2))
         .build()
         .context("build camera proxy client")?;
+    let camera_hub = opts.camera_device.as_ref().map(|device| {
+        CameraHub::new(
+            device.clone(),
+            opts.camera_size.clone(),
+            opts.camera_fps,
+            opts.ffmpeg.clone(),
+        )
+    });
 
     let state = AppState {
         role: opts.role,
@@ -532,13 +774,17 @@ async fn main() -> Result<()> {
         rover,
         raw,
         command,
+        camera_aim: Arc::new(Mutex::new(CameraAimState::default())),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         telemetry_tx,
         allow_untokened_drive: opts.allow_untokened_drive,
+        drive_invert: opts.drive_invert,
+        drive_swap: opts.drive_swap,
         deadman_ms: opts.deadman_ms,
         soft_odometry_limit_m: opts.soft_odometry_limit_m,
         camera_client,
         camera_device: opts.camera_device,
+        camera_hub,
         camera_stream_url: opts.camera_stream_url,
         camera_snapshot_url: opts.camera_snapshot_url,
         lidar,
@@ -578,6 +824,7 @@ async fn main() -> Result<()> {
         .route("/pilot/speed-mode", post(pilot_speed_mode))
         .route("/stream", get(stream))
         .route("/ws/drive", get(ws_drive))
+        .route("/ws/camera", get(ws_camera))
         .route("/ws/telemetry", get(ws_telemetry))
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
@@ -606,6 +853,8 @@ async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesResp> {
         role: state.role.clone(),
         mode: mode_name(state.mode).to_string(),
         serial_port: state.serial_port.clone(),
+        drive_invert: state.drive_invert,
+        drive_swap: state.drive_swap,
         deadman_ms: state.deadman_ms,
         soft_odometry_limit_m: state.soft_odometry_limit_m,
         allow_untokened_drive: state.allow_untokened_drive,
@@ -627,6 +876,7 @@ async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesResp> {
             "POST /estop",
             "POST /estop/reset",
             "WS /ws/drive",
+            "WS /ws/camera",
             "WS /ws/telemetry",
         ],
     })
@@ -640,6 +890,8 @@ async fn health(State(state): State<AppState>) -> Json<HealthResp> {
         role: state.role,
         mode: mode_name(state.mode).to_string(),
         serial_port: state.serial_port,
+        drive_invert: state.drive_invert,
+        drive_swap: state.drive_swap,
         uptime_secs: state.started_at.elapsed().as_secs(),
         battery_v: raw.battery_v,
         active_session: command.active_session_id,
@@ -710,6 +962,9 @@ async fn estop_reset(State(state): State<AppState>) -> Result<Json<Value>, AppEr
 }
 
 async fn stream(State(state): State<AppState>) -> Response {
+    if state.camera_hub.is_some() {
+        return device_camera_stream(&state).await;
+    }
     if let Some(url) = camera_stream_proxy_url(&state) {
         return proxy_camera(&state, url, "multipart/x-mixed-replace").await;
     }
@@ -760,6 +1015,9 @@ async fn camera_status(State(state): State<AppState>) -> Json<CameraStatus> {
 }
 
 async fn camera_snapshot(State(state): State<AppState>) -> Response {
+    if state.camera_hub.is_some() {
+        return device_camera_snapshot(&state).await;
+    }
     if let Some(url) = camera_snapshot_proxy_url(&state) {
         return proxy_camera(&state, url, "image/jpeg").await;
     }
@@ -770,8 +1028,29 @@ async fn camera_snapshot(State(state): State<AppState>) -> Response {
 }
 
 async fn capture(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    if let Some(frame) = camera_device_frame(&state, Duration::from_secs(6)).await {
+        let captured_at_ms = now_ms();
+        let mut hasher = Sha256::new();
+        hasher.update(&frame);
+        let digest = hasher.finalize();
+        let sha256 = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        return Ok(Json(json!({
+            "ok": true,
+            "role": state.role,
+            "source": "rust-v4l2-camera",
+            "content_type": "image/jpeg",
+            "byte_length": frame.len(),
+            "sha256": format!("0x{sha256}"),
+            "captured_at_ms": captured_at_ms,
+        })));
+    }
     if !matches!(state.mode, Mode::Sim) {
-        return Err(AppError::service_unavailable("capture unavailable without a simulated camera"));
+        return Err(AppError::service_unavailable(
+            "capture unavailable without a camera frame",
+        ));
     }
     let captured_at_ms = now_ms();
     let svg = simulated_camera_svg(&state);
@@ -779,7 +1058,10 @@ async fn capture(State(state): State<AppState>) -> Result<Json<Value>, AppError>
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let digest = hasher.finalize();
-    let sha256 = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let sha256 = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
     Ok(Json(json!({
         "ok": true,
         "role": state.role,
@@ -789,6 +1071,84 @@ async fn capture(State(state): State<AppState>) -> Result<Json<Value>, AppError>
         "sha256": format!("0x{sha256}"),
         "captured_at_ms": captured_at_ms,
     })))
+}
+
+async fn camera_device_frame(state: &AppState, timeout: Duration) -> Option<Vec<u8>> {
+    let hub = state.camera_hub.as_ref()?;
+    hub.latest_frame(timeout).await
+}
+
+async fn device_camera_snapshot(state: &AppState) -> Response {
+    match camera_device_frame(state, Duration::from_secs(6)).await {
+        Some(frame) => Response::builder()
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, "image/jpeg")
+            .header(CACHE_CONTROL, "no-store, max-age=0")
+            .body(Body::from(frame))
+            .unwrap_or_else(|err| {
+                error!(?err, "failed to build camera snapshot response");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "ok": false,
+                        "error": "failed to build camera snapshot response",
+                    })),
+                )
+                    .into_response()
+            }),
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "ok": false,
+                "error": "camera frame timeout",
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn device_camera_stream(state: &AppState) -> Response {
+    let Some(hub) = state.camera_hub.as_ref() else {
+        return camera_unavailable_response(state, "stream");
+    };
+    let first = hub.latest.read().clone();
+    let rx = hub.subscribe().await;
+    let frames = futures_util::stream::unfold((rx, first), |(mut rx, mut first)| async move {
+        let frame = if let Some(frame) = first.take() {
+            frame
+        } else {
+            loop {
+                match rx.recv().await {
+                    Ok(frame) => break frame,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        };
+        let mut body = Vec::with_capacity(frame.len() + 96);
+        body.extend_from_slice(b"--frame\r\nContent-Type: image/jpeg\r\n");
+        body.extend_from_slice(format!("Content-Length: {}\r\n\r\n", frame.len()).as_bytes());
+        body.extend_from_slice(&frame);
+        body.extend_from_slice(b"\r\n");
+        Some((Ok::<Vec<u8>, Infallible>(body), (rx, first)))
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "multipart/x-mixed-replace; boundary=frame")
+        .header(CACHE_CONTROL, "no-store, max-age=0")
+        .body(Body::from_stream(frames))
+        .unwrap_or_else(|err| {
+            error!(?err, "failed to build camera stream response");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "ok": false,
+                    "error": "failed to build camera stream response",
+                })),
+            )
+                .into_response()
+        })
 }
 
 fn camera_stream_proxy_url(state: &AppState) -> Option<&str> {
@@ -942,6 +1302,10 @@ async fn ws_drive(ws: WebSocketUpgrade, State(state): State<AppState>) -> Respon
     ws.on_upgrade(move |socket| handle_drive_socket(socket, state))
 }
 
+async fn ws_camera(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+    ws.on_upgrade(move |socket| handle_camera_socket(socket, state))
+}
+
 async fn ws_telemetry(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
     ws.on_upgrade(move |socket| handle_telemetry_socket(socket, state))
 }
@@ -1023,6 +1387,56 @@ async fn handle_drive_socket(socket: WebSocket, state: AppState) {
     command.right_cmd = 0.0;
     command.active_session_id = None;
     command.soft_odometry_limited = false;
+}
+
+async fn handle_camera_socket(socket: WebSocket, state: AppState) {
+    let (_sender, mut receiver) = socket.split();
+    let mut authed_token: Option<String> = None;
+
+    while let Some(msg) = receiver.next().await {
+        let Ok(msg) = msg else {
+            break;
+        };
+        let Message::Text(text) = msg else {
+            continue;
+        };
+
+        let parsed: WsCameraMsg = match serde_json::from_str(&text) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                warn!(?err, "invalid camera websocket command");
+                continue;
+            }
+        };
+
+        let token = match authed_token.as_deref().or(parsed.token.as_deref()) {
+            Some(token) => token,
+            None => break,
+        };
+
+        if let Err(err) = validate_session(&state, token) {
+            warn!(?err, "camera websocket token rejected");
+            break;
+        }
+        authed_token = Some(token.to_string());
+
+        if let Some(client_ts) = parsed.client_ts_ms {
+            if now_ms().saturating_sub(client_ts) > 250 {
+                continue;
+            }
+        }
+
+        let mut aim = state.camera_aim.lock();
+        aim.pan = clamp(parsed.pan.unwrap_or(0.0), -1.0, 1.0);
+        aim.tilt = clamp(parsed.tilt.unwrap_or(0.0), -1.0, 1.0);
+        aim.last_cmd_at = Some(Instant::now());
+        aim.active_session_id = authed_token.clone();
+    }
+
+    let mut aim = state.camera_aim.lock();
+    aim.pan = 0.0;
+    aim.tilt = 0.0;
+    aim.active_session_id = None;
 }
 
 async fn handle_telemetry_socket(mut socket: WebSocket, state: AppState) {
@@ -1532,6 +1946,7 @@ fn estop_inner(state: &AppState) -> Result<(), AppError> {
 }
 
 fn camera_status_for(state: &AppState) -> CameraStatus {
+    let aim = state.camera_aim.lock().clone();
     let status = camera_status_name(
         state.mode,
         &state.camera_device,
@@ -1544,13 +1959,17 @@ fn camera_status_for(state: &AppState) -> CameraStatus {
         fps: if status == "simulated" {
             Some(10.0)
         } else {
-            None
+            state.camera_hub.as_ref().map(|hub| hub.fps as f64)
         },
-        last_frame_age_ms: if status == "simulated" { Some(0) } else { None },
-        resolution: if status == "simulated" {
-            Some("640x360")
+        last_frame_age_ms: if status == "simulated" || state.camera_hub.is_some() {
+            Some(0)
         } else {
             None
+        },
+        resolution: if status == "simulated" {
+            Some("640x360".to_string())
+        } else {
+            state.camera_hub.as_ref().map(|hub| hub.size.clone())
         },
         brightness: if status == "simulated" {
             Some(0.62)
@@ -1558,6 +1977,8 @@ fn camera_status_for(state: &AppState) -> CameraStatus {
             None
         },
         reconnect_state: camera_reconnect_state(status),
+        pan: aim.pan,
+        tilt: aim.tilt,
         device: state.camera_device.clone(),
         stream_url: state.camera_stream_url.clone(),
         snapshot_url: state.camera_snapshot_url.clone(),
@@ -1570,12 +1991,12 @@ fn camera_status_name(
     stream_url: &Option<String>,
     snapshot_url: &Option<String>,
 ) -> &'static str {
-    if stream_url.is_some() || snapshot_url.is_some() {
-        "proxy"
-    } else if matches!(mode, Mode::Sim) {
+    if matches!(mode, Mode::Sim) {
         "simulated"
     } else if device.is_some() {
-        "configured"
+        "device"
+    } else if stream_url.is_some() || snapshot_url.is_some() {
+        "proxy"
     } else {
         "unavailable"
     }
@@ -1583,7 +2004,7 @@ fn camera_status_name(
 
 fn camera_health_name(status: &str) -> &'static str {
     match status {
-        "simulated" | "proxy" => "healthy",
+        "simulated" | "proxy" | "device" => "healthy",
         "configured" => "degraded",
         _ => "missing",
     }
@@ -1591,6 +2012,7 @@ fn camera_health_name(status: &str) -> &'static str {
 
 fn camera_reconnect_state(status: &str) -> &'static str {
     match status {
+        "device" => "capturing",
         "proxy" => "proxy",
         "simulated" => "connected",
         "configured" => "waiting-for-source",
@@ -1919,13 +2341,17 @@ mod tests {
                 ..RawTelemetry::default()
             })),
             command: Arc::new(Mutex::new(CommandState::default())),
+            camera_aim: Arc::new(Mutex::new(CameraAimState::default())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             telemetry_tx,
             allow_untokened_drive,
+            drive_invert: false,
+            drive_swap: false,
             deadman_ms: DEFAULT_DEADMAN_MS,
             soft_odometry_limit_m: 20.0,
             camera_client: reqwest::Client::new(),
             camera_device: None,
+            camera_hub: None,
             camera_stream_url: None,
             camera_snapshot_url: None,
             lidar: Arc::new(RwLock::new(initial_lidar_reading(Mode::Sim, "", 0.30))),
@@ -1964,9 +2390,9 @@ mod tests {
 
     #[test]
     fn speed_modes_define_expected_caps() {
-        assert_eq!(SpeedMode::Low.cap(), 0.15);
-        assert_eq!(SpeedMode::Medium.cap(), 0.25);
-        assert_eq!(SpeedMode::High.cap(), 0.35);
+        assert_eq!(SpeedMode::Low.cap(), 0.22);
+        assert_eq!(SpeedMode::Medium.cap(), 0.35);
+        assert_eq!(SpeedMode::High.cap(), 1.0);
     }
 
     #[test]
@@ -2127,7 +2553,7 @@ mod tests {
         );
         assert_eq!(
             camera_status_name(Mode::Serial, &device, &None, &None),
-            "configured"
+            "device"
         );
         assert_eq!(
             camera_status_name(Mode::Serial, &None, &stream, &None),
@@ -2135,7 +2561,7 @@ mod tests {
         );
         assert_eq!(camera_health_name("simulated"), "healthy");
         assert_eq!(camera_health_name("proxy"), "healthy");
-        assert_eq!(camera_health_name("configured"), "degraded");
+        assert_eq!(camera_health_name("device"), "healthy");
         assert_eq!(camera_health_name("unavailable"), "missing");
     }
 
@@ -2170,7 +2596,7 @@ mod tests {
         )
         .await
         .expect("explicitly enabled untokened drive");
-        assert_eq!(&*commands.lock(), &[(0.25, -0.25)]);
+        assert_eq!(&*commands.lock(), &[(0.35, -0.35)]);
     }
 
     #[tokio::test]
@@ -2206,7 +2632,7 @@ mod tests {
         )
         .await
         .expect("drive after estop reset");
-        assert_eq!(&*commands.lock(), &[(0.0, 0.0), (0.0, 0.0), (0.15, 0.15)]);
+        assert_eq!(&*commands.lock(), &[(0.0, 0.0), (0.0, 0.0), (0.22, 0.22)]);
     }
 
     #[tokio::test]
@@ -2259,7 +2685,7 @@ mod tests {
         .await
         .expect("reverse should allow recovery from soft limit");
 
-        assert_eq!(&*commands.lock(), &[(-0.25, -0.25)]);
+        assert_eq!(&*commands.lock(), &[(-0.35, -0.35)]);
         assert!(!current_telemetry_frame(&state).soft_odometry_limited);
     }
 

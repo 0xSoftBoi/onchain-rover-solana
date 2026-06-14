@@ -118,11 +118,16 @@ of the generated frame.
 
 Drive commands are clamped server-side by the session speed mode:
 
-- `low`: `0.15`
-- `medium`: `0.25`
-- `high`: `0.35`
+- `low`: `0.22`
+- `medium`: `0.35`
+- `high`: `1.0`
 
 The deadman stops motors when drive commands go stale.
+
+Some physical units need serial polarity normalized so positive commands mean
+forward. Set `ROVER_DRIVE_INVERT=true` or pass `--drive-invert` during Jetson
+install/reset. Use `ROVER_DRIVE_SWAP=true` or `--drive-swap` only if left/right
+are crossed.
 
 `POST /stop` and `POST /estop` are latching hard stops. Use
 `POST /estop/reset` to allow future drive commands again. Use

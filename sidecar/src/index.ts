@@ -24,6 +24,7 @@ import * as bq from "./bigquery.js";
 import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
 import * as settle from "./settle.js";
+import * as session from "./session.js";
 
 // Never let one bad call take down the demo: log unhandled errors, stay up.
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
@@ -348,6 +349,22 @@ app.post("/treasury/broadcast", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// Session authorization — the OPENING Ledger ceremony (bookends the withdraw).
+// Gasless EIP-712 clear-sign that unlocks the show. See session.ts.
+app.get("/session/auth-message", (req, res) => {
+  try { res.json(session.issue(String(req.query.operator || ""))); }
+  catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+app.post("/session/authorize", async (req, res) => {
+  try {
+    const r = await session.verify(req.body.signature);
+    console.log(`[session] authorize ${r.ok ? "OK" : "FAILED"} operator=${r.operator}`);
+    res.json(r);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+app.get("/session/status", (_req, res) => res.json(session.status()));
+app.post("/session/reset", (_req, res) => res.json(session.reset()));
 
 // ERC-8004 reputation summary (the leaderboard score) for each robot.
 app.get("/reputation", async (_req, res) => {

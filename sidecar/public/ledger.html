@@ -46,15 +46,23 @@
   <div class="sub" id="owner" style="text-align:center"></div>
 
   <div class="feature">
-    <span class="ft-h">⛓ Human-in-the-loop custody (ERC-7730 clear-signing)</span>
-    Robots earn autonomously, but moving the treasury requires a human to physically
-    clear-sign on a Ledger. The device displays the exact intent —
-    <code>Withdraw N USDC → recipient</code> — so what you approve is what executes.</div>
+    <span class="ft-h">⛓ Human authority at both ends (clear-signing)</span>
+    The robots run autonomously, but a human bookends the show on a Ledger:
+    <code>Authorize</code> the fleet to begin, and <code>Withdraw</code> the
+    earnings at the end. What the device displays is what executes.</div>
 
-  <div class="step"><span class="n">1</span> Connect &amp; unlock your Ledger, open the Ethereum app</div>
-  <button id="connect">Connect Ledger (WebHID)</button>
+  <div class="step"><span class="n">1</span> Connect your Ledger, open the Ethereum app</div>
+  <div class="row" style="gap:14px;align-items:center;margin:6px 0 8px">
+    <label style="color:#7d8aa0;font-size:13px"><input type="radio" name="tx" value="ble" checked /> Bluetooth (Nano X)</label>
+    <label style="color:#7d8aa0;font-size:13px"><input type="radio" name="tx" value="hid" /> USB</label>
+  </div>
+  <button id="connect">Connect Ledger</button>
 
-  <div class="step" style="margin-top:18px"><span class="n">2</span> Withdraw fleet earnings</div>
+  <div class="step" style="margin-top:18px"><span class="n">2</span> Authorize the fleet for this session (opening — gasless)</div>
+  <button id="authorize" disabled>Authorize → clear-sign on device</button>
+  <div class="hint" id="authHint"></div>
+
+  <div class="step" style="margin-top:18px"><span class="n">3</span> Withdraw fleet earnings (closing)</div>
   <div class="row">
     <input id="to" placeholder="recipient 0x…" />
     <input id="amt" placeholder="USDC" style="max-width:90px" value="1.00" />
@@ -62,14 +70,14 @@
   <div class="hint" id="toHint"></div>
   <button id="withdraw" disabled>Withdraw → clear-sign on device</button>
 
-  <div id="status">WebHID requires Chrome/Edge over HTTPS or localhost.</div>
+  <div id="status">Clear-signing requires Chrome/Edge over HTTPS or localhost.</div>
 </div>
 
 <script type="module">
 import "./ledger.bundle.js";
 const $ = (id)=>document.getElementById(id);
 let prevBal;
-if(!navigator.hid){ $("connect").disabled=true; $("status").textContent="WebHID unsupported — use Chrome/Edge"; }
+if(!navigator.hid && !navigator.bluetooth){ $("connect").disabled=true; $("status").textContent="No WebHID/WebBluetooth — use Chrome/Edge over HTTPS"; }
 async function refresh(){
   try { const i = await (await fetch("/treasury/info")).json();
     $("bal").classList.remove("loading");
@@ -81,10 +89,19 @@ async function refresh(){
     else $("bal").textContent = "not deployed"; } catch {}
 }
 $("connect").onclick = async () => {
-  try { const a = await window.roverLedger.connect();
+  try {
+    const tx = (document.querySelector('input[name="tx"]:checked')||{}).value || "auto";
+    const a = await window.roverLedger.connect(tx);
+    $("authorize").disabled = false;
     $("withdraw").disabled = false;
     if(!$("to").value){ $("to").value = a; $("toHint").textContent = "✓ your Ledger address"; } }
   catch(e){ $("status").textContent = "✗ " + e.message; }
+};
+$("authorize").onclick = async () => {
+  try { $("authorize").disabled = true;
+    const r = await window.roverLedger.authorize();
+    $("authHint").innerHTML = '<span class="ok">✓ fleet authorized — the show may begin</span>';
+  } catch(e){ $("status").textContent = "✗ " + e.message; $("authorize").disabled = false; }
 };
 $("withdraw").onclick = async () => {
   try { $("withdraw").disabled = true;

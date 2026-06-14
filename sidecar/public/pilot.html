@@ -4,6 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>Rover GP Pilot</title>
+<script>
+  document.documentElement.dataset.mode = new URLSearchParams(location.search).get("mode") === "manual"
+    ? "manual"
+    : "race";
+</script>
 <style>
   :root {
     --bg:#05070a; --glass:rgba(5,8,12,.62); --line:rgba(223,235,255,.18);
@@ -38,7 +43,32 @@
       linear-gradient(0deg, rgba(255,255,255,.035) 1px, transparent 1px), #070a0f;
     background-size:44px 44px;
   }
-  #zone { position:absolute; inset:0; z-index:8; }
+  #zone { position:absolute; inset:0; z-index:22; pointer-events:none; touch-action:none; }
+  .stick-zone {
+    position:absolute; bottom:112px; width:142px; height:142px; pointer-events:auto;
+    touch-action:none; border:1px solid rgba(223,235,255,.22); border-radius:50%;
+    background:rgba(5,8,12,.34); backdrop-filter:blur(4px);
+  }
+  #driveZone { left:22px; }
+  #cameraZone { right:22px; }
+  .stick-zone::before {
+    content:""; position:absolute; inset:18px; border:1px solid rgba(223,235,255,.16);
+    border-radius:50%;
+  }
+  .stick-zone::after {
+    content:attr(data-label); position:absolute; left:50%; bottom:-24px; transform:translateX(-50%);
+    color:var(--muted); font-size:11px; text-shadow:0 1px 2px #000;
+  }
+  .stick-knob {
+    position:absolute; left:50%; top:50%; width:58px; height:58px; border-radius:50%;
+    transform:translate(calc(-50% + var(--x, 0px)), calc(-50% + var(--y, 0px)));
+    background:rgba(89,166,255,.78); box-shadow:0 0 18px rgba(89,166,255,.45);
+    border:1px solid rgba(255,255,255,.42); pointer-events:none;
+  }
+  #cameraZone .stick-knob {
+    width:52px; height:52px; background:rgba(73,209,125,.78);
+    box-shadow:0 0 18px rgba(73,209,125,.45);
+  }
   .hud { pointer-events:none; position:absolute; inset:0; z-index:12; }
   .chip-row {
     position:absolute; left:12px; right:12px; top:10px; display:flex;
@@ -160,14 +190,69 @@
     color:#041008; font-weight:800;
   }
   .start-button:disabled { opacity:.55; }
+  html[data-mode="manual"] .data-panel,
+  html[data-mode="manual"] #cameraZone,
+  html[data-mode="manual"] .minimap,
+  html[data-mode="manual"] .throttle {
+    display:none;
+  }
+  html[data-mode="manual"] .hud { z-index:24; }
+  html[data-mode="manual"] .chip-row {
+    left:10px; right:10px; top:10px; justify-content:flex-start;
+  }
+  html[data-mode="manual"] .chip {
+    background:rgba(5,8,12,.46);
+  }
+  html[data-mode="manual"] #driveZone {
+    left:18px; bottom:98px; width:184px; height:184px;
+    border-color:rgba(89,166,255,.5); background:rgba(5,8,12,.28);
+  }
+  html[data-mode="manual"] #driveZone::before { inset:25px; }
+  html[data-mode="manual"] #driveZone::after {
+    content:"drive"; bottom:-28px; font-size:12px; color:var(--txt);
+  }
+  html[data-mode="manual"] #driveZone .stick-knob {
+    width:74px; height:74px;
+  }
+  html[data-mode="manual"] .wheel-readout {
+    left:18px; bottom:302px; padding:7px 9px; border:1px solid var(--line);
+    border-radius:8px; background:rgba(5,8,12,.48); backdrop-filter:blur(10px);
+    color:var(--txt);
+  }
+  html[data-mode="manual"] .direction {
+    left:10px; right:auto; bottom:auto; top:48px; transform:none;
+    min-width:0; max-width:calc(100% - 110px); text-align:left; font-size:12px;
+    padding:6px 8px; color:var(--muted);
+  }
+  html[data-mode="manual"] .estop {
+    right:16px; bottom:20px; width:86px; height:86px;
+  }
+  html[data-mode="manual"] .modal-panel {
+    width:min(360px, 90vw); text-align:center;
+  }
+  html[data-mode="manual"] .modal-panel h1 { font-size:20px; }
+  html[data-mode="manual"] .start-button {
+    height:62px; font-size:20px;
+  }
   @media (max-width:560px) {
     .chip { font-size:11px; min-height:26px; padding:4px 7px; }
     .data-panel { width:min(206px, 62vw); padding:7px 8px; }
     .data-grid { grid-template-columns:31px minmax(0,1fr) 32px minmax(0,1fr); font-size:10px; }
     .direction { max-width:48vw; bottom:20px; font-size:13px; }
     .minimap { top:120px; right:10px; width:148px; }
+    .stick-zone { width:126px; height:126px; bottom:108px; }
+    #driveZone { left:14px; }
+    #cameraZone { right:14px; }
+    .stick-knob { width:52px; height:52px; }
+    #cameraZone .stick-knob { width:48px; height:48px; }
     .throttle button { width:43px; height:34px; }
     .estop { width:78px; height:78px; }
+    html[data-mode="manual"] #driveZone {
+      left:16px; bottom:96px; width:174px; height:174px;
+    }
+    html[data-mode="manual"] #driveZone .stick-knob { width:70px; height:70px; }
+    html[data-mode="manual"] .wheel-readout { bottom:292px; }
+    html[data-mode="manual"] .estop { width:82px; height:82px; }
   }
   @media (max-width:360px) {
     .chip-row { left:9px; right:9px; gap:7px; }
@@ -183,7 +268,10 @@
   <div class="video-fallback" id="videoFallback">camera feed unavailable</div>
   <img class="video off" id="video" alt="" />
   <video class="video local-video off" id="localVideo" muted playsinline autoplay></video>
-  <div id="zone"></div>
+  <div id="zone">
+    <div class="stick-zone" id="driveZone" data-label="drive"><i class="stick-knob"></i></div>
+    <div class="stick-zone" id="cameraZone" data-label="camera"><i class="stick-knob"></i></div>
+  </div>
 
   <div class="hud">
     <div class="chip-row">
@@ -228,12 +316,11 @@
       <h1 id="modalTitle">Start Pilot Session</h1>
       <p id="modalCopy">Connect to the rover camera and unlock controls. Keep the stop button in reach.</p>
       <div class="modal-status" id="modalStatus"></div>
-      <button class="start-button" id="startButton">START</button>
+      <button class="start-button" id="startButton" type="button">START</button>
     </div>
   </div>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
-<script type="module" src="/pilot-app.bundle.js?v=wifi-camera-watchdog"></script>
+<script type="module" src="/pilot-app.bundle.js?v=manual-drive-proof"></script>
 </body>
 </html>

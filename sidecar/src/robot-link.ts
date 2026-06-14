@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { Readable } from "node:stream";
 import type { Express } from "express";
+import { RTCPeerConnection, type RTCDataChannel } from "werift";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 import { ROBOTS, type RobotName } from "./config.js";
@@ -35,6 +36,15 @@ type DriveCommand = {
   deadman_ms: number;
 };
 
+type CameraCommand = {
+  type: "camera-control";
+  robot: RobotName;
+  token: string;
+  ts_ms: number;
+  pan: number;
+  tilt: number;
+};
+
 type CameraTelemetry = {
   status: string;
   health?: string;
@@ -43,6 +53,8 @@ type CameraTelemetry = {
   resolution?: string;
   brightness?: number;
   reconnect_state?: string;
+  pan?: number;
+  tilt?: number;
 };
 
 export type RobotTelemetry = {
@@ -77,28 +89,41 @@ export type RobotTelemetry = {
   };
 };
 
+type WebrtcPilotClient = {
+  token: string;
+  peer: RTCPeerConnection;
+};
+
 type RobotRuntime = {
   robot: RobotName;
   robotSocket?: WebSocket;
   robotConnectedAt?: number;
   lastRobotSeenAt?: number;
+  restDriveInFlight: boolean;
+  restAuthorizedTokens: Map<string, SpeedMode>;
+  pendingRestDrive?: DriveCommand;
+  lastRestDriveErrorAt: number;
   telemetryClients: Set<WebSocket>;
   pilotClients: Map<WebSocket, string>;
+  webrtcPilotClients: Map<RTCDataChannel, WebrtcPilotClient>;
+  webrtcPeers: Set<RTCPeerConnection>;
+  cameraClients: Map<WebSocket, string>;
   sessions: Map<string, PilotSession>;
   telemetry: RobotTelemetry;
   telemetryHistory: RobotTelemetry[];
   traceEventState: Map<string, boolean>;
   lastCommand: DriveCommand;
+  lastCameraCommand: CameraCommand;
   stoppedByDeadman: boolean;
 };
 
 const SPEED_CAPS: Record<SpeedMode, number> = {
   low: 0.22,
   medium: 0.35,
-  high: 0.55,
+  high: 1.0,
 };
 const SESSION_SECS = 300;
-const CMD_MIN_INTERVAL_MS = 70;
+const CMD_MIN_INTERVAL_MS = 20;
 const DEADMAN_MS = 650;
 const TELEMETRY_STALE_MS = 1600;
 const TELEMETRY_HISTORY_MAX = 900;
@@ -108,11 +133,65 @@ let deadmanLoop: NodeJS.Timeout | undefined;
 
 export function installRobotLink(app: Express, server: Server) {
   const driveWss = new WebSocketServer({ noServer: true });
+  const cameraWss = new WebSocketServer({ noServer: true });
   const telemetryWss = new WebSocketServer({ noServer: true });
   const robotWss = new WebSocketServer({ noServer: true });
 
   app.get("/robot-link/state", (_req, res) => {
     res.json({ robots: robotLinkSnapshot() });
+  });
+
+  app.post("/pilot/webrtc/offer", async (req, res) => {
+    let peer: RTCPeerConnection | undefined;
+    let runtime: RobotRuntime | undefined;
+    try {
+      const robot = requireRobotName(req.body?.robot);
+      runtime = runtimeFor(robot);
+      const token = String(req.body?.token ?? "");
+      const session = requireSession(runtime, token, { allowEarly: true });
+      const requestedSpeedMode = parseSpeedMode(req.body?.speed_mode);
+      if (requestedSpeedMode) {
+        session.speedMode = capSpeedMode(requestedSpeedMode, session.maxSpeedMode);
+      }
+
+      const offer = req.body?.offer;
+      if (offer?.type !== "offer" || typeof offer.sdp !== "string" || !offer.sdp.trim()) {
+        throw new Error("offer must include type=offer and sdp");
+      }
+
+      peer = new RTCPeerConnection({ iceServers: [] });
+      const activeRuntime = runtime;
+      activeRuntime.webrtcPeers.add(peer);
+      peer.ondatachannel = ({ channel }) => {
+        if (channel.label !== "drive") {
+          channel.close();
+          return;
+        }
+        handleWebrtcDriveChannel(activeRuntime, token, peer!, channel);
+      };
+      peer.onconnectionstatechange = () => {
+        if (peer && ["closed", "failed", "disconnected"].includes(peer.connectionState)) {
+          cleanupWebrtcPeer(activeRuntime, peer, `webrtc ${peer.connectionState}`);
+        }
+      };
+
+      await peer.setRemoteDescription({ type: "offer", sdp: offer.sdp });
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      await waitForIceGatheringComplete(peer, 1500);
+      const localDescription = peer.localDescription ?? answer;
+      res.json({
+        answer: { type: localDescription.type, sdp: localDescription.sdp },
+        iceServers: [],
+      });
+    } catch (e: any) {
+      if (peer && runtime) {
+        cleanupWebrtcPeer(runtime, peer, "webrtc offer failed");
+      } else if (peer) {
+        void peer.close().catch(() => undefined);
+      }
+      res.status(400).json({ error: e.message });
+    }
   });
 
   app.post("/robot/:robot/pilot/speed-mode", (req, res) => {
@@ -151,6 +230,21 @@ export function installRobotLink(app: Express, server: Server) {
   });
 
   app.get("/robot/:robot/stream", async (req, res) => {
+    const controller = new AbortController();
+    let proxyStream: Readable | undefined;
+    const abort = () => controller.abort();
+    const closeProxy = () => proxyStream?.destroy();
+    const cleanup = () => {
+      req.off("close", abort);
+      res.off("close", abort);
+      res.off("close", closeProxy);
+      res.off("close", cleanup);
+      proxyStream?.off("close", cleanup);
+    };
+    req.on("close", abort);
+    res.on("close", abort);
+    res.on("close", closeProxy);
+    res.on("close", cleanup);
     try {
       const robot = requireRobotName(req.params.robot);
       const upstream = new URL("/stream", ROBOTS[robot].url).toString();
@@ -158,20 +252,24 @@ export function installRobotLink(app: Express, server: Server) {
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
-      const upstreamRes = await fetch(upstream);
+      const upstreamRes = await fetch(upstream, { signal: controller.signal });
       res.status(upstreamRes.status);
       for (const header of ["content-type", "cache-control"] as const) {
         const value = upstreamRes.headers.get(header);
         if (value) res.setHeader(header, value);
       }
       if (!upstreamRes.body) return res.end();
-      Readable.fromWeb(upstreamRes.body as any)
+      proxyStream = Readable.fromWeb(upstreamRes.body as any);
+      proxyStream.on("close", cleanup);
+      proxyStream
         .on("error", () => {
           if (!res.headersSent) res.status(502);
           res.end();
         })
         .pipe(res);
     } catch (e: any) {
+      cleanup();
+      if (controller.signal.aborted) return;
       if (res.headersSent) return res.end();
       res.status(502).json({ error: e.message });
     }
@@ -181,6 +279,10 @@ export function installRobotLink(app: Express, server: Server) {
     const url = new URL(req.url ?? "/", "http://sidecar.local");
     if (url.pathname === "/ws/drive") {
       driveWss.handleUpgrade(req, socket, head, (ws) => handlePilotDrive(ws, url));
+      return;
+    }
+    if (url.pathname === "/ws/camera") {
+      cameraWss.handleUpgrade(req, socket, head, (ws) => handleCameraControl(ws, url));
       return;
     }
     if (url.pathname === "/ws/telemetry") {
@@ -206,13 +308,20 @@ export function authorizePilotSession(
     maxSpeedMode?: SpeedMode;
     notBeforeMs?: number;
     notAfterMs?: number;
+    streamUrl?: string;
   } = {},
 ) {
   const runtime = runtimeFor(robot);
   retireExpiredSessions(runtime);
   for (const ws of runtime.pilotClients.keys()) ws.close(1012, "new pilot session");
+  for (const ws of runtime.cameraClients.keys()) ws.close(1012, "new pilot session");
+  for (const peer of runtime.webrtcPeers) void peer.close().catch(() => undefined);
   runtime.pilotClients.clear();
+  runtime.webrtcPilotClients.clear();
+  runtime.webrtcPeers.clear();
+  runtime.cameraClients.clear();
   runtime.sessions.clear();
+  runtime.restAuthorizedTokens.clear();
 
   const token = randomUUID();
   const ttlSecs = opts.ttlSecs ?? SESSION_SECS;
@@ -240,8 +349,10 @@ export function authorizePilotSession(
     robot,
     expiresInSecs: ttlSecs,
     driveWs: `${wsFromHttp(base)}/ws/drive?${query.toString()}`,
+    webrtcOfferUrl: `${base}/pilot/webrtc/offer`,
+    cameraWs: `${wsFromHttp(base)}/ws/camera?${query.toString()}`,
     telemetryWs: `${wsFromHttp(base)}/ws/telemetry?robot=${encodeURIComponent(robot)}`,
-    streamUrl: `${base}/robot/${encodeURIComponent(robot)}/stream`,
+    streamUrl: opts.streamUrl ?? `${base}/robot/${encodeURIComponent(robot)}/stream`,
     speedModeUrl: `${base}/robot/${encodeURIComponent(robot)}/pilot/speed-mode`,
     stopUrl: `${base}/robot/${encodeURIComponent(robot)}/stop`,
     maxSpeedMode,
@@ -252,8 +363,12 @@ export function authorizePilotSession(
 export function revokePilotSessions(robot: RobotName, reason = "pilot session revoked") {
   const runtime = runtimeFor(robot);
   for (const ws of runtime.pilotClients.keys()) ws.close(1000, reason);
+  for (const peer of runtime.webrtcPeers) void peer.close().catch(() => undefined);
   runtime.pilotClients.clear();
+  runtime.webrtcPilotClients.clear();
+  runtime.webrtcPeers.clear();
   runtime.sessions.clear();
+  runtime.restAuthorizedTokens.clear();
   safeStop(runtime, reason);
 }
 
@@ -288,19 +403,7 @@ function handlePilotDrive(ws: WebSocket, url: URL) {
   ws.on("message", (raw) => {
     try {
       const body = parseJson(raw);
-      const session = requireSession(runtime, token);
-      if (body.token && body.token !== token) throw new Error("token mismatch");
-      if (Date.now() - session.lastCmdAt < CMD_MIN_INTERVAL_MS) return;
-      session.lastCmdAt = Date.now();
-      session.lastPilotSeenAt = Date.now();
-      const speedMode = parseSpeedMode(body.speed_mode);
-      if (speedMode) session.speedMode = capSpeedMode(speedMode, session.maxSpeedMode);
-      const left = Number.isFinite(Number(body.left)) ? Number(body.left) : 0;
-      const right = Number.isFinite(Number(body.right)) ? Number(body.right) : 0;
-      runtime.stoppedByDeadman = false;
-      runtime.lastCommand = makeCommand(runtime, session, left, right);
-      sendToRobot(runtime, runtime.lastCommand);
-      broadcastTelemetry(runtime, "bridge");
+      handleDriveCommand(runtime, token, body);
     } catch (e: any) {
       ws.send(JSON.stringify({ type: "error", error: e.message }));
     }
@@ -310,6 +413,91 @@ function handlePilotDrive(ws: WebSocket, url: URL) {
     safeStop(runtime, "pilot disconnected");
   });
   ws.send(JSON.stringify({ type: "ready", robot: runtime.robot, deadman_ms: DEADMAN_MS }));
+}
+
+function handleWebrtcDriveChannel(
+  runtime: RobotRuntime,
+  token: string,
+  peer: RTCPeerConnection,
+  channel: RTCDataChannel,
+) {
+  let registered = false;
+  let closed = false;
+
+  const register = () => {
+    if (registered || closed) return;
+    requireSession(runtime, token, { allowEarly: true });
+    registered = true;
+    runtime.webrtcPilotClients.set(channel, { token, peer });
+    runtime.stoppedByDeadman = false;
+    broadcastTelemetry(runtime, "bridge");
+    channel.send(JSON.stringify({ type: "ready", robot: runtime.robot, deadman_ms: DEADMAN_MS }));
+  };
+
+  const close = (reason = "webrtc pilot disconnected") => {
+    if (closed) return;
+    closed = true;
+    const wasRegistered = runtime.webrtcPilotClients.delete(channel);
+    cleanupWebrtcPeer(runtime, peer, reason);
+    if (wasRegistered) safeStop(runtime, reason);
+  };
+
+  channel.onopen = () => {
+    try {
+      register();
+    } catch {
+      close("invalid webrtc pilot session");
+    }
+  };
+  channel.onmessage = (event) => {
+    try {
+      if (!registered) register();
+      handleDriveCommand(runtime, token, parseJsonLike(event.data));
+    } catch (e: any) {
+      if (channel.readyState === "open") {
+        channel.send(JSON.stringify({ type: "error", error: e.message }));
+      }
+    }
+  };
+  channel.onclose = () => close();
+  channel.onerror = () => close("webrtc pilot error");
+  if (channel.readyState === "open") channel.onopen();
+}
+
+function handleCameraControl(ws: WebSocket, url: URL) {
+  let runtime: RobotRuntime;
+  let token: string;
+  try {
+    runtime = runtimeFor(requireRobotName(url.searchParams.get("robot")));
+    token = String(url.searchParams.get("token") ?? "");
+    requireSession(runtime, token, { allowEarly: true });
+  } catch (e: any) {
+    ws.close(1008, e.message);
+    return;
+  }
+
+  runtime.cameraClients.set(ws, token);
+  ws.on("message", (raw) => {
+    try {
+      const body = parseJson(raw);
+      const session = requireSession(runtime, token, { allowEarly: true });
+      if (body.token && body.token !== token) throw new Error("token mismatch");
+      session.lastPilotSeenAt = Date.now();
+      runtime.lastCameraCommand = makeCameraCommand(runtime, session, body.pan, body.tilt);
+      sendToRobot(runtime, runtime.lastCameraCommand);
+      broadcastTelemetry(runtime, "bridge");
+    } catch (e: any) {
+      ws.send(JSON.stringify({ type: "error", error: e.message }));
+    }
+  });
+  ws.on("close", () => {
+    runtime.cameraClients.delete(ws);
+    const session = runtime.sessions.get(token);
+    runtime.lastCameraCommand = makeCameraCommand(runtime, session, 0, 0);
+    sendToRobot(runtime, runtime.lastCameraCommand);
+    broadcastTelemetry(runtime, "bridge");
+  });
+  ws.send(JSON.stringify({ type: "ready", robot: runtime.robot }));
 }
 
 function handleTelemetryClient(ws: WebSocket, url: URL) {
@@ -364,8 +552,14 @@ function runtimeFor(robot: RobotName): RobotRuntime {
   if (existing) return existing;
   const runtime: RobotRuntime = {
     robot,
+    restDriveInFlight: false,
+    restAuthorizedTokens: new Map(),
+    lastRestDriveErrorAt: 0,
     telemetryClients: new Set(),
     pilotClients: new Map(),
+    webrtcPilotClients: new Map(),
+    webrtcPeers: new Set(),
+    cameraClients: new Map(),
     sessions: new Map(),
     stoppedByDeadman: false,
     lastCommand: {
@@ -378,6 +572,14 @@ function runtimeFor(robot: RobotName): RobotRuntime {
       speed_mode: "medium",
       max_speed: SPEED_CAPS.medium,
       deadman_ms: DEADMAN_MS,
+    },
+    lastCameraCommand: {
+      type: "camera-control",
+      robot,
+      token: "",
+      ts_ms: Date.now(),
+      pan: 0,
+      tilt: 0,
     },
     telemetry: {
       ts_ms: Date.now(),
@@ -422,6 +624,46 @@ function requireSession(
   return session;
 }
 
+function handleDriveCommand(runtime: RobotRuntime, token: string, body: Record<string, any>) {
+  const session = requireSession(runtime, token);
+  if (body.token && body.token !== token) throw new Error("token mismatch");
+  const now = Date.now();
+  if (now - session.lastCmdAt < CMD_MIN_INTERVAL_MS) return;
+  session.lastCmdAt = now;
+  session.lastPilotSeenAt = now;
+  const speedMode = parseSpeedMode(body.speed_mode);
+  if (speedMode) session.speedMode = capSpeedMode(speedMode, session.maxSpeedMode);
+  const left = Number.isFinite(Number(body.left)) ? Number(body.left) : 0;
+  const right = Number.isFinite(Number(body.right)) ? Number(body.right) : 0;
+  runtime.stoppedByDeadman = false;
+  runtime.lastCommand = makeCommand(runtime, session, left, right);
+  sendToRobot(runtime, runtime.lastCommand);
+  broadcastTelemetry(runtime, "bridge");
+}
+
+function cleanupWebrtcPeer(runtime: RobotRuntime, peer: RTCPeerConnection, reason: string) {
+  runtime.webrtcPeers.delete(peer);
+  let removedPilot = false;
+  for (const [channel, client] of runtime.webrtcPilotClients) {
+    if (client.peer !== peer) continue;
+    runtime.webrtcPilotClients.delete(channel);
+    removedPilot = true;
+  }
+  void peer.close().catch(() => undefined);
+  if (removedPilot) safeStop(runtime, reason);
+}
+
+async function waitForIceGatheringComplete(peer: RTCPeerConnection, timeoutMs: number) {
+  if (peer.iceGatheringState === "complete") return;
+  await peer.iceGatheringStateChange
+    .watch((state) => state === "complete", timeoutMs)
+    .catch(() => undefined);
+}
+
+function pilotClientCount(runtime: RobotRuntime): number {
+  return runtime.pilotClients.size + runtime.webrtcPilotClients.size;
+}
+
 function retireExpiredSessions(runtime: RobotRuntime) {
   const now = Date.now();
   for (const [token, session] of runtime.sessions) {
@@ -441,6 +683,22 @@ function makeCommand(runtime: RobotRuntime, session: PilotSession, left: number,
     speed_mode: session.speedMode,
     max_speed: max,
     deadman_ms: DEADMAN_MS,
+  };
+}
+
+function makeCameraCommand(
+  runtime: RobotRuntime,
+  session: PilotSession | undefined,
+  pan: unknown,
+  tilt: unknown,
+): CameraCommand {
+  return {
+    type: "camera-control",
+    robot: runtime.robot,
+    token: session?.token ?? "",
+    ts_ms: Date.now(),
+    pan: clamp(Number.isFinite(Number(pan)) ? Number(pan) : 0, -1, 1),
+    tilt: clamp(Number.isFinite(Number(tilt)) ? Number(tilt) : 0, -1, 1),
   };
 }
 
@@ -464,7 +722,7 @@ function normalizeTelemetry(runtime: RobotRuntime, body: Record<string, any>): R
     odometry_right: finiteNumber(body.odometry_right) ?? current.odometry_right,
     yaw: finiteNumber(body.yaw) ?? current.yaw,
     session_id: typeof body.session_id === "string" ? body.session_id : command.token || current.session_id,
-    deadman_ok: Boolean(body.deadman_ok ?? runtime.pilotClients.size > 0),
+    deadman_ok: Boolean(body.deadman_ok ?? pilotClientCount(runtime) > 0),
     estop: Boolean(body.estop ?? false),
     stopped_by_deadman: Boolean(body.stopped_by_deadman ?? runtime.stoppedByDeadman),
     soft_odometry_limited: Boolean(body.soft_odometry_limited ?? current.soft_odometry_limited ?? false),
@@ -488,13 +746,20 @@ function broadcastTelemetry(runtime: RobotRuntime, source?: RobotTelemetry["sour
     robot: runtime.robot,
     left_cmd: runtime.lastCommand.left,
     right_cmd: runtime.lastCommand.right,
-    deadman_ok: runtime.pilotClients.size > 0 && !runtime.stoppedByDeadman,
+    deadman_ok: pilotClientCount(runtime) > 0 && !runtime.stoppedByDeadman,
     stopped_by_deadman: runtime.stoppedByDeadman,
     soft_odometry_limited: runtime.telemetry.soft_odometry_limited,
     soft_odometry_limit_m: runtime.telemetry.soft_odometry_limit_m,
     speed_mode: runtime.lastCommand.speed_mode,
     max_speed: runtime.lastCommand.max_speed,
     session_id: runtime.lastCommand.token || runtime.telemetry.session_id,
+    camera: runtime.telemetry.camera
+      ? {
+          ...runtime.telemetry.camera,
+          pan: runtime.lastCameraCommand.pan,
+          tilt: runtime.lastCameraCommand.tilt,
+        }
+      : runtime.telemetry.camera,
     source: source ?? runtime.telemetry.source,
   };
   recordTelemetry(runtime, runtime.telemetry);
@@ -529,10 +794,67 @@ function recordTelemetry(runtime: RobotRuntime, frame: RobotTelemetry) {
   recordRoundTelemetry(runtime, frame);
 }
 
-function sendToRobot(runtime: RobotRuntime, command: DriveCommand) {
+function sendToRobot(runtime: RobotRuntime, command: DriveCommand | CameraCommand) {
   if (runtime.robotSocket?.readyState === WebSocket.OPEN) {
     runtime.robotSocket.send(JSON.stringify(command));
+    return;
   }
+  if (command.type === "control") {
+    queueRestDrive(runtime, command);
+  }
+}
+
+function queueRestDrive(runtime: RobotRuntime, command: DriveCommand) {
+  runtime.pendingRestDrive = command;
+  if (runtime.restDriveInFlight) return;
+  runtime.restDriveInFlight = true;
+  void flushRestDrive(runtime);
+}
+
+async function flushRestDrive(runtime: RobotRuntime) {
+  while (runtime.pendingRestDrive) {
+    const command = runtime.pendingRestDrive;
+    runtime.pendingRestDrive = undefined;
+    try {
+      await ensureRestPilotToken(runtime, command);
+      const res = await fetch(new URL("/drive", ROBOTS[runtime.robot].url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: command.token, left: command.left, right: command.right }),
+        signal: AbortSignal.timeout(1500),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.error) throw new Error(body.error || `robot drive failed ${res.status}`);
+    } catch (err) {
+      const now = Date.now();
+      if (now - runtime.lastRestDriveErrorAt > 1000) {
+        runtime.lastRestDriveErrorAt = now;
+        console.error(`robot ${runtime.robot} rest drive: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+  runtime.restDriveInFlight = false;
+  if (runtime.pendingRestDrive) {
+    queueRestDrive(runtime, runtime.pendingRestDrive);
+  }
+}
+
+async function ensureRestPilotToken(runtime: RobotRuntime, command: DriveCommand) {
+  if (!command.token) return;
+  if (runtime.restAuthorizedTokens.get(command.token) === command.speed_mode) return;
+  const res = await fetch(new URL("/pilot/authorize", ROBOTS[runtime.robot].url), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: command.token,
+      ttl_secs: SESSION_SECS,
+      speed_mode: command.speed_mode,
+    }),
+    signal: AbortSignal.timeout(1500),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.error) throw new Error(body.error || `robot pilot authorize failed ${res.status}`);
+  runtime.restAuthorizedTokens.set(command.token, command.speed_mode);
 }
 
 function safeStop(runtime: RobotRuntime, _reason: string, sendRobot = true) {
@@ -734,12 +1056,18 @@ function robotLinkSnapshot() {
       robotConnected: runtime.robotSocket?.readyState === WebSocket.OPEN,
       robotAgeMs: runtime.lastRobotSeenAt ? Date.now() - runtime.lastRobotSeenAt : null,
       pilotClients: runtime.pilotClients.size,
+      webrtcPilotClients: runtime.webrtcPilotClients.size,
+      cameraClients: runtime.cameraClients.size,
       telemetryClients: runtime.telemetryClients.size,
       sessions: runtime.sessions.size,
       lastCommand: {
         left: runtime.lastCommand.left,
         right: runtime.lastCommand.right,
         speed_mode: runtime.lastCommand.speed_mode,
+      },
+      lastCameraCommand: {
+        pan: runtime.lastCameraCommand.pan,
+        tilt: runtime.lastCameraCommand.tilt,
       },
       telemetry: runtime.telemetry,
     };
@@ -750,6 +1078,10 @@ function robotLinkSnapshot() {
 function parseJson(raw: RawData): Record<string, any> {
   const data = Array.isArray(raw) ? Buffer.concat(raw) : raw;
   return JSON.parse(data.toString());
+}
+
+function parseJsonLike(raw: string | Buffer): Record<string, any> {
+  return JSON.parse(typeof raw === "string" ? raw : raw.toString());
 }
 
 function finiteNumber(value: unknown): number | undefined {
@@ -771,6 +1103,8 @@ function normalizeCamera(value: unknown): CameraTelemetry | undefined {
     resolution: stringField(camera.resolution),
     brightness: finiteNumber(camera.brightness),
     reconnect_state: stringField(camera.reconnect_state),
+    pan: finiteNumber(camera.pan),
+    tilt: finiteNumber(camera.tilt),
   };
 }
 

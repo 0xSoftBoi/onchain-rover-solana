@@ -11,6 +11,7 @@ type AuthResponse = {
   token?: string;
   robot?: string;
   driveWs?: string;
+  cameraWs?: string;
   telemetryWs?: string;
   streamUrl?: string;
   speedModeUrl?: string;
@@ -93,6 +94,8 @@ type CameraTelemetry = {
   resolution?: string;
   brightness?: number;
   reconnect_state?: string;
+  pan?: number;
+  tilt?: number;
 };
 
 type NippleMove = {
@@ -107,6 +110,7 @@ type NippleInstance = {
 
 declare global {
   interface Window {
+    __pilotReady?: boolean;
     nipplejs?: {
       create(opts: {
         zone: HTMLElement;
@@ -124,20 +128,31 @@ const robotName = params.get("robot") || "courier";
 const robotUrl = normalizeBaseUrl(params.get("robotUrl"));
 const providedToken = params.get("token");
 const forceLocalCamera = params.get("camera") === "local";
-const roundId = params.get("round");
+const manualMode = params.get("mode") === "manual";
+const roundId = manualMode ? null : params.get("round");
 const driverSlot = parseDriverSlot(params.get("slot")) || "challenger";
-let speedMode = parseSpeedMode(params.get("speed")) || "medium";
+const requestedSpeedMode = parseSpeedMode(params.get("speed"));
+let speedMode: SpeedMode = manualMode
+  ? requestedSpeedMode === "high" ? "high" : "medium"
+  : requestedSpeedMode || "medium";
+document.documentElement.dataset.mode = manualMode ? "manual" : "race";
 
 let driveWs: WebSocket | null = null;
+let cameraWs: WebSocket | null = null;
 let telemetryWs: WebSocket | null = null;
 let token = "";
 let connected = false;
 let telemetryConnected = false;
 let started = false;
+let pilotStarting = false;
 let hasConnected = false;
 let sendInterval: number | undefined;
+let cameraSendInterval: number | undefined;
 let reconnectTimer: number | undefined;
+let cameraReconnectTimer: number | undefined;
+let cameraReconnectUrl = "";
 let lastDrive = { left: 0, right: 0 };
+let lastCamera = { pan: 0, tilt: 0 };
 let lastTelemetryAt = 0;
 let localStream: MediaStream | null = null;
 let raceEntryComplete = false;
@@ -147,6 +162,7 @@ let stageCalibrationLoaded = false;
 let videoState: "idle" | "streaming" | "reconnecting" | "fallback" | "local" = "idle";
 let roundState: PilotRoundState | null = null;
 let currentStreamUrl = "";
+let pendingStreamUrl = "";
 let streamReconnectTimer: number | undefined;
 let streamWatchdogTimer: number | undefined;
 let streamReconnectAttempts = 0;
@@ -184,6 +200,8 @@ const els = {
   estop: byId("estop") as HTMLButtonElement,
   throttle: byId("throttle"),
   zone: byId("zone"),
+  driveZone: byId("driveZone"),
+  cameraZone: byId("cameraZone"),
   startModal: byId("startModal"),
   modalTitle: byId("modalTitle"),
   modalCopy: byId("modalCopy"),
@@ -218,6 +236,10 @@ function deriveTelemetryWs(url: string): string {
   return url.replace(/\/ws\/drive(?:\?.*)?$/, "/ws/telemetry");
 }
 
+function deriveCameraWs(url: string): string {
+  return url.replace(/\/ws\/drive/, "/ws/camera");
+}
+
 function setConn(state: "connecting" | "up" | "down", text: string) {
   els.conn.className = `conn ${state === "connecting" ? "" : state}`;
   els.connText.textContent = text;
@@ -226,6 +248,26 @@ function setConn(state: "connecting" | "up" | "down", text: string) {
 function setModalStatus(text: string, tone: "dim" | "ok" | "bad" = "dim") {
   els.modalStatus.textContent = text;
   els.modalStatus.className = `modal-status ${tone === "dim" ? "" : tone}`;
+}
+
+async function beginPilot() {
+  if (started || pilotStarting) return;
+  pilotStarting = true;
+  els.startButton.disabled = true;
+  els.startButton.textContent = roundId && !raceEntryComplete ? "CHECKING" : "CONNECTING";
+  setModalStatus("Opening pilot session...");
+  try {
+    await completeRaceEntryIfNeeded();
+    started = true;
+    setModalStatus("Connecting controls...");
+    connect();
+  } catch (err) {
+    pilotStarting = false;
+    started = false;
+    els.startButton.disabled = false;
+    els.startButton.textContent = "TRY AGAIN";
+    setModalStatus(err instanceof Error ? err.message : "race entry failed", "bad");
+  }
 }
 
 async function authorize(): Promise<AuthResponse> {
@@ -245,6 +287,7 @@ async function authorize(): Promise<AuthResponse> {
       token: nextToken,
       robot: robotName,
       driveWs: `${wsFromHttp(robotUrl)}/ws/drive`,
+      cameraWs: `${wsFromHttp(robotUrl)}/ws/camera`,
       telemetryWs: `${wsFromHttp(robotUrl)}/ws/telemetry`,
       streamUrl: `${robotUrl}/stream`,
       speedModeUrl: `${robotUrl}/pilot/speed-mode`,
@@ -263,6 +306,7 @@ async function authorize(): Promise<AuthResponse> {
     return {
       ...body,
       telemetryWs: body.telemetryWs || (body.driveWs ? deriveTelemetryWs(body.driveWs) : undefined),
+      cameraWs: body.cameraWs || (body.driveWs ? deriveCameraWs(body.driveWs) : undefined),
     };
   }
 
@@ -276,6 +320,7 @@ async function authorize(): Promise<AuthResponse> {
   return {
     ...body,
     telemetryWs: body.telemetryWs || (body.driveWs ? deriveTelemetryWs(body.driveWs) : undefined),
+    cameraWs: body.cameraWs || (body.driveWs ? deriveCameraWs(body.driveWs) : undefined),
   };
 }
 
@@ -306,9 +351,16 @@ async function connect() {
     els.robotName.textContent = auth.robot ? `/ ${auth.robot}` : `/ ${robotName}`;
     configureVideo(auth.driveWs, auth.streamUrl);
     openDriveSocket(auth.driveWs);
+    if (manualMode) {
+      stopCameraSending(false);
+    } else {
+      openCameraSocket(auth.cameraWs || deriveCameraWs(auth.driveWs));
+    }
     if (auth.telemetryWs) openTelemetrySocket(auth.telemetryWs);
     els.startModal.classList.add("hidden");
+    pilotStarting = false;
   } catch (err) {
+    pilotStarting = false;
     setConn("down", err instanceof Error ? err.message : "connection failed");
     if (hasConnected) {
       reconnectTimer = window.setTimeout(connect, 1800);
@@ -449,6 +501,7 @@ function roundStartMs(): number | null {
 
 function driveUnlocked(): boolean {
   if (!started) return false;
+  if (manualMode) return true;
   if (!roundId) return true;
   const startMs = roundStartMs();
   return roundState?.status === "racing" || Boolean(startMs && Date.now() >= startMs);
@@ -511,6 +564,37 @@ function openDriveSocket(url: string) {
   driveWs.onerror = () => setConn("down", "drive error");
 }
 
+function openCameraSocket(url: string) {
+  clearCameraReconnect();
+  cameraReconnectUrl = url;
+  cameraWs?.close();
+  const socket = new WebSocket(url);
+  cameraWs = socket;
+  socket.onopen = () => {
+    startCameraSending();
+  };
+  socket.onmessage = (event) => {
+    try {
+      const body = JSON.parse(event.data);
+      if (body?.error) els.cameraDetail.textContent = body.error;
+    } catch {
+      // Ignore non-control messages from older bridge versions.
+    }
+  };
+  socket.onclose = () => {
+    if (cameraWs !== socket) return;
+    stopCameraSending(false);
+    if (started && connected) {
+      cameraReconnectTimer = window.setTimeout(() => openCameraSocket(cameraReconnectUrl), 900);
+    }
+  };
+}
+
+function clearCameraReconnect() {
+  if (cameraReconnectTimer) window.clearTimeout(cameraReconnectTimer);
+  cameraReconnectTimer = undefined;
+}
+
 function openTelemetrySocket(url: string) {
   telemetryWs?.close();
   telemetryWs = new WebSocket(url);
@@ -532,29 +616,51 @@ function openTelemetrySocket(url: string) {
 }
 
 function configureVideo(driveUrl: string, streamUrl?: string) {
-  clearStreamReconnect();
-  clearStreamWatchdog();
   const base = httpBaseFromDriveUrl(driveUrl);
-  currentStreamUrl = streamUrl || `${base}/stream`;
+  const nextStreamUrl = streamUrl || `${base}/stream`;
   if (forceLocalCamera) {
+    clearStreamReconnect();
+    clearStreamWatchdog();
+    currentStreamUrl = nextStreamUrl;
+    pendingStreamUrl = "";
     startLocalCamera();
     return;
   }
+  if (
+    currentStreamUrl === nextStreamUrl
+    && els.video.src
+    && (videoState === "streaming" || videoState === "reconnecting")
+  ) {
+    pendingStreamUrl = "";
+    return;
+  }
+  if (hasVisibleRemoteFrame()) {
+    pendingStreamUrl = nextStreamUrl;
+    return;
+  }
+  clearStreamReconnect();
+  clearStreamWatchdog();
+  currentStreamUrl = nextStreamUrl;
+  pendingStreamUrl = "";
+  streamReconnectAttempts = 0;
   connectRemoteStream();
 }
 
-function connectRemoteStream() {
+function connectRemoteStream(forceRefresh = false) {
   if (!currentStreamUrl) return;
+  const hadFrame = hasVisibleRemoteFrame();
   videoState = streamReconnectAttempts > 0 ? "reconnecting" : "idle";
-  els.videoFallback.textContent = streamReconnectAttempts > 0 ? "camera reconnecting" : "connecting camera";
-  els.videoFallback.style.display = "grid";
-  els.video.classList.add("off");
+  if (!hadFrame) {
+    els.videoFallback.textContent = streamReconnectAttempts > 0 ? "camera reconnecting" : "connecting camera";
+    els.videoFallback.style.display = "grid";
+    els.video.classList.add("off");
+  }
   els.video.style.display = "block";
-  els.video.src = cacheBustUrl(currentStreamUrl);
+  els.video.src = forceRefresh ? cacheBustUrl(currentStreamUrl) : currentStreamUrl;
   els.video.onload = () => {
     videoState = "streaming";
     streamReconnectAttempts = 0;
-    startStreamWatchdog();
+    clearStreamWatchdog();
     els.video.classList.remove("off");
     els.video.style.display = "block";
     els.localVideo.classList.add("off");
@@ -567,19 +673,35 @@ function connectRemoteStream() {
 }
 
 function handleRemoteStreamFailure() {
+  const hadFrame = hasVisibleRemoteFrame();
   videoState = "reconnecting";
   clearStreamWatchdog();
-  els.video.classList.add("off");
-  els.videoFallback.textContent = "camera reconnecting";
-  els.videoFallback.style.display = "grid";
+  if (!hadFrame) {
+    els.video.classList.add("off");
+    els.videoFallback.textContent = "camera reconnecting";
+    els.videoFallback.style.display = "grid";
+  }
+  if (pendingStreamUrl && pendingStreamUrl !== currentStreamUrl) {
+    currentStreamUrl = pendingStreamUrl;
+    pendingStreamUrl = "";
+    streamReconnectAttempts = 0;
+  }
   scheduleStreamReconnect();
+}
+
+function hasVisibleRemoteFrame() {
+  return Boolean(
+    els.video.src
+    && !els.video.classList.contains("off")
+    && (videoState === "streaming" || videoState === "reconnecting"),
+  );
 }
 
 function scheduleStreamReconnect() {
   clearStreamReconnect();
   streamReconnectAttempts += 1;
   const delayMs = Math.min(5000, 700 + streamReconnectAttempts * 800);
-  streamReconnectTimer = window.setTimeout(connectRemoteStream, delayMs);
+  streamReconnectTimer = window.setTimeout(() => connectRemoteStream(true), delayMs);
 }
 
 function clearStreamReconnect() {
@@ -589,10 +711,6 @@ function clearStreamReconnect() {
 
 function startStreamWatchdog() {
   clearStreamWatchdog();
-  streamWatchdogTimer = window.setInterval(() => {
-    if (!currentStreamUrl || forceLocalCamera || videoState === "local") return;
-    els.video.src = cacheBustUrl(currentStreamUrl);
-  }, 7000);
 }
 
 function clearStreamWatchdog() {
@@ -657,6 +775,12 @@ function send(left: number, right: number) {
   els.direction.textContent = drivePrompt(left, right);
 }
 
+function sendCamera(pan: number, tilt: number) {
+  if (!started) return;
+  if (!cameraWs || cameraWs.readyState !== WebSocket.OPEN) return;
+  cameraWs.send(JSON.stringify({ pan, tilt, token, speed_mode: speedMode }));
+}
+
 function drivePrompt(left: number, right: number): string {
   const avg = (left + right) / 2;
   const turn = left - right;
@@ -667,15 +791,38 @@ function drivePrompt(left: number, right: number): string {
 }
 
 function startSending() {
-  stopSending();
-  sendInterval = window.setInterval(() => send(lastDrive.left, lastDrive.right), 80);
+  clearSendInterval();
+  send(lastDrive.left, lastDrive.right);
+  sendInterval = window.setInterval(() => send(lastDrive.left, lastDrive.right), 33);
+}
+
+function startCameraSending() {
+  clearCameraSendInterval();
+  cameraSendInterval = window.setInterval(() => sendCamera(lastCamera.pan, lastCamera.tilt), 33);
+}
+
+function clearSendInterval() {
+  if (sendInterval) window.clearInterval(sendInterval);
+  sendInterval = undefined;
+}
+
+function clearCameraSendInterval() {
+  if (cameraSendInterval) window.clearInterval(cameraSendInterval);
+  cameraSendInterval = undefined;
 }
 
 function stopSending() {
-  if (sendInterval) window.clearInterval(sendInterval);
-  sendInterval = undefined;
+  clearSendInterval();
+  stopCameraSending();
   lastDrive = { left: 0, right: 0 };
+  setStickKnob(els.driveZone, 0, 0);
   send(0, 0);
+}
+
+function stopCameraSending(sendZero = true) {
+  clearCameraSendInterval();
+  lastCamera = { pan: 0, tilt: 0 };
+  if (sendZero) sendCamera(0, 0);
 }
 
 async function setSpeedMode(mode: SpeedMode) {
@@ -754,14 +901,12 @@ function renderTelemetry(frame: TelemetryFrame) {
   const lag = frame.ts_ms ? Math.max(0, Date.now() - frame.ts_ms) : null;
   els.latency.textContent = lag === null ? "--" : `${lag}ms`;
   els.latency.className = lag !== null && lag > 500 ? "warn" : "";
-  els.lidar.className = frame.lidar?.blocked ? "bad" : "";
+  els.lidar.className = "";
 
   if (frame.estop) {
     els.direction.textContent = "Emergency stop";
   } else if (frame.soft_odometry_limited) {
     els.direction.textContent = "Stage limit";
-  } else if (frame.lidar?.blocked) {
-    els.direction.textContent = "Obstacle ahead";
   } else if (!started) {
     els.direction.textContent = "Tap start to drive";
   } else if (!driveUnlocked()) {
@@ -799,9 +944,13 @@ function deriveCameraHealth(status?: string, age?: number): string {
 
 function cameraDetail(camera: CameraTelemetry | undefined, frame: TelemetryFrame): string {
   const age = camera?.last_frame_age_ms ?? frame.raw_frame_age_ms ?? frame.sensors?.raw_frame?.age_ms;
+  const panTilt = camera?.pan !== undefined || camera?.tilt !== undefined
+    ? `p${(camera.pan ?? 0).toFixed(1)} t${(camera.tilt ?? 0).toFixed(1)}`
+    : undefined;
   const parts = [
     camera?.fps !== undefined ? `${camera.fps.toFixed(0)}fps` : undefined,
     age !== undefined ? `${age.toFixed(0)}ms` : undefined,
+    panTilt,
     camera?.resolution,
     camera?.brightness !== undefined ? `b${camera.brightness.toFixed(0)}` : undefined,
     camera?.reconnect_state && camera.reconnect_state !== "stable" ? camera.reconnect_state : undefined,
@@ -813,8 +962,8 @@ function lidarLabel(frame: TelemetryFrame): string {
   const lidar = frame.lidar;
   if (!lidar) return "--";
   const distance = lidar.front_m ?? lidar.min_m;
-  if (distance === undefined) return lidar.blocked ? "blocked" : "--";
-  return `${lidar.blocked ? "!" : ""}${distance.toFixed(2)}m`;
+  if (distance === undefined) return "--";
+  return `${distance.toFixed(2)}m`;
 }
 
 function odometryLabel(frame: TelemetryFrame): string {
@@ -866,31 +1015,151 @@ function setStageMarker(xPercent: number, yPercent: number, headingDeg: number) 
 }
 
 function setupJoystick() {
-  if (!window.nipplejs) {
-    els.direction.textContent = "Joystick failed to load";
-    return;
-  }
-
-  const joy = window.nipplejs.create({
-    zone: els.zone,
-    mode: "static",
-    position: { left: "50%", top: "58%" },
-    color: "#59a6ff",
-    size: 140,
+  setupPointerStick(els.driveZone, {
+    onMove: ({ fwd, turn, x, y }) => {
+      setStickKnob(els.driveZone, x, y);
+      lastDrive = {
+        left: Math.max(-1, Math.min(1, fwd + turn * 0.6)),
+        right: Math.max(-1, Math.min(1, fwd - turn * 0.6)),
+      };
+      if (manualMode && sendInterval) send(lastDrive.left, lastDrive.right);
+    },
+    onStart: startSending,
+    onEnd: () => {
+      if (!sendInterval) startSending();
+    },
   });
 
-  joy.on("move", (_event, data) => {
-    const force = Math.min(data.force ?? 0, 1);
-    const angle = data.angle?.radian ?? Math.PI / 2;
-    const fwd = Math.sin(angle) * force;
-    const turn = Math.cos(angle) * force;
-    lastDrive = {
-      left: Math.max(-1, Math.min(1, fwd + turn * 0.6)),
-      right: Math.max(-1, Math.min(1, fwd - turn * 0.6)),
-    };
+  if (manualMode) return;
+
+  setupPointerStick(els.cameraZone, {
+    onMove: ({ fwd, turn, x, y }) => {
+      setStickKnob(els.cameraZone, x, y);
+      lastCamera = {
+        pan: Math.max(-1, Math.min(1, turn)),
+        tilt: Math.max(-1, Math.min(1, fwd)),
+      };
+    },
+    onStart: startCameraSending,
+    onEnd: () => {
+      lastCamera = { pan: 0, tilt: 0 };
+      setStickKnob(els.cameraZone, 0, 0);
+      sendCamera(0, 0);
+    },
   });
-  joy.on("start", startSending);
-  joy.on("end", stopSending);
+}
+
+function setupPointerStick(
+  zone: HTMLElement,
+  opts: {
+    onStart: () => void;
+    onMove: (value: { fwd: number; turn: number; x: number; y: number }) => void;
+    onEnd: () => void;
+  },
+) {
+  let activeInput: string | null = null;
+  let lastTouchAt = 0;
+
+  const begin = (id: string, clientX: number, clientY: number) => {
+    if (!started) return;
+    activeInput = id;
+    opts.onStart();
+    opts.onMove(pointAxes(zone, clientX, clientY));
+  };
+
+  const move = (id: string, clientX: number, clientY: number) => {
+    if (activeInput !== id) return;
+    opts.onMove(pointAxes(zone, clientX, clientY));
+  };
+
+  const end = (id: string) => {
+    if (activeInput !== id) return;
+    activeInput = null;
+    opts.onEnd();
+  };
+
+  zone.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    zone.setPointerCapture?.(event.pointerId);
+    begin(`p${event.pointerId}`, event.clientX, event.clientY);
+  });
+  zone.addEventListener("pointermove", (event) => {
+    event.preventDefault();
+    move(`p${event.pointerId}`, event.clientX, event.clientY);
+  });
+  zone.addEventListener("pointerup", (event) => {
+    event.preventDefault();
+    zone.releasePointerCapture?.(event.pointerId);
+    end(`p${event.pointerId}`);
+  });
+  zone.addEventListener("pointercancel", (event) => {
+    event.preventDefault();
+    zone.releasePointerCapture?.(event.pointerId);
+    end(`p${event.pointerId}`);
+  });
+
+  zone.addEventListener("touchstart", (event) => {
+    event.preventDefault();
+    lastTouchAt = Date.now();
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    begin(`t${touch.identifier}`, touch.clientX, touch.clientY);
+  }, { passive: false });
+  zone.addEventListener("touchmove", (event) => {
+    event.preventDefault();
+    for (const touch of Array.from(event.changedTouches)) {
+      move(`t${touch.identifier}`, touch.clientX, touch.clientY);
+    }
+  }, { passive: false });
+  const touchEnd = (event: TouchEvent) => {
+    event.preventDefault();
+    lastTouchAt = Date.now();
+    for (const touch of Array.from(event.changedTouches)) {
+      end(`t${touch.identifier}`);
+    }
+  };
+  zone.addEventListener("touchend", touchEnd, { passive: false });
+  zone.addEventListener("touchcancel", touchEnd, { passive: false });
+
+  zone.addEventListener("mousedown", (event) => {
+    if (Date.now() - lastTouchAt < 700) return;
+    event.preventDefault();
+    begin("m0", event.clientX, event.clientY);
+  });
+  window.addEventListener("mousemove", (event) => {
+    if (activeInput !== "m0") return;
+    event.preventDefault();
+    move("m0", event.clientX, event.clientY);
+  });
+  window.addEventListener("mouseup", (event) => {
+    if (activeInput !== "m0") return;
+    event.preventDefault();
+    end("m0");
+  });
+}
+
+function pointAxes(zone: HTMLElement, clientX: number, clientY: number): { fwd: number; turn: number; x: number; y: number } {
+  const rect = zone.getBoundingClientRect();
+  const radius = Math.max(1, Math.min(rect.width, rect.height) * 0.42);
+  const rawX = clientX - (rect.left + rect.width / 2);
+  const rawY = clientY - (rect.top + rect.height / 2);
+  const distance = Math.hypot(rawX, rawY);
+  const scale = distance > radius ? radius / distance : 1;
+  const x = rawX * scale;
+  const y = rawY * scale;
+  return {
+    fwd: Math.max(-1, Math.min(1, -y / radius)),
+    turn: Math.max(-1, Math.min(1, x / radius)),
+    x,
+    y,
+  };
+}
+
+function setStickKnob(zone: HTMLElement, x: number, y: number) {
+  const knob = zone.querySelector(".stick-knob") as HTMLElement | null;
+  if (!knob) return;
+  knob.style.setProperty("--x", `${x.toFixed(1)}px`);
+  knob.style.setProperty("--y", `${y.toFixed(1)}px`);
 }
 
 function setupControls() {
@@ -912,21 +1181,13 @@ function setupControls() {
     }
   };
 
-  els.startButton.onclick = async () => {
-    els.startButton.disabled = true;
-    els.startButton.textContent = roundId && !raceEntryComplete ? "CHECKING" : "CONNECTING";
-    try {
-      await completeRaceEntryIfNeeded();
-      started = true;
-      els.startButton.textContent = "CONNECTING";
-      connect();
-    } catch (err) {
-      started = false;
-      els.startButton.disabled = false;
-      els.startButton.textContent = "TRY AGAIN";
-      setModalStatus(err instanceof Error ? err.message : "race entry failed", "bad");
-    }
+  const startFromEvent = (event: Event) => {
+    event.preventDefault();
+    void beginPilot();
   };
+  els.startButton.addEventListener("click", startFromEvent);
+  els.startButton.addEventListener("pointerup", startFromEvent);
+  els.startButton.addEventListener("touchend", startFromEvent, { passive: false });
 
   els.throttle.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -935,6 +1196,11 @@ function setupControls() {
     });
   });
   renderSpeedMode(speedMode);
+
+  window.addEventListener("pagehide", stopSending);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") stopSending();
+  });
 }
 
 setInterval(() => {
@@ -950,7 +1216,13 @@ setInterval(() => {
 
 els.robotName.textContent = `/ ${robotName}`;
 renderRoundState();
-if (roundId) {
+if (manualMode) {
+  els.modalTitle.textContent = "Start Manual Drive";
+  els.modalCopy.textContent = "Connect to the rover camera and unlock direct low-speed control.";
+  setModalStatus("Manual mode bypasses race timing");
+  els.direction.textContent = "Tap start";
+  els.raceTimer.textContent = "manual";
+} else if (roundId) {
   els.modalTitle.textContent = "Enter Race";
   els.modalCopy.textContent = `Sign entry for ${driverSlot}. Camera stays live once your entry is confirmed.`;
   setModalStatus("Wallet signature required");
@@ -966,3 +1238,4 @@ if (robotUrl) {
 }
 setupControls();
 setupJoystick();
+window.__pilotReady = true;

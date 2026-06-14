@@ -5,7 +5,7 @@ import "./env.js";
  * consensus verdict + the writeReport tx. No-ops cleanly until the consumer is
  * deployed (ATTESTATION_CONSUMER set).
  */
-import { createPublicClient, http, parseAbi } from "viem";
+import { createPublicClient, http, parseAbi, parseAbiItem } from "viem";
 import { sepolia } from "viem/chains";
 
 const CONSUMER = process.env.ATTESTATION_CONSUMER as `0x${string}` | undefined;
@@ -17,6 +17,9 @@ const abi = parseAbi([
   "function getAttestation(string job) view returns (uint256 score, bytes32 proofHash, uint64 timestamp, bool verified, bool exists)",
   "event AttestationVerified(string job, uint256 score, bytes32 proofHash, bool verified, uint64 timestamp)",
 ]);
+const attestationVerified = parseAbiItem(
+  "event AttestationVerified(string job, uint256 score, bytes32 proofHash, bool verified, uint64 timestamp)",
+);
 
 const pub = CONSUMER ? createPublicClient({ chain: sepolia, transport: http(RPC) }) : null;
 
@@ -40,7 +43,7 @@ export async function latest() {
     try {
       const head = await pub.getBlockNumber();
       const logs = await pub.getLogs({
-        address: CONSUMER, abi, eventName: "AttestationVerified",
+        address: CONSUMER, event: attestationVerified,
         fromBlock: head - 9000n > 0n ? head - 9000n : 0n, toBlock: "latest",
       });
       tx = logs.length ? logs[logs.length - 1].transactionHash : null;

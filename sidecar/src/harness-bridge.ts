@@ -1,6 +1,21 @@
 import { WebSocket } from "ws";
 
 type RobotName = "guard" | "courier";
+type SpeedMode = "low" | "medium" | "high";
+type DriveTarget = {
+  token: string;
+  left: number;
+  right: number;
+  speedMode: SpeedMode;
+  updatedAt: number;
+};
+type CameraTarget = {
+  token: string;
+  pan: number;
+  tilt: number;
+  speedMode: SpeedMode;
+  updatedAt: number;
+};
 
 const robot = robotName(process.env.ROBOT ?? "guard");
 const sidecarHttp = normalizeHttpUrl(process.env.SIDECAR_URL ?? "http://127.0.0.1:4021");
@@ -8,18 +23,27 @@ const sidecarWs = wsFromHttp(sidecarHttp);
 const robotHttp = normalizeHttpUrl(process.env.ROBOT_URL ?? "http://127.0.0.1:8000");
 const robotWs = wsFromHttp(robotHttp);
 const driveMode = process.env.ROBOT_DRIVE_MODE === "rest" ? "rest" : "ws";
+const wsFlushMs = positiveNumber(process.env.ROBOT_WS_FLUSH_MS, 25);
+const wsTargetStaleMs = positiveNumber(process.env.ROBOT_WS_TARGET_STALE_MS, 900);
 const telemetryMode = process.env.ROBOT_TELEMETRY_MODE === "off"
   ? "off"
   : process.env.ROBOT_TELEMETRY_MODE === "poll" ? "poll" : "ws";
 
 let sidecarSocket: WebSocket | null = null;
 let robotDrive: WebSocket | null = null;
+let robotDriveConnecting: Promise<void> | null = null;
+let robotCamera: WebSocket | null = null;
+let robotCameraConnecting: Promise<void> | null = null;
 let robotTelemetry: WebSocket | null = null;
-const authorizedTokens = new Set<string>();
+const authorizedTokens = new Map<string, SpeedMode>();
 let restDriveInFlight = false;
-let latestRestDrive: { left: number; right: number } | null = null;
+let latestRestDrive: { token: string; left: number; right: number } | null = null;
+let latestWsDrive: DriveTarget | null = null;
+let latestCamera: CameraTarget | null = null;
 
 connectSidecar();
+if (driveMode === "ws") startRobotDriveLoop();
+startRobotCameraLoop();
 if (telemetryMode !== "off") connectRobotTelemetry();
 
 function connectSidecar() {
@@ -27,10 +51,14 @@ function connectSidecar() {
   url.searchParams.set("robot", robot);
   sidecarSocket = new WebSocket(url);
   sidecarSocket.on("open", () => console.log(`harness bridge attached ${robot} -> ${sidecarHttp}`));
-  sidecarSocket.on("message", (raw) => handleSidecarControl(raw.toString()).catch((err) => {
+  sidecarSocket.on("message", (raw) => handleSidecarMessage(raw.toString()).catch((err) => {
     console.error(err instanceof Error ? err.message : err);
   }));
-  sidecarSocket.on("close", () => setTimeout(connectSidecar, 1000));
+  sidecarSocket.on("close", () => {
+    holdZeroTarget();
+    holdZeroCameraTarget();
+    setTimeout(connectSidecar, 1000);
+  });
   sidecarSocket.on("error", (err) => console.error(`sidecar robot socket: ${err.message}`));
 }
 
@@ -76,28 +104,50 @@ async function pollRobotTelemetry() {
   }
 }
 
-async function handleSidecarControl(raw: string) {
+async function handleSidecarMessage(raw: string) {
   const frame = JSON.parse(raw);
-  if (frame.type && frame.type !== "control") return;
-  const token = String(frame.token ?? "");
-  if (!token) return;
-  await ensureHarnessToken(token, frame.speed_mode);
-  if (driveMode === "rest") {
-    queueRestDrive(finite(frame.left), finite(frame.right));
+  if (frame.type === "camera-control") {
+    await handleSidecarCamera(frame);
     return;
   }
-  await ensureRobotDrive();
-  if (!robotDrive || robotDrive.readyState !== WebSocket.OPEN) return;
-  robotDrive.send(JSON.stringify({
+  if (frame.type && frame.type !== "control") return;
+  await handleSidecarControl(frame);
+}
+
+async function handleSidecarControl(frame: Record<string, unknown>) {
+  const token = String(frame.token ?? "");
+  if (!token) return;
+  const speedMode = parseSpeedMode(frame.speed_mode);
+  await ensureHarnessToken(token, speedMode);
+  if (driveMode === "rest") {
+    queueRestDrive(token, finite(frame.left), finite(frame.right));
+    return;
+  }
+  latestWsDrive = {
     token,
     left: finite(frame.left),
     right: finite(frame.right),
-    t: Date.now(),
-  }));
+    speedMode,
+    updatedAt: Date.now(),
+  };
 }
 
-function queueRestDrive(left: number, right: number) {
-  latestRestDrive = { left, right };
+async function handleSidecarCamera(frame: Record<string, unknown>) {
+  const token = String(frame.token ?? "");
+  if (!token) return;
+  const speedMode = parseSpeedMode(frame.speed_mode);
+  await ensureHarnessToken(token, speedMode);
+  latestCamera = {
+    token,
+    pan: finite(frame.pan),
+    tilt: finite(frame.tilt),
+    speedMode,
+    updatedAt: Date.now(),
+  };
+}
+
+function queueRestDrive(token: string, left: number, right: number) {
+  latestRestDrive = { token, left, right };
   void flushRestDrive();
 }
 
@@ -124,34 +174,147 @@ async function flushRestDrive() {
   }
 }
 
-async function ensureHarnessToken(token: string, speedMode: unknown) {
-  if (authorizedTokens.has(token)) return;
+async function ensureHarnessToken(token: string, speedMode: SpeedMode) {
+  const currentMode = authorizedTokens.get(token);
+  if (currentMode === speedMode) return;
+  if (currentMode) {
+    const res = await fetch(`${robotHttp}/pilot/speed-mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, speed_mode: speedMode }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new Error(json.error || `harness speed-mode failed ${res.status}`);
+    authorizedTokens.set(token, speedMode);
+    return;
+  }
   const res = await fetch(`${robotHttp}/pilot/authorize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       token,
       ttl_secs: Number(process.env.HARNESS_TOKEN_TTL_SECS ?? 300),
-      speed_mode: speedMode === "low" || speedMode === "medium" || speedMode === "high"
-        ? speedMode
-        : "medium",
+      speed_mode: speedMode,
     }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.error) throw new Error(json.error || `harness authorize failed ${res.status}`);
-  authorizedTokens.add(token);
+  authorizedTokens.set(token, speedMode);
 }
 
 async function ensureRobotDrive() {
   if (robotDrive?.readyState === WebSocket.OPEN) return;
-  robotDrive = new WebSocket(`${robotWs}/ws/drive`);
-  await new Promise<void>((resolve, reject) => {
-    robotDrive?.once("open", resolve);
-    robotDrive?.once("error", reject);
+  if (robotDriveConnecting) return robotDriveConnecting;
+  const socket = new WebSocket(`${robotWs}/ws/drive`);
+  robotDrive = socket;
+  robotDriveConnecting = new Promise<void>((resolve, reject) => {
+    socket.once("open", resolve);
+    socket.once("error", (err) => {
+      if (robotDrive === socket) robotDrive = null;
+      reject(err);
+    });
   });
-  robotDrive.on("close", () => {
-    robotDrive = null;
+  try {
+    await robotDriveConnecting;
+  } finally {
+    robotDriveConnecting = null;
+  }
+  socket.on("close", () => {
+    if (robotDrive === socket) robotDrive = null;
   });
+}
+
+async function ensureRobotCamera() {
+  if (robotCamera?.readyState === WebSocket.OPEN) return;
+  if (robotCameraConnecting) return robotCameraConnecting;
+  const socket = new WebSocket(`${robotWs}/ws/camera`);
+  robotCamera = socket;
+  robotCameraConnecting = new Promise<void>((resolve, reject) => {
+    socket.once("open", resolve);
+    socket.once("error", (err) => {
+      if (robotCamera === socket) robotCamera = null;
+      reject(err);
+    });
+  });
+  try {
+    await robotCameraConnecting;
+  } finally {
+    robotCameraConnecting = null;
+  }
+  socket.on("close", () => {
+    if (robotCamera === socket) robotCamera = null;
+  });
+}
+
+function startRobotDriveLoop() {
+  setInterval(() => {
+    void flushRobotDriveSocket();
+  }, wsFlushMs);
+}
+
+function startRobotCameraLoop() {
+  setInterval(() => {
+    void flushRobotCameraSocket();
+  }, wsFlushMs);
+}
+
+async function flushRobotDriveSocket() {
+  const target = latestWsDrive;
+  if (!target) return;
+  const stale = Date.now() - target.updatedAt > wsTargetStaleMs;
+  try {
+    await ensureRobotDrive();
+    if (!robotDrive || robotDrive.readyState !== WebSocket.OPEN) return;
+    robotDrive.send(JSON.stringify({
+      token: target.token,
+      left: stale ? 0 : target.left,
+      right: stale ? 0 : target.right,
+      speed_mode: target.speedMode,
+      t: Date.now(),
+    }));
+    if (stale && latestWsDrive === target) latestWsDrive = null;
+  } catch (err) {
+    console.error(`ws drive: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+async function flushRobotCameraSocket() {
+  const target = latestCamera;
+  if (!target) return;
+  const stale = Date.now() - target.updatedAt > wsTargetStaleMs;
+  try {
+    await ensureRobotCamera();
+    if (!robotCamera || robotCamera.readyState !== WebSocket.OPEN) return;
+    robotCamera.send(JSON.stringify({
+      token: target.token,
+      pan: stale ? 0 : target.pan,
+      tilt: stale ? 0 : target.tilt,
+      speed_mode: target.speedMode,
+    }));
+    if (stale && latestCamera === target) latestCamera = null;
+  } catch (err) {
+    console.error(`ws camera: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+function holdZeroTarget() {
+  if (!latestWsDrive) return;
+  latestWsDrive = {
+    ...latestWsDrive,
+    left: 0,
+    right: 0,
+    updatedAt: Date.now(),
+  };
+}
+
+function holdZeroCameraTarget() {
+  if (!latestCamera) return;
+  latestCamera = {
+    ...latestCamera,
+    pan: 0,
+    tilt: 0,
+    updatedAt: Date.now(),
+  };
 }
 
 function normalizeHttpUrl(value: string) {
@@ -165,6 +328,10 @@ function wsFromHttp(value: string) {
 function robotName(value: string): RobotName {
   if (value === "guard" || value === "courier") return value;
   throw new Error("ROBOT must be guard or courier");
+}
+
+function parseSpeedMode(value: unknown): SpeedMode {
+  return value === "low" || value === "medium" || value === "high" ? value : "medium";
 }
 
 function toSidecarTelemetry(frame: Record<string, any>) {
@@ -215,6 +382,11 @@ function finiteOptional(value: unknown): number | undefined {
 
 function finiteOr(value: unknown, fallback: number) {
   return finiteOptional(value) ?? fallback;
+}
+
+function positiveNumber(value: unknown, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
 function sleep(ms: number) {

@@ -28,6 +28,93 @@ ROBOT_ROLE=guard SIDECAR_URL=http://<laptop-usbnet-ip>:4021 \
   ./robot-harness/deploy/jetson-install.sh --profile usbnet --start
 ```
 
+## Reset to Good State
+
+Use this when the Jetson has drifted into a mixed state, for example Python
+`api.py` is serving port `8000`, a stale capture process owns the camera, or the
+Rust harness service is stopped. This is the deployable recovery command for a
+robot that should boot and run the Rust service.
+
+Run directly on the Jetson from the repo checkout:
+
+```bash
+./robot-harness/deploy/reset-good-state.sh \
+  --role guard \
+  --sidecar-url http://192.168.0.100:4021 \
+  --profile wifi \
+  --drive-invert
+```
+
+From the laptop, once SSH key access works:
+
+```bash
+./robot-harness/deploy/reset-jetson-over-ssh.sh jetson@172.16.2.151 \
+  --repo-dir ~/onchain-rover \
+  --role guard \
+  --sidecar-url http://192.168.0.100:4021 \
+  --profile wifi \
+  --drive-invert
+```
+
+The reset script:
+
+- stops legacy Python/Waveshare/capture owners
+- builds and installs `~/.local/bin/rover-harness`
+- rewrites `~/.config/onchain-rover/robot-harness.env`
+- installs/enables/restarts `robot-harness.service`
+- verifies `/health`, `/capabilities`, `/camera/status`, `/sensors`, and
+  `/ws/telemetry`
+- sends a final `/motors/stop`
+
+## Deploy Checker
+
+Use the standalone Rust checker from the laptop to prove each bot is deployed as
+the Rust harness, not just serving some compatible-looking HTTP endpoint.
+
+```bash
+npm run robot:deploy-check -- \
+  --bot guard=http://172.16.2.151:8000 \
+  --sidecar-url http://192.168.0.100:4021
+```
+
+Or call Cargo directly:
+
+```bash
+cargo run --manifest-path robot-harness/Cargo.toml --bin rover-deploy-check -- \
+  --bot guard=http://172.16.2.151:8000 \
+  --bot courier=http://192.168.0.192:8000 \
+  --sidecar-url http://192.168.0.100:4021
+```
+
+The checker validates:
+
+- `GET /health`
+- Rust-only `GET /capabilities`
+- Rust-only `GET /sensors`
+- `GET /camera/status`
+- `GET /stream`
+- `WS /ws/telemetry`
+- final `POST /motors/stop`
+
+If a bot is still running the legacy Python API, the checker fails and prints
+the exact `reset-jetson-over-ssh.sh` command for that robot.
+
+## Stage Reset Config
+
+`robot-harness/deploy/stage-targets.json` records the current stage URLs and
+role-specific install flags. Treat the configured URLs as hints, not proof. The
+checker proves the robot role from `/health`; the reset scripts write the role
+env explicitly on the Jetson.
+
+Current stage URLs:
+
+- `guard`: `http://172.16.2.151:8000`
+- `courier`: `http://192.168.0.192:8000`
+
+Courier USB at `http://192.168.55.1:8000` is a recovery fallback only. Put it
+behind the TP-Link URL in config so sidecar and deploy checks do not settle on
+USB during normal operation.
+
 The script builds `target/release/rover-harness`, installs it to
 `~/.local/bin/rover-harness`, writes
 `~/.config/onchain-rover/robot-harness.env`, installs
@@ -51,6 +138,8 @@ ROVER_LISTEN=0.0.0.0:8000
 ROVER_MODE=serial
 ROVER_SERIAL_PORT=/dev/ttyTHS1
 ROVER_SERIAL_BAUD=115200
+ROVER_DRIVE_INVERT=true
+ROVER_DRIVE_SWAP=false
 ROVER_CAMERA_DEVICE=/dev/video0
 ROVER_LIDAR_ENABLED=true
 ROVER_LIDAR_PORT=/dev/ttyACM0

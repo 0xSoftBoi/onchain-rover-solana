@@ -1,7 +1,8 @@
 # Rover Harness
 
 Rust race-mode service for one Jetson rover. It is the hardware boundary for
-serial control, pilot tokens, deadman safety, speed caps, and telemetry.
+serial control, camera/lidar hooks, pilot tokens, deadman safety, speed caps,
+estop, camera aim, and telemetry.
 
 ## Local simulation
 
@@ -56,7 +57,8 @@ The USB lidar is read directly by the Rust harness. The current hardware uses
 an LD06/LD19-compatible binary stream on `/dev/ttyACM0` at `230400` baud. Set
 `ROVER_LIDAR_ENABLED=false` to run without it, or adjust
 `ROVER_LIDAR_BLOCK_THRESHOLD_M` when the finish/obstacle threshold needs to
-move from the default `0.30m`.
+move from the default `0.30m`. Use `ROVER_LIDAR_MIN_VALID_M` and
+`ROVER_LIDAR_MASK_DEG` when the rover body or mount self-occludes the scan.
 
 Camera endpoints are controlled by environment. In sim mode, the Rust server
 returns a deterministic synthetic camera stream for local tests. In serial mode,
@@ -95,6 +97,7 @@ deferred until the Jetson camera stack is stable.
 - `POST /estop`
 - `POST /estop/reset`
 - `WS /ws/drive`
+- `WS /ws/camera`
 - `WS /ws/telemetry`
 
 `GET /sensors`, `GET /telemetry`, and `WS /ws/telemetry` expose the same
@@ -132,6 +135,32 @@ are crossed.
 `POST /stop` and `POST /estop` are latching hard stops. Use
 `POST /estop/reset` to allow future drive commands again. Use
 `POST /motors/stop` for a non-latching zero-speed command.
+
+## Sidecar Bridge
+
+The browser should normally connect to the sidecar, not directly to the Jetson.
+The sidecar issues a delegated session token and returns `driveWs`,
+`webrtcOfferUrl`, `cameraWs`, `telemetryWs`, `streamUrl`, `speedModeUrl`, and
+`stopUrl`. `sidecar/src/harness-bridge.ts` then adapts the sidecar `/ws/robot`
+contract to this service's `/pilot/authorize`, `/pilot/speed-mode`,
+`/ws/drive`, `/ws/camera`, and `/ws/telemetry` endpoints.
+
+Local bridge smoke:
+
+```bash
+cd sidecar
+ALLOW_FREE_PILOT=1 SIDECAR_URL=http://127.0.0.1:4021 npm start
+SIDECAR_URL=http://127.0.0.1:4021 npm run e2e:harness-bridge
+```
+
+Stage deploy proof from the laptop:
+
+```bash
+npm run robot:deploy-check -- \
+  --bot guard=http://172.16.2.151:8000 \
+  --bot courier=http://192.168.0.192:8000 \
+  --sidecar-url http://192.168.0.100:4021
+```
 
 ## Physical Drive Smoke
 

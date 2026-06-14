@@ -1,10 +1,16 @@
 # The Onchain Rover — Robotics Stack
 
-This documents the **autonomy stack** behind the rovers, independent of the crypto
-rails. The headline: Act 1 ("The Checkpoint") runs a genuinely state-of-the-art
-embodied-AI pipeline — a **navigation foundation model**, an **embodied-reasoning
-VLM**, and a **hierarchical multi-agent OS** — on two Waveshare UGVs (Jetson Orin
-NX, ESP32 motor control, stereo/USB camera).
+This documents the **Act 1 autonomy stack** behind the rovers, independent of
+the race/pilot rails. The headline: Act 1 ("The Checkpoint") runs a genuinely
+state-of-the-art embodied-AI pipeline — a **navigation foundation model**, an
+**embodied-reasoning VLM**, and a **hierarchical multi-agent OS** — on two
+Waveshare UGVs (Jetson Orin NX, ESP32 motor control, stereo/USB camera).
+
+The current Clanker500 GP race runtime is separate: `robot-harness` is the Rust
+service that owns motors, sensors, pilot tokens, speed caps, deadman, estop, and
+telemetry on each Jetson. This Python autonomy stack is an alternate hardware
+owner for checkpoint work; stop the Rust service before letting `agent.py` or
+`api.py` own `/dev/ttyTHS1` or `/dev/video0`.
 
 > **Why not "just drop in a VLA"?** Almost every flagship VLA (GR00T, Pi0, SmolVLA,
 > OpenVLA, G0Tiny) is trained for **manipulation/humanoid arms** — they output
@@ -17,24 +23,28 @@ NX, ESP32 motor control, stereo/USB camera).
 
 ## Architecture
 
-Heavy models run **off-board on a laptop GPU** (LeRobot async pattern); the Jetson
-runs only the real-time control loop. Each box is one file in `robot/`.
+Heavy models run **off-board on a laptop GPU** (LeRobot async pattern); the
+Jetson runs only the real-time control loop. Each autonomy box is one file in
+`robot/`.
 
 ```mermaid
 flowchart TB
     task(["🗣️ Natural-language task"]) --> Brain
-    subgraph CLOUD["☁️ Off-board · laptop GPU"]
+    subgraph CLOUD["Off-board laptop GPU"]
       direction TB
       Brain["<b>RoboOS Master · Brain</b><br/>MLLM · task decomposition + routing"]
       RB["<b>brain_service.py</b><br/>RoboBrain 2.0 VLM<br/><i>where is the target?</i>"]
       NM["<b>nav_policy_server.py</b><br/>NoMaD / ViNT foundation model<br/><i>how do I steer?</i>"]
     end
-    subgraph EDGE["🤖 On Jetson Orin NX"]
+    subgraph EDGE["Jetson Orin NX - autonomy owner"]
       direction TB
       AG["<b>agent.py · NomadNavigator</b><br/>Act 1 goal executor"]
       BR["<b>ros2_bridge.py</b><br/>/cmd_vel ⇄ /odom + TF"]
       RV["<b>rover.py</b><br/>ESP32 serial · drive · turn · bump"]
       MEM[("<b>roboos_memory.py</b><br/>Real-Time Shared Memory")]
+    end
+    subgraph RACE["Jetson Orin NX - race owner"]
+      RH["<b>robot-harness</b><br/>pilot tokens · deadman · sensors"]
     end
     Brain -->|subtasks| AG
     AG -->|"/think {img, goal}"| RB
@@ -43,17 +53,20 @@ flowchart TB
     NM -->|"steer (v, w)"| AG
     AG --> BR --> RV
     MEM <-->|"pose / state"| AG
+    RH -.->|"alternate owner; stop before autonomy"| RV
     classDef cloud fill:#1e293b,stroke:#38bdf8,color:#e2e8f0;
     classDef edge fill:#14532d,stroke:#4ade80,color:#dcfce7;
+    classDef race fill:#422006,stroke:#facc15,color:#fef9c3;
     class Brain,RB,NM cloud;
     class AG,BR,RV,MEM edge;
+    class RH race;
 ```
 
 ### The control loop (one `agent.py` iteration, ~4 Hz)
 
 ```mermaid
 flowchart LR
-    CAM["📷 camera.py<br/>live frame"] --> AG
+    CAM["camera.py<br/>live frame"] --> AG
     AG["agent.py loop<br/>~4 Hz"] -->|"frame"| NM["NoMaD<br/>steer (v,w)"]
     AG -->|"frame + goal"| RB["RoboBrain<br/>bearing + arrived"]
     NM --> MIX["twist_to_wheels<br/>(v, w+bias) → L,R"]
@@ -61,7 +74,7 @@ flowchart LR
     MIX --> RV["rover.py<br/>drive(L,R)"]
     RV --> ODO["wheel odometry<br/>distance covered"]
     ODO -->|"goal reached?"| AG
-    RV -.->|"bumped()"| STOP(["🛑 hard stop"])
+    RV -.->|"bumped()"| STOP(["hard stop"])
 ```
 
 ### Design principle — graceful degradation
@@ -72,19 +85,19 @@ Act 2 (Rover GP, human-piloted) and the generic `/task` hire flow are untouched.
 
 ```mermaid
 flowchart LR
-    subgraph NAV["🧭 Navigation"]
+    subgraph NAV["Navigation"]
       direction TB
       n1["NoMaD foundation model"] -->|stack down| n2["Nav2 / Isaac ROS"] -->|stack down| n3["Closed-loop gyro primitives"]
     end
-    subgraph SEM["🎯 Semantics"]
+    subgraph SEM["Semantics"]
       direction TB
       s1["RoboBrain goal direction"] -->|down| s2["Pure NoMaD exploration"]
     end
-    subgraph COORD["🤝 Coordination"]
+    subgraph COORD["Coordination"]
       direction TB
       c1["RoboOS + Redis"] -->|down| c2["In-process shared memory"]
     end
-    n3 -.->|always drives| OK(["✅ Demo keeps running"])
+    n3 -.->|always drives| OK(["Demo keeps running"])
     s2 -.-> OK
     c2 -.-> OK
     classDef good fill:#14532d,stroke:#4ade80,color:#dcfce7;
@@ -160,11 +173,11 @@ interaction (not a scripted handshake).
 ```mermaid
 sequenceDiagram
     autonumber
-    participant B as 🧠 Brain (RoboOS)
-    participant C as 🚚 Courier
-    participant G as 🛡️ Guard
-    participant M as 🗂️ Shared Memory
-    participant X as ⛓️ x402 / Arc
+    participant B as Brain (RoboOS)
+    participant C as Courier
+    participant G as Guard
+    participant M as Shared Memory
+    participant X as x402 / Arc
     B->>C: navigate_to_target("checkpoint")
     activate C
     C->>C: NoMaD steer + RoboBrain bearing
@@ -180,7 +193,7 @@ sequenceDiagram
     G->>M: update(action=admitted)
     G->>G: admit (open checkpoint)
     deactivate G
-    M-->>C: wait_for(guard, admitted) ✓
+    M-->>C: wait_for(guard, admitted)
     C->>X: capture + Walrus proof + ERC-8004 feedback
 ```
 

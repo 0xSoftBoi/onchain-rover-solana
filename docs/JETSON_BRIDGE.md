@@ -13,18 +13,20 @@ COURIER (mobile).
                                │                              │
 ┌── JETSON (each robot) ───────┴────────────┐   ┌─ LAPTOP ────┴───────────┐
 │ robot-harness Rust :8000  (LAN only)      │   │ sidecar/  Express :4021 │
-│   owns motors, sensors, camera hooks       │◄──┤   x402 Gateway middleware│
+│   owns motors, sensors, camera hooks       │◄──┤   x402 + pilot bridge    │
 │   owns /dev/ttyTHS1 + /dev/video0         │   │   (PUBLIC paid surface)  │
-│ ollama :11434 (gemma3:1b planner)         │   │ web/      Next.js :3000 │
+│ ollama :11434 (gemma3:1b planner)         │   │ sidecar/public browser UI│
 │ piper-tts (voice), ggwave (GibberLink)    │   └─────────────────────────┘
 └────────────────────────────────────────────┘
 ```
 
-- **Public entry point is the sidecar (`:4021`)** — every paid route sits behind
+- **Public entry point is the sidecar (`:4021`)** — paid routes sit behind
   Circle's `createGatewayMiddleware` (x402 nanopayments, Arc testnet
-  `eip155:5042002`). On successful payment it proxies to the robot's FastAPI.
-- **Robot FastAPI (`:8000`) is LAN-only, never exposed** — it has no auth; the
-  payment layer IS the auth. Bind it to the LAN interface, firewall from venue.
+  `eip155:5042002`), and pilot sessions are delegated by the sidecar.
+- **Robot harness (`:8000`) is LAN-only, never exposed** — it enforces pilot
+  tokens, speed caps, deadman, estop, camera aim, and telemetry, but the public
+  payment/session layer lives in the sidecar. Bind it to the LAN interface,
+  firewall it from the venue network, and bridge it through the sidecar.
 - Sidecar runs on the **laptop**, not the Jetson (Node 22 + keys stay off the
   robots; robots stay swappable).
 
@@ -69,9 +71,11 @@ COURIER (mobile).
 Rust rover server exposes (each robot):
 `GET /capabilities` · `GET /health` · `GET /telemetry` · `GET /sensors` ·
 `GET /camera/status` · `GET /camera/snapshot` · `GET /stream` ·
+`POST /capture` ·
 `POST /pilot/authorize` · `POST /pilot/speed-mode` · `POST /drive` ·
 `POST /motors/drive` · `POST /motors/stop` · `POST /estop` ·
-`POST /estop/reset` · `WS /ws/drive` · `WS /ws/telemetry`
+`POST /estop/reset` · `WS /ws/drive` · `WS /ws/camera` ·
+`WS /ws/telemetry`
 
 Sensor contract: `/sensors`, `/telemetry`, and `WS /ws/telemetry` all carry
 `sensors.battery`, `sensors.odometry`, `sensors.imu`, `sensors.lidar`,
@@ -90,8 +94,12 @@ Node sidecar exposes:
 `GET /ens/resolve` · `POST /ens/issue` · `GET /nft/holds/:addr` · `GET /leaderboard`
 plus the **paid public routes** `POST /task/:robot` (x402-gated → proxies to
 that robot's `/seek`+`/capture`+proof pipeline).
-The sidecar `/robot/:robot/stream` route relays the Rust robot stream response;
-it does not synthesize a field camera image.
+For race control it also exposes `POST /pilot/dev-authorize` for local testing,
+`POST /race/round/:id/pilot/session` for delegated round sessions,
+`POST /pilot/webrtc/offer` for the WebRTC `drive` DataChannel, `WS /ws/drive`,
+`WS /ws/camera`, `WS /ws/telemetry`, and `WS /ws/robot`. The sidecar
+`/robot/:robot/stream` route relays the Rust robot stream response; it does not
+synthesize a field camera image.
 
 The checkpoint orchestrator (`robot/checkpoint.py`, runs on GUARD) sequences the
 locked 90-second demo by calling both APIs.

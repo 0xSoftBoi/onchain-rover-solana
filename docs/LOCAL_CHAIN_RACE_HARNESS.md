@@ -15,7 +15,9 @@ addresses for the sidecar, and proves the entry/fee/payout path without robots.
 - `sidecar/src/sim-robot.ts`: simulator client that connects to the sidecar bridge as `guard` or `courier`.
 - `sidecar/src/evidence.ts`: canonical race evidence packets and SHA-256 proof hashes.
 - `sidecar/src/race-store.ts`: local durable race ledger under `sidecar/data/races`.
-- `sidecar/web-src/pilot-app.ts`: camera-first phone UI; race payment appears only as a modal when a `round` query parameter is present.
+- `sidecar/web-src/pilot-app.ts`: legacy camera-first phone UI; race payment appears only as a modal when a `round` query parameter is present.
+- `sidecar/web-src/pilot-react.tsx`: React pilot UI with WebRTC DataChannel
+  control by default and WebSocket fallback.
 
 ## Commands
 
@@ -23,12 +25,52 @@ addresses for the sidecar, and proves the entry/fee/payout path without robots.
 npm --prefix chain install
 npm run chain:compile
 npm run chain:test
+npm run compose:up
+npm run compose:logs
 npm run e2e:local-race
 npm run e2e:sidecar-round
 npm run e2e:dev-join
 npm run e2e:harness-bridge
 npm run e2e:field-sim
 ```
+
+## Docker Compose
+
+Use the root compose file when the sidecar should own the local chain lifecycle:
+
+```bash
+docker compose up --wait
+```
+
+This starts:
+
+- `chain`: Hardhat on `0.0.0.0:8545`, then deploys `MockRaceToken` and
+  `RaceEscrow`.
+- `sidecar`: Express on `:4021`, after the chain deployment is healthy.
+
+The chain service writes `sidecar/src/generated/contracts.local.json` after
+deployment. Inside Docker, sidecar uses `LOCAL_CHAIN_RPC_URL=http://chain:8545`;
+the exported deployment still points host tools at `http://127.0.0.1:8545`.
+
+The compose defaults are public-safe: `ALLOW_FREE_PILOT=0` and
+`ALLOW_LOCAL_DEV_WALLETS=0`. For laptop-only rehearsals, opt in explicitly:
+
+```bash
+COMPOSE_ALLOW_LOCAL_DEV_WALLETS=1 COMPOSE_ALLOW_FREE_PILOT=1 docker compose up --wait
+```
+
+If port `4021` is already used by a local sidecar, run the composed sidecar on
+another host port:
+
+```bash
+COMPOSE_SIDECAR_PORT=4026 \
+COMPOSE_PUBLIC_SIDECAR_URL=http://127.0.0.1:4026 \
+docker compose up --wait
+```
+
+For internet visibility, put a stable HTTPS tunnel in front of the sidecar and
+set `COMPOSE_PUBLIC_SIDECAR_URL` to that URL before starting compose. Do not set
+`COMPOSE_ALLOW_FREE_PILOT=1` on a public tunnel.
 
 For manual sidecar development:
 
@@ -117,6 +159,11 @@ after a restart.
 - `GET /race/round/:id/stake/settlement-plan`: after finish, return the loser-only charge, winner payout, and spender execution plan for the verified stake permission.
 - `POST /race/round/:id/chain/start`: mark the on-chain race started.
 - `POST /race/round/:id/chain/settle`: finish and settle payout after the local round has a winner.
+- `GET /race/round/:id/operator/settlement-preflight`: explain whether an
+  operator-selected winner can be settled on-chain.
+- `POST /race/round/:id/operator/settle-winner`: idempotently finish, hash
+  evidence, submit `finishRace`, and submit settlement for an operator-selected
+  winner.
 - `POST /race/round/:id/chain/cancel`: cancel and refund stakes.
 - `POST /race/round/:id/cancel`: local cancel with explicit `code` and `reason`; stores fee policy and per-driver stake authorization status.
 - `GET /treasury/local`: local treasury fee balance.
@@ -126,9 +173,17 @@ after a restart.
 - `POST /race/round/:id/finish-detection`: finish camera, robot, lidar, or simulator event; auto-finishes by default.
 - `GET /race/round/:id/finish-detections`: recorded finish detector events for the round.
 - `GET /robot-link/state`: current bridge sessions, attached robots, telemetry, and last command.
-- `WS /ws/drive?robot=<guard|courier>&token=<token>`: phone control socket issued by `/pilot/dev-authorize`.
+- `POST /pilot/dev-authorize`: local-only delegated bridge session, gated by
+  `ALLOW_FREE_PILOT=1`.
+- `POST /pilot/webrtc/offer`: sidecar WebRTC answer endpoint for the `drive`
+  DataChannel. Response includes `{ answer, iceServers: [] }`.
+- `WS /ws/drive?robot=<guard|courier>&token=<token>`: phone control socket
+  issued by `/pilot/dev-authorize` or `/race/round/:id/pilot/session`.
+- `WS /ws/camera?robot=<guard|courier>&token=<token>`: optional camera pan/tilt
+  control socket bridged to the Rust harness.
 - `WS /ws/telemetry?robot=<guard|courier>`: phone telemetry stream.
 - `WS /ws/robot?robot=<guard|courier>`: robot or simulator attachment point.
+- `GET /robot/:robot/stream`: sidecar proxy for the robot MJPEG stream.
 - `POST /robot/:robot/stop`: sidecar stop command for an active pilot session.
 - `POST /robot/:robot/pilot/speed-mode`: switch low, medium, or high speed caps.
 
@@ -139,7 +194,12 @@ Use the pilot page with a round and slot:
 ```text
 /pilot.html?robot=guard&round=<roundId>&slot=challenger
 /pilot.html?robot=courier&round=<roundId>&slot=opponent
+/pilot-react.html?robot=guard&round=<roundId>&slot=challenger&transport=webrtc
 ```
+
+`pilot-react.html` defaults to `transport=webrtc`. Add `transport=ws` to force
+the legacy control socket. Both pilot pages consume the same delegated session
+response from `/race/round/:id/pilot/session`.
 
 The Start modal:
 
@@ -159,7 +219,8 @@ bridge. This keeps pre-hardware testing close to the final phone-shaped flow.
 
 ## Robot Link Contract
 
-Phone controls send JSON to `/ws/drive`:
+Phone controls send the same JSON either over the WebRTC `drive` DataChannel
+or over `/ws/drive`:
 
 ```json
 { "left": 0.2, "right": 0.2, "token": "...", "speed_mode": "medium", "t": 1760000000000 }
@@ -199,6 +260,12 @@ Robots send telemetry back on `/ws/robot`:
   "camera": { "status": "simulated" },
   "lidar": { "front_m": 1.2, "min_m": 1.0, "blocked": false }
 }
+```
+
+Camera aim commands use `WS /ws/camera` and are bridged to the Rust harness:
+
+```json
+{ "pan": 0.15, "tilt": -0.1, "token": "...", "speed_mode": "medium", "t": 1760000000000 }
 ```
 
 If the phone disconnects or command frames stop for more than `deadman_ms`, the
@@ -464,7 +531,16 @@ POST /race/round/:id/pilot/session
 
 The sidecar only issues that bridge token when the slot is joined/authorized and
 the round is locked, counting down, or racing. If a locked round has no
-scheduled start, the endpoint refuses to mint a drivable token.
+scheduled start, the endpoint refuses to mint a drivable token. The response
+includes:
+
+- `driveWs`: WebSocket control fallback.
+- `webrtcOfferUrl`: WebRTC SDP offer endpoint for the `drive` DataChannel.
+- `cameraWs`: camera aim socket.
+- `telemetryWs`: sidecar telemetry stream.
+- `streamUrl`: MJPEG camera URL, usually the sidecar `/robot/:robot/stream`
+  proxy.
+- `speedModeUrl` and `stopUrl`: speed cap and stop controls.
 
 ## Camera And Lidar Finish Adapters
 
@@ -512,9 +588,9 @@ finish confirmation.
 
 ## Robot Harness Bridge
 
-The Rust `robot-harness` exposes its own `/ws/drive` and `/ws/telemetry`
-contract. `sidecar/src/harness-bridge.ts` adapts that to the sidecar's
-`/ws/robot` bridge socket:
+The Rust `robot-harness` exposes its own `/ws/drive`, `/ws/camera`, and
+`/ws/telemetry` contract. `sidecar/src/harness-bridge.ts` adapts that to the
+sidecar's `/ws/robot` bridge socket:
 
 ```bash
 cd sidecar

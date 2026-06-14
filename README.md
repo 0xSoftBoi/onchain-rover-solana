@@ -16,89 +16,94 @@ whole time.
 ```
 
 ## The two acts
-- **Act 1 — The Checkpoint:** a courier robot is hired, drives to the guard
+- **Act 1 - The Checkpoint:** a courier robot is hired, drives to the guard
   robot, they greet in speech then **switch to GibberLink** (data-over-sound);
   the guard verifies it **on-chain** (signed challenge + AgentBook human-backing +
-  ERC-8004 + EventPass) → rejects it → the robots run a **Texas-auctioneer Dutch
-  auction** to negotiate the pass price → pay + mint on Arc → admitted → proof to
-  Walrus → reputation ticks up.
-- **Act 2 — Clanker500 GP:** spectators **pay to pilot** the rovers ($1 x402 sessions,
-  WebSocket joystick + deadman) and **bet USDC** on a fruit-obstacle drag race
-  (parimutuel, **one bet per human via real World ID**), settled on-chain by the
-  guard robot's Walrus-anchored finish photo.
+  ERC-8004 + EventPass) -> rejects it -> the robots run a **Texas-auctioneer Dutch
+  auction** to negotiate the pass price -> pay + mint on Arc -> admitted -> proof to
+  Walrus -> reputation ticks up.
+- **Act 2 - Clanker500 GP:** spectators **pay to pilot** the rovers through x402
+  sessions. The current control path is sidecar-mediated: the browser gets a
+  delegated pilot token, sends drive over WebRTC DataChannel by default with a
+  WebSocket fallback, and the Rust `robot-harness` enforces speed caps, deadman,
+  estop, telemetry, camera, and lidar contracts on each Jetson.
 - **Climax:** withdrawing the fleet's earnings **blocks** until a human
   clear-signs on a **Ledger** (ERC-7730: "Withdraw N USDC → recipient").
 
-## Autonomy stack
+## Current race runtime
 
-Act 1 isn't a scripted handshake — it runs a state-of-the-art embodied-AI pipeline:
-a **navigation foundation model** (NoMaD/ViNT) for control, an **embodied-reasoning
-VLM** (RoboBrain 2.0) for semantic goals, and a **hierarchical multi-agent OS**
-(RoboOS) for Guard⇄Courier coordination. Heavy models run off-board on a laptop GPU
-(LeRobot async pattern); the Jetson runs only the real-time loop. Full write-up in
-**[ROBOTICS.md](ROBOTICS.md)**.
+The fielded race path is centered on the Node sidecar and Rust rover harness.
+The older Python autonomy stack still exists for Act 1 checkpoint work; it is
+documented separately in **[ROBOTICS.md](ROBOTICS.md)** because it cannot own the
+same serial and camera devices at the same time as `robot-harness`.
 
 ```mermaid
 flowchart TB
-    task(["🗣️ Natural-language task"]) --> Brain
-    subgraph CLOUD["☁️ Off-board · laptop GPU"]
+    Phone["Phone pilot UI<br/>pilot.html or pilot-react.html"] -->|"WebRTC DataChannel<br/>or WS fallback"| Sidecar
+    Operator["Operator screens<br/>round.html, field.html, finish-camera.html"] --> Sidecar
+    Agent["agent-client<br/>paid /task hire"] --> Sidecar
+
+    subgraph LAPTOP["Laptop / operator host"]
       direction TB
-      Brain["<b>RoboOS Master · Brain</b><br/>MLLM · task decomposition + routing"]
-      RB["<b>brain_service.py</b><br/>RoboBrain 2.0 VLM<br/><i>where is the target?</i>"]
-      NM["<b>nav_policy_server.py</b><br/>NoMaD / ViNT foundation model<br/><i>how do I steer?</i>"]
+      Sidecar["sidecar/src/index.ts<br/>Express :4021<br/>x402, rounds, evidence, telemetry"]
+      Chain["Hardhat local chain<br/>MockRaceToken + RaceEscrow"]
+      Store["sidecar/data/races<br/>round, evidence, telemetry trace"]
+      Bridge["harness-bridge.ts<br/>/ws/robot adapter"]
     end
-    subgraph EDGE["🤖 On Jetson Orin NX"]
+
+    subgraph JETSONS["Each Jetson rover"]
       direction TB
-      AG["<b>agent.py · NomadNavigator</b><br/>Act 1 goal executor"]
-      BR["<b>ros2_bridge.py</b><br/>/cmd_vel ⇄ /odom + TF"]
-      RV["<b>rover.py</b><br/>ESP32 serial · drive · turn · bump"]
-      MEM[("<b>roboos_memory.py</b><br/>Real-Time Shared Memory")]
+      Harness["robot-harness<br/>Rust :8000"]
+      Serial["ESP32 serial<br/>/dev/ttyTHS1"]
+      Sensors["camera + lidar + IMU<br/>/dev/video0, /dev/ttyACM0"]
     end
-    Brain -->|subtasks| AG
-    AG -->|"/think {img, goal}"| RB
-    RB -->|"bearing + arrived"| AG
-    AG -->|"/infer {img}"| NM
-    NM -->|"steer (v, w)"| AG
-    AG --> BR --> RV
-    MEM <-->|"pose / state"| AG
-    classDef cloud fill:#1e293b,stroke:#38bdf8,color:#e2e8f0;
-    classDef edge fill:#14532d,stroke:#4ade80,color:#dcfce7;
-    class Brain,RB,NM cloud;
-    class AG,BR,RV,MEM edge;
+
+    Sidecar --> Chain
+    Sidecar --> Store
+    Sidecar <-->|"/ws/robot"| Bridge
+    Bridge -->|"/ws/drive, /ws/camera"| Harness
+    Harness --> Serial
+    Harness --> Sensors
+    Harness -->|"/ws/telemetry"| Bridge
 ```
 
-### Act 1 — "The Checkpoint" end-to-end
+### Clanker500 GP race flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant B as 🧠 Brain (RoboOS)
-    participant C as 🚚 Courier
-    participant G as 🛡️ Guard
-    participant M as 🗂️ Shared Memory
-    participant X as ⛓️ x402 / Arc
-    B->>C: navigate_to_target("checkpoint")
-    activate C
-    C->>C: NoMaD steer + RoboBrain bearing
-    C->>M: update(action=at_checkpoint, pose)
-    C->>G: announce_identity (signed challenge)
-    deactivate C
-    activate G
-    G->>X: verify_agent (ERC-8004 + pass NFT)
-    alt courier not verified
-        G-->>C: deny + negotiate_price (Dutch auction)
-        C->>X: pay_for_passage(agreed price)
+    participant A as Challenger phone
+    participant B as Opponent phone
+    participant S as Sidecar :4021
+    participant C as RaceEscrow
+    participant R as robot-harness
+    participant O as Operator / detector
+    A->>S: create round + pay fixed x402 fee
+    B->>S: accept round + pay fixed x402 fee
+    S->>C: open race
+    A->>S: sign entry + permit typed data
+    B->>S: sign entry + permit typed data
+    S->>C: join, lock, start
+    S-->>A: delegated pilot session + WebRTC offer URL
+    S-->>B: delegated pilot session + WebRTC offer URL
+    A->>S: drive frames over WebRTC or WS
+    B->>S: drive frames over WebRTC or WS
+    S->>R: bridge commands to /ws/drive
+    R-->>S: telemetry, camera, lidar, odometry
+    alt automatic finish
+        R-->>S: telemetry crosses finish threshold
+        S->>S: record finish detection + proof hash
+    else operator-confirmed finish
+        O->>S: choose winner or settle winner
+        S->>S: capture proof frame + evidence hash
     end
-    G->>M: update(action=admitted)
-    G->>G: admit (open checkpoint)
-    deactivate G
-    M-->>C: wait_for(guard, admitted) ✓
-    C->>X: capture + Walrus proof + ERC-8004 feedback
+    S->>C: finish + settle payout
+    S-->>O: persisted round, trace, proof frame
 ```
 
-## What's real (not mocked)
-Every integration is real code — on-chain reads/writes or real signatures, no
-fake data (`grep` the repo: no `Math.random` nullifiers, no stubs):
+## What's real
+The sponsor integrations are real code paths. The repo also has explicit local
+simulators and dev-wallet gates for rehearsing without hardware or public funds:
 - **Identity** — robots sign challenges with their own EOA keys (verified by
   recovery); **live AgentBook reads** on World Chain for human-backing.
 - **World ID** — real IDKit proof → World cloud verifier → real nullifier; every
@@ -146,54 +151,85 @@ already deployed and `/attest` serves 85/100), and **GCP creds** for the BigQuer
 leaderboard. Everything else above is live.
 
 ## Layout
-- `robot/` — Python on each Jetson. `api.py` (FastAPI :8000 + MJPEG `/stream` +
-  pilot WS + heartbeat), `rover.py` (serial bridge), `agent.py` (LLM task loop),
-  `camera.py` (shared capture), `perception.py` (Gemini seek + AprilTag),
-  `negotiate.py` (Dutch auction), `finish_line.py` (race judge), `gibber.py`
-  (GibberLink), `voice.py` (espeak), `proof.py` (Walrus), `checkpoint.py` (Act 1).
-  `GET /attest` = the verifiable work score the Chainlink DON consumes.
-- `sidecar/` — Node 22 + TS (:4021). x402 Gateway paid surface, `identity.ts`
-  (signed challenge + AgentBook), `worldid.ts` (real verify, World ID 4.0 RP),
-  `settle.ts` (Arc pay/mint/reputation/race/treasury, custody router), `privy.ts`
-  (TEE-signed accounts), `cre.ts` (reads the DON verdict), `bigquery.ts` (network
-  reputation), `ens.ts`. Scripts: `deploy-{eventpass,reputation,treasury,consumer}.ts`,
-  `ledger-handover.ts`, `privy-provision.ts`, `register-ens.ts`, `go-live.ts`.
+- `robot-harness/` - Rust service for each Jetson. It owns `/dev/ttyTHS1`,
+  camera/lidar hooks, pilot tokens, deadman, speed caps, estop, and
+  `/ws/drive`/`/ws/camera`/`/ws/telemetry`. Deployment and recovery live in
+  `robot-harness/deploy/`.
+- `sidecar/` - Node 22 + TS (:4021). x402 paid routes, local race rounds,
+  sidecar-owned pilot sessions, WebRTC/WS control bridge, telemetry traces,
+  local chain routes, field preflight, evidence packets, and operator settlement.
+  `harness-bridge.ts` adapts each Rust rover to the sidecar `/ws/robot` socket.
 - `sidecar/public/` — **`wall.html`** the FLEET COMMAND master wall (cinematic
   big-screen view: cognition stream, on-chain ledger, holo dials, Walrus proof,
-  CRE oracle), `index.html` mission control, `broadcast.html`, `race.html`
-  (betting), `pilot.html` (joystick), `ledger.html` (clear-sign treasury).
+  CRE oracle), `round.html`/`lobby.html` for the operator race board,
+  `field.html` for preflight, `finish-camera.html`, `pilot.html`,
+  `pilot-react.html`, `show-links.html`, `race.html`, and `ledger.html`.
+- `chain/` - Hardhat local-chain project for `MockRaceToken` and `RaceEscrow`;
+  deployment exports `sidecar/src/generated/contracts.local.json`.
+- `robot/` - Python Act 1/autonomy stack. It still contains the FastAPI robot
+  API, serial wrapper, NoMaD/RoboBrain/RoboOS integration, GibberLink, speech,
+  proof, and checkpoint code, but it is an alternate hardware owner to the Rust
+  harness.
 - `contracts/` — `EventPass.sol`, `ReputationRegistry.sol`, `RaceMarket.sol`,
   `Treasury.sol`, `AttestationConsumer.sol`, `erc7730/treasury.json`.
 - `cre-workflow/` — Chainlink CRE workflow (`main.ts` + `config.json` + `SETUP.md`).
-- `DEMO_RUNBOOK.md` — the timed 3-minute script.
-  `docs/HARDWARE_BRINGUP.md` — cold-boot rover readiness runbook.
-  `docs/JETSON_BRIDGE.md` — bridge spec.
+- `docs/LOCAL_CHAIN_RACE_HARNESS.md` - local chain, Compose, phone flow,
+  robot-link, evidence, sensor replay, and field simulator runbook.
+- `docs/HARDWARE_BRINGUP.md` - cold-boot rover readiness runbook.
+  `docs/JETSON_BRIDGE.md` - robot/sidecar boundary.
 - `ROBOTICS.md` — autonomy stack (NoMaD nav foundation model, RoboBrain brain, RoboOS multi-agent).
 
 ## Run
 ```bash
-# each Jetson (stop the stock app first):
-pgrep -f '[a]pp.py' | xargs -r kill
-ROBOT_ROLE=guard SIDECAR_URL=http://<laptop-ip>:4021 \
-  ~/ugv_jetson/ugv-env/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000
-
-# laptop:
-cd sidecar && npm i && npm run build:ledger
-node --import tsx src/preflight.ts      # readiness board
-node --import tsx src/index.ts          # sidecar + dashboards on :4021
-
-# once funded (Circle booth / faucets):
-npx tsx src/register-ens.ts             # real ENS on Sepolia
-npx tsx src/go-live.ts                  # deploy contracts + run the full on-chain loop
+# local chain + sidecar in containers
+npm install
+npm run compose:up
+npm run compose:logs
 ```
 
 ```bash
-# deep integrations (once their creds/funds are in .env):
-npx tsx src/deploy-consumer.ts          # AttestationConsumer → Sepolia (CRE)
-npx tsx src/privy-provision.ts          # Privy TEE wallets; set CUSTODY=privy
-npx tsx src/ledger-handover.ts 0x<dev>  # treasury owner → your Ledger + gas
-# CRE: see cre-workflow/SETUP.md (cre login + simulate --broadcast)
+# manual local sidecar development
+npm --prefix chain install
+npm --prefix sidecar install
+npm run chain:node
+npm run chain:deploy
+cd sidecar
+npm run build:pilot
+ALLOW_FREE_PILOT=1 ALLOW_LOCAL_DEV_WALLETS=1 npm start
+```
+
+```bash
+# no-hardware verification against the Rust simulator
+SIDECAR_URL=http://127.0.0.1:4021 npm --prefix sidecar run e2e:harness-bridge
+SIDECAR_URL=http://127.0.0.1:4021 npm --prefix sidecar run e2e:field-sim
+```
+
+```bash
+# Jetson recovery/deploy, then laptop deploy check
+./robot-harness/deploy/reset-good-state.sh \
+  --role guard \
+  --sidecar-url http://<laptop-ip>:4021 \
+  --profile wifi \
+  --drive-invert
+
+npm run robot:deploy-check -- \
+  --bot guard=http://<guard-ip>:8000 \
+  --bot courier=http://<courier-ip>:8000 \
+  --sidecar-url http://<laptop-ip>:4021
+```
+
+```bash
+# deep integrations once their creds/funds are in .env
+cd sidecar
+npx tsx src/register-ens.ts
+npx tsx src/go-live.ts
+npx tsx src/deploy-consumer.ts
+npx tsx src/privy-provision.ts
+npx tsx src/ledger-handover.ts 0x<dev>
+# CRE: see cre-workflow/SETUP.md
 ```
 
 Demo at `http://<laptop>:4021/wall.html` (the big-screen FLEET COMMAND wall) ·
-`/` (mission control) · `/race.html` · `/pilot.html` · `/ledger.html`.
+`/round.html` (operator race board) · `/field.html` (preflight) ·
+`/pilot.html` or `/pilot-react.html` (driver) · `/finish-camera.html` ·
+`/ledger.html`.

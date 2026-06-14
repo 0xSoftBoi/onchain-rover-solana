@@ -1,4 +1,4 @@
-import { ROBOTS } from "./config.js";
+import { ARC, ROBOTS } from "./config.js";
 import * as chain from "./chain.js";
 import * as robotLink from "./robot-link.js";
 import * as rounds from "./rounds.js";
@@ -80,8 +80,8 @@ export async function buildFieldPreflight(opts: BuildOptions) {
     lobby: `${opts.publicBaseUrl}/lobby.html`,
     round: `${opts.publicBaseUrl}/round.html`,
     finishCamera: `${opts.publicBaseUrl}/finish-camera.html`,
-    pilotChallengerTemplate: `${opts.publicBaseUrl}/pilot.html?robot=guard&round=<roundId>&slot=challenger&camera=local`,
-    pilotOpponentTemplate: `${opts.publicBaseUrl}/pilot.html?robot=courier&round=<roundId>&slot=opponent&camera=local`,
+    pilotChallengerTemplate: `${opts.publicBaseUrl}/pilot.html?robot=guard&round=<roundId>&slot=challenger&transport=ws&speed=high&entry=x402`,
+    pilotOpponentTemplate: `${opts.publicBaseUrl}/pilot.html?robot=courier&round=<roundId>&slot=opponent&transport=ws&speed=high&entry=x402`,
   };
 
   const summary = {
@@ -108,6 +108,17 @@ export async function buildFieldPreflight(opts: BuildOptions) {
       raceDataDir: process.env.RACE_DATA_DIR ?? "sidecar/data/races",
       publicSidecarUrl: process.env.PUBLIC_SIDECAR_URL ?? null,
       publicLocalChainRpcUrl: process.env.PUBLIC_LOCAL_CHAIN_RPC_URL ?? null,
+      x402: {
+        enabled: /^0x[a-fA-F0-9]{40}$/.test(process.env.TREASURY_ADDRESS ?? ""),
+        network: ARC.caip2,
+        chainId: ARC.chainId,
+        rpcUrl: ARC.rpc,
+        usdc: ARC.usdc,
+        gatewayWallet: ARC.gatewayWallet,
+        facilitatorUrl: ARC.facilitatorUrl,
+        treasuryAddress: process.env.TREASURY_ADDRESS ?? null,
+        raceNetworkFeeUsdc: process.env.RACE_NETWORK_FEE_USDC ?? "0.25",
+      },
     },
   };
 }

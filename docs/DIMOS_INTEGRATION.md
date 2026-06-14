@@ -8,12 +8,18 @@ stack. It is *not* ROS-locked (ROS2 is just one transport; default is LCM).
 
 ## The thesis fit (one sentence)
 **DimOS becomes the rover's brain (perception + spatial memory + skill-calling
-agent); our existing stack stays the body and the economy (FastAPI control, x402
-payments, ENS identity, ERC-8004 reputation, GibberLink, Ledger governance).**
+agent); the Python Act 1 stack stays the body and the economy (FastAPI control,
+x402 payments, ENS identity, ERC-8004 reputation, GibberLink, Ledger
+governance).**
 The agent *sees, remembers, reasons, and then calls our crypto rails as skills.*
 
 This is additive, not a rewrite — and it directly upgrades the judge-vulnerable
 parts: "the robot can't actually perceive" and "is it really an agent."
+
+Current boundary: Clanker500 GP uses the Rust `robot-harness` for the race
+runtime. DimOS belongs to the Python checkpoint/autonomy path, not the active
+human-pilot race path, unless a future adapter explicitly bridges DimOS to the
+Rust harness API.
 
 ## What to use vs skip (avoid overlap)
 | DimOS piece | Decision |
@@ -65,9 +71,10 @@ class RoverModule(Module):
         self.r.drive(max(-0.35, min(0.35, v - w*WHEEL_BASE/2)),
                      max(-0.35, min(0.35, v + w*WHEEL_BASE/2)))   # same speed clamp as pilot
 ```
-Gotcha: the ESP32 serial port is single-owner — run DimOS **or** `api.py`'s
-serial loop, not both. Cleanest: have `api.py` expose the shared `Rover`, and the
-RoverModule reuse it (import the singleton) rather than opening a 2nd connection.
+Gotcha: the ESP32 serial port is single-owner — run DimOS, `api.py`, or
+`robot-harness`, not more than one. Cleanest for the Python path: have `api.py`
+expose the shared `Rover`, and the RoverModule reuse it (import the singleton)
+rather than opening a 2nd connection.
 
 ## Phase 2 — Agent + skills calling our rails  ·  low effort, high value
 The DimOS agent's tools are our *existing* services — no new backend:
@@ -127,6 +134,7 @@ Do **Phase 1 + 2** (a day's work, low risk, high narrative value): RoverModule +
 Ollama agent + GenericRestSkill to our FastAPI/sidecar. Demo "agent perceives a
 job → drives → proves it on-chain." Treat **Phase 3** as a stretch — wire one VLM
 "look and describe" skill if RAM allows; don't bet the demo on the full perception
-stack on a 3.5 GB Jetson. **Do not** replace our FastAPI/dashboards/stream with
-DimOS's — that's pure overlap and demo risk.
+stack on a 3.5 GB Jetson. **Do not** replace the Rust race harness, sidecar
+dashboards, or stream proxy with DimOS's web stack — that's pure overlap and
+demo risk.
 ```

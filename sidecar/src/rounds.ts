@@ -427,6 +427,42 @@ export function finishRound(id: string, winner: DriverSlot, proof?: Record<strin
   return persistSnapshot(round, "round.finished");
 }
 
+export function chooseWinner(id: string, winner: DriverSlot, proof?: Record<string, unknown>): Round {
+  const round = getMutableRound(id);
+  if (round.status === "canceled") throw new Error("cannot choose a winner for a canceled round");
+  if (round.status === "settled") {
+    if (round.winner && round.winner !== winner) throw new Error(`round already settled with ${round.winner}`);
+    return snapshot(round);
+  }
+  if (round.winner && round.winner !== winner) throw new Error(`round already finished with ${round.winner}`);
+  requireDriver(round, winner);
+  if (round.status === "finished") return snapshot(round);
+  if (!["accepted", "ready", "locked", "countdown", "racing"].includes(round.status)) {
+    throw new Error(`cannot choose a winner in ${round.status}`);
+  }
+
+  const finishedAt = Date.now();
+  const telemetryTraceId = finishTelemetryTraceId(round, proof);
+  round.status = "finished";
+  round.winner = winner;
+  round.finishedAt = finishedAt;
+  round.finishMs = round.startedAt ? Math.max(0, round.finishedAt - round.startedAt) : 0;
+  round.telemetryTraceId = telemetryTraceId;
+  round.proof = normalizeFinishProof(round, winner, proof, telemetryTraceId, finishedAt);
+  round.settlementState = round.chainRaceId
+    ? {
+        status: "ready",
+        reason: "winner confirmed",
+        updatedAt: finishedAt,
+      }
+    : {
+        status: "settled",
+        reason: "winner chosen by sidecar; x402 fees already paid",
+        updatedAt: finishedAt,
+      };
+  return persistSnapshot(round, "round.winner_chosen");
+}
+
 export function markEvidenceHashes(id: string, proofHash?: string | null, evidenceHash?: string | null): Round {
   const round = getMutableRound(id);
   if (proofHash) round.proofHash = proofHash;
@@ -456,15 +492,19 @@ export function markChainJoined(
   const driver = requireDriver(round, slot);
   const paidAt = Date.now();
   driver.chainJoined = true;
-  driver.feePaid = true;
-  driver.feePayment = {
-    status: "paid",
-    source: "local-chain",
-    amountUsdc: round.feeUsdc,
-    txHash,
-    paidAt,
-    reconciliationStatus: "reconciled",
-  };
+  if (driver.feePayment?.source === "x402") {
+    driver.feePaid = driver.feePayment.status === "paid";
+  } else {
+    driver.feePaid = true;
+    driver.feePayment = {
+      status: "paid",
+      source: "local-chain",
+      amountUsdc: round.feeUsdc,
+      txHash,
+      paidAt,
+      reconciliationStatus: "reconciled",
+    };
+  }
   driver.stakeAuthorized = true;
   driver.stakeAuthorization = {
     adapter: "local-chain-escrow",
@@ -810,7 +850,7 @@ function defaultStageCalibration(updatedAt = Date.now()): StageCalibration {
       guard: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
       courier: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
     },
-    speedDefaults: { defaultSpeedMode: "medium", maxSpeedMode: "medium" },
+    speedDefaults: { defaultSpeedMode: "high", maxSpeedMode: "high" },
     safetyDefaults: { obstacleStopDistanceFt: 2, warningDistanceFt: 5 },
     updatedAt,
   };

@@ -174,6 +174,9 @@ ROVER_CAMERA_JPEG_QUALITY=8
 ROVER_LIDAR_ENABLED=true
 ROVER_LIDAR_PORT=/dev/ttyACM0
 ROVER_LIDAR_BAUD=230400
+ROVER_LIDAR_BLOCK_THRESHOLD_M=0.30
+ROVER_LIDAR_MIN_VALID_M=0.06
+ROVER_LIDAR_MASK_DEG=
 SIDECAR_URL=http://192.168.8.10:4021
 ```
 
@@ -298,7 +301,7 @@ because role env, WiFi profiles, and camera tuning can differ.
 Stop old Python or Waveshare owners without rebooting:
 
 ```bash
-LEGACY_ROBOT_PATTERN='[p]ython.*(app.py|read_serial|capture|voice)|[u]vicorn.*api:app|[c]apture_images'
+LEGACY_ROBOT_PATTERN='[p]ython.*(app.py|api:app|read_serial|capture_images|voice)|[u]vicorn.*api:app'
 pgrep -af "$LEGACY_ROBOT_PATTERN"
 pgrep -f "$LEGACY_ROBOT_PATTERN" | xargs -r kill
 ```
@@ -331,4 +334,12 @@ If lidar is absent for a run:
 
 ```bash
 ./robot-harness/deploy/jetson-install.sh --disable-lidar --force-env --start
+```
+
+If the lidar reports a permanent near-zero obstacle from the robot chassis or
+mount, edit `~/.config/onchain-rover/robot-harness.env` and restart:
+
+```text
+ROVER_LIDAR_MIN_VALID_M=0.06
+ROVER_LIDAR_MASK_DEG=150-210
 ```

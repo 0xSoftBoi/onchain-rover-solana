@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clanker500 Show Links</title>
+<style>
+  :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  body { margin: 0; background: #080b10; color: #f2f5f8; }
+  main { max-width: 1120px; margin: 0 auto; padding: 28px; }
+  h1 { margin: 0 0 8px; font-size: 28px; }
+  .sub { color: #9aa6b2; margin-bottom: 22px; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .card { border: 1px solid #263241; border-radius: 8px; background: #111821; padding: 18px; }
+  .role { font-size: 20px; font-weight: 800; margin-bottom: 12px; }
+  img { width: 100%; max-width: 420px; background: #fff; border-radius: 6px; display: block; }
+  a { color: #62a7ff; overflow-wrap: anywhere; }
+  .links { margin-top: 18px; display: grid; gap: 10px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Clanker500 GP</h1>
+  <div class="sub">Round 55d7af82 · Arc testnet x402 entry · high speed · sidecar countdown</div>
+  <div class="grid">
+    <section class="card">
+      <div class="role">Guard driver</div>
+      <img src="/show/guard-driver.png" alt="Guard driver QR" />
+      <p><a href="/show/guard-driver.url">Guard driver URL</a></p>
+    </section>
+    <section class="card">
+      <div class="role">Courier driver</div>
+      <img src="/show/courier-driver.png" alt="Courier driver QR" />
+      <p><a href="/show/courier-driver.url">Courier driver URL</a></p>
+    </section>
+  </div>
+  <div class="links">
+    <a href="/round.html?round=55d7af82">Operator round control</a>
+    <a href="/wall.html">Broadcast wall</a>
+    <a href="/ledger.html">Treasury fee ledger</a>
+  </div>
+</main>

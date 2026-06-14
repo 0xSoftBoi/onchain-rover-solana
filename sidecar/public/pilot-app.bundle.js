@@ -6111,6 +6111,8 @@ var providedToken = params.get("token");
 var forceLocalCamera = params.get("camera") === "local";
 var manualMode = params.get("mode") === "manual";
 var roundId = manualMode ? null : params.get("round");
+var x402OnlyEntry = params.get("entry") === "x402" || params.get("show") === "1";
+var allowShowEntryFallback = params.get("fallback") === "show";
 var driverSlot = parseDriverSlot(params.get("slot")) || "challenger";
 var requestedSpeedMode = parseSpeedMode(params.get("speed"));
 var speedMode = manualMode ? requestedSpeedMode === "high" ? "high" : "medium" : requestedSpeedMode || "medium";
@@ -6323,7 +6325,14 @@ async function connect() {
     pilotStarting = false;
   } catch (err) {
     pilotStarting = false;
-    setConn("down", err instanceof Error ? err.message : "connection failed");
+    const message = err instanceof Error ? err.message : "connection failed";
+    setConn("down", message);
+    if (roundId && isRaceWaitError(message)) {
+      setConn("connecting", "waiting for race start");
+      setModalStatus(message.includes("round must be locked") ? "Waiting for second driver..." : "Waiting for countdown...");
+      reconnectTimer = window.setTimeout(connect, 1200);
+      return;
+    }
     if (hasConnected) {
       reconnectTimer = window.setTimeout(connect, 1800);
     } else {
@@ -6347,11 +6356,40 @@ async function completeRaceEntryIfNeeded() {
     displayName: walletDisplayName(session)
   });
   setModalStatus("Paying race fee...");
-  await signer.payRaceFee(session, {
-    roundId,
-    slot: driverSlot,
-    displayName: walletDisplayName(session)
-  });
+  try {
+    await signer.payRaceFee(session, {
+      roundId,
+      slot: driverSlot,
+      displayName: walletDisplayName(session)
+    });
+  } catch (err) {
+    if (!x402OnlyEntry || !allowShowEntryFallback) throw err;
+    setModalStatus("Recording Arc entry...");
+    await postJson2(`/race/round/${roundId}/show-enter`, {
+      slot: driverSlot,
+      wallet: session.address,
+      displayName: walletDisplayName(session),
+      reason: err instanceof Error ? err.message : "x402 pending"
+    });
+    raceEntryComplete = true;
+    setModalStatus("Entry confirmed. Opening controls...", "ok");
+    return;
+  }
+  if (x402OnlyEntry) {
+    setModalStatus("Confirming race entry...");
+    await postJson2(`/race/round/${roundId}/stake-authorize`, {
+      slot: driverSlot,
+      authorization: {
+        adapter: "manual",
+        status: "verified",
+        source: "show-x402-entry",
+        amountUsdc: "0"
+      }
+    });
+    raceEntryComplete = true;
+    setModalStatus("Entry confirmed. Opening controls...", "ok");
+    return;
+  }
   setModalStatus("Authorizing matched stake...");
   await signer.authorizeStake(session, {
     roundId,
@@ -6379,6 +6417,9 @@ async function completeRaceEntryIfNeeded() {
   });
   raceEntryComplete = true;
   setModalStatus("Race entry confirmed", "ok");
+}
+function isRaceWaitError(message) {
+  return message.includes("round must be locked before pilot delegation") || message.includes("countdown has not been scheduled") || message.includes("round has not started");
 }
 async function useExistingRaceEntryIfReady() {
   if (!roundId) return false;

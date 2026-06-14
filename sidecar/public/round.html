@@ -68,6 +68,19 @@
     border:1px solid var(--line); border-radius:8px; background:#fff;
   }
   .qr canvas { width:140px; height:140px; }
+  .winnerPanel { border-color:rgba(66,209,125,.45); background:#0d1510; }
+  .winner-choice { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; }
+  button.winner-button {
+    min-height:128px; border-radius:8px; border:2px solid rgba(255,255,255,.22);
+    font-size:28px; font-weight:900; text-transform:uppercase; line-height:1.05;
+    box-shadow:0 0 0 1px rgba(255,255,255,.04), 0 14px 34px rgba(0,0,0,.3);
+  }
+  button.winner-button.guard { background:#16833a; }
+  button.winner-button.courier { background:#7b3fe4; }
+  .winner-status {
+    min-height:38px; margin-top:10px; padding:9px 10px; border-radius:8px;
+    border:1px solid rgba(255,255,255,.1); background:#0b1118; font-size:16px;
+  }
   .log { max-height:160px; overflow:auto; white-space:pre-wrap; color:var(--dim); font-size:12px; }
   .history { display:grid; gap:8px; max-height:260px; overflow:auto; }
   .history-row {
@@ -88,7 +101,8 @@
   .replay-item span:last-child { overflow-wrap:anywhere; }
   @media (max-width:820px) {
     header { display:block; }
-    .grid, .grid3, .grid4, .links { grid-template-columns:1fr; }
+    .grid, .grid3, .grid4, .links, .winner-choice { grid-template-columns:1fr; }
+    button.winner-button { min-height:100px; font-size:22px; }
     .history-row { grid-template-columns:1fr; }
     .kv { grid-template-columns:1fr; }
   }
@@ -98,7 +112,7 @@
 <header>
   <div>
     <h1>Clanker500 GP Round Harness</h1>
-    <div class="sub">two phones enter · local chain locks stakes · winner settles · treasury collects the race fee</div>
+    <div class="sub">x402 entry pays the fleet treasury · sidecar chooses and settles the winner</div>
   </div>
   <div class="pill" id="chainPill">chain unknown</div>
 </header>
@@ -185,15 +199,15 @@
       <label>Default speed
         <select id="defaultSpeedMode" data-calibration>
           <option value="low">low</option>
-          <option value="medium" selected>medium</option>
-          <option value="high">high</option>
+          <option value="medium">medium</option>
+          <option value="high" selected>high</option>
         </select>
       </label>
       <label>Max speed
         <select id="maxSpeedMode" data-calibration>
           <option value="low">low</option>
-          <option value="medium" selected>medium</option>
-          <option value="high">high</option>
+          <option value="medium">medium</option>
+          <option value="high" selected>high</option>
         </select>
       </label>
       <label>Stop distance ft
@@ -232,6 +246,9 @@
       </div>
       <div>
         <div class="kv"><span class="k">treasury</span><span class="v" id="treasury">-</span></div>
+        <div class="kv"><span class="k">x402 network</span><span class="v" id="x402Network">-</span></div>
+        <div class="kv"><span class="k">x402 USDC</span><span class="v" id="x402Usdc">-</span></div>
+        <div class="kv"><span class="k">gateway</span><span class="v" id="x402Gateway">-</span></div>
         <div class="kv"><span class="k">fees collected</span><span class="v" id="fees">-</span></div>
         <div class="kv"><span class="k">winner</span><span class="v" id="winner">-</span></div>
         <div class="kv"><span class="k">txs</span><span class="v" id="txs">-</span></div>
@@ -273,6 +290,15 @@
     </div>
   </section>
 
+  <section class="winnerPanel">
+    <h2>Choose Winner</h2>
+    <div class="winner-choice">
+      <button id="chooseChallengerBig" class="winner-button guard">Challenger Wins<br />Guard</button>
+      <button id="chooseOpponentBig" class="winner-button courier">Opponent Wins<br />Courier</button>
+    </div>
+    <div id="chooseWinnerStatus" class="winner-status">Create or load a round first.</div>
+  </section>
+
   <section>
     <h2>Detector Links</h2>
     <div class="actions">
@@ -302,6 +328,27 @@
   </section>
 
   <section>
+    <h2>Winner Settlement</h2>
+    <div class="grid3">
+      <label>Winner
+        <select id="operatorWinner">
+          <option value="challenger">challenger</option>
+          <option value="opponent">opponent</option>
+        </select>
+      </label>
+      <div>
+        <div class="kv"><span class="k">preflight</span><span class="v" id="settlementPreflight">-</span></div>
+        <div class="kv"><span class="k">settlement tx</span><span class="v" id="settlementTx">-</span></div>
+      </div>
+      <div class="actions">
+        <button id="settleWinner" class="good">Settle Selected Winner</button>
+      </div>
+    </div>
+    <div class="history" id="settlementDrivers" style="margin-top:10px"></div>
+    <div class="log" id="settlementActions" style="margin-top:10px; min-height:70px"></div>
+  </section>
+
+  <section>
     <h2>Race History</h2>
     <div class="history" id="history"></div>
   </section>
@@ -320,7 +367,7 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { round: null, chain: null, treasury: null, evidence: null, detections: [], rounds: [], replay: null, trace: null };
+const state = { round: null, chain: null, treasury: null, x402: null, evidence: null, detections: [], rounds: [], replay: null, trace: null, operatorPreflight: null };
 let calibrationDirty = false;
 const localDefaults = {
   challenger: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -357,6 +404,10 @@ function pilotLink(slot) {
   url.searchParams.set("robot", robot);
   url.searchParams.set("round", state.round.id);
   url.searchParams.set("slot", slot);
+  url.searchParams.set("transport", "ws");
+  url.searchParams.set("speed", "high");
+  url.searchParams.set("entry", "x402");
+  url.searchParams.set("v", "paid-show");
   return url.toString();
 }
 
@@ -409,6 +460,84 @@ function settlementSummary(round) {
   return `${settlement.status} · ${settlement.reason || "-"}`;
 }
 
+function currentOperatorWinner() {
+  const selected = $("operatorWinner")?.value;
+  if (selected === "challenger" || selected === "opponent") return selected;
+  return state.round?.winner || "challenger";
+}
+
+function receiptSummary(driver) {
+  const fee = driver?.feePayment;
+  if (!fee) return "no fee";
+  const tx = fee.txHash || fee.paymentId || "";
+  return `${fee.source || "fee"}:${fee.status || "unknown"}${tx ? ` ${String(tx).slice(0, 10)}...` : ""}`;
+}
+
+function renderOperatorSettlement() {
+  const preflight = state.operatorPreflight;
+  const selectedWinner = currentOperatorWinner();
+  if (state.round?.winner && $("operatorWinner").value !== state.round.winner) {
+    $("operatorWinner").value = state.round.winner;
+  }
+  if (!state.round?.id) {
+    $("settlementPreflight").textContent = "create a round first";
+    $("settlementPreflight").className = "v";
+    $("settlementTx").textContent = "-";
+    $("settlementDrivers").textContent = "";
+    $("settlementActions").textContent = "";
+    $("settleWinner").disabled = true;
+    return;
+  }
+  const blockers = preflight?.blockers || [];
+  const warnings = preflight?.warnings || [];
+  $("settlementPreflight").textContent = blockers.length
+    ? blockers.join(" · ")
+    : warnings.length
+      ? warnings.join(" · ")
+      : `ready for ${selectedWinner}`;
+  $("settlementPreflight").className = `v ${blockers.length ? "badText" : "ok"}`;
+  $("settlementTx").textContent = state.round?.txHashes?.settle || "-";
+  $("settleWinner").disabled = !preflight?.canSettle;
+
+  const drivers = state.round.drivers || {};
+  $("settlementDrivers").innerHTML = ["challenger", "opponent"].map((slot) => {
+    const driver = drivers[slot] || {};
+    const pre = preflight?.drivers?.[slot] || {};
+    const bits = [
+      receiptSummary(driver),
+      pre.stakeAuthorized ? "stake:yes" : "stake:no",
+      pre.chainJoined ? "chain:yes" : "chain:no",
+    ].join(" · ");
+    return `<div class="history-row">
+      <span>${slot}${slot === selectedWinner ? " / selected" : ""}</span>
+      <span>${driver.wallet || "-"}</span>
+      <span>${bits}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderChooseWinner() {
+  const buttons = [$("chooseChallengerBig"), $("chooseOpponentBig")];
+  if (!state.round?.id) {
+    buttons.forEach((button) => button.disabled = true);
+    $("chooseWinnerStatus").textContent = "Create or load a round first.";
+    $("chooseWinnerStatus").className = "winner-status";
+    return;
+  }
+  const terminal = state.round.status === "settled" || state.round.status === "canceled" || Boolean(state.round.winner);
+  buttons.forEach((button) => button.disabled = terminal);
+  if (state.round.winner) {
+    $("chooseWinnerStatus").textContent = `${state.round.winner.toUpperCase()} chosen · ${settlementSummary(state.round)}`;
+    $("chooseWinnerStatus").className = "winner-status ok";
+  } else if (state.round.status === "canceled") {
+    $("chooseWinnerStatus").textContent = "Round canceled.";
+    $("chooseWinnerStatus").className = "winner-status badText";
+  } else {
+    $("chooseWinnerStatus").textContent = "Tap one giant button to choose and settle the show result.";
+    $("chooseWinnerStatus").className = "winner-status warnText";
+  }
+}
+
 function telemetryTraceSummary(round) {
   const trace = state.trace?.traceId || round?.telemetryTraceId || round?.proof?.telemetryTraceId;
   if (!trace) return "-";
@@ -437,7 +566,10 @@ function render() {
   $("proofHash").textContent = proofHash;
   $("evidenceHash").textContent = evidenceHash;
   $("evidenceOpen").href = round?.id ? `/race/round/${round.id}/evidence?download=1` : "#";
-  $("treasury").textContent = state.treasury?.treasury || state.chain?.treasury || "-";
+  $("treasury").textContent = state.x402?.treasuryAddress || state.treasury?.treasury || state.chain?.treasury || "-";
+  $("x402Network").textContent = state.x402 ? `${state.x402.network} / ${state.x402.chainId}` : "-";
+  $("x402Usdc").textContent = state.x402?.usdc || "-";
+  $("x402Gateway").textContent = state.x402?.gatewayWallet || "-";
   $("fees").textContent = state.treasury ? `${state.treasury.totalFees} local units` : "-";
   if (!$("challenger").value && round?.drivers?.challenger?.wallet) $("challenger").value = round.drivers.challenger.wallet;
   if (!$("opponent").value && round?.drivers?.opponent?.wallet) $("opponent").value = round.drivers.opponent.wallet;
@@ -445,7 +577,7 @@ function render() {
   const ok = state.chain?.ok;
   $("chainPill").textContent = ok ? `local chain ${state.chain.chainId} · block ${state.chain.blockNumber}` : "chain unavailable";
   $("chainPill").className = `pill ${ok ? "ok" : "badText"}`;
-  $("walletRpc").value = state.config?.rpcUrl || "";
+  $("walletRpc").value = state.x402?.rpcUrl || state.config?.rpcUrl || "";
 
   const challengerUrl = pilotLink("challenger");
   const opponentUrl = pilotLink("opponent");
@@ -460,17 +592,21 @@ function render() {
   renderHistory();
   renderReplay();
   renderCalibration(calibration);
+  renderOperatorSettlement();
+  renderChooseWinner();
 }
 
 async function refresh() {
   try {
-    const [config, chain, treasury, roundsBody] = await Promise.all([
+    const [config, x402, chain, treasury, roundsBody] = await Promise.all([
       getJson("/chain/config").catch(() => null),
+      getJson("/x402/config").catch(() => null),
       getJson("/chain/health").catch((err) => ({ ok: false, error: err.message })),
       getJson("/treasury/local").catch(() => null),
       getJson("/race/rounds").catch(() => ({ rounds: [] })),
     ]);
     state.config = config;
+    state.x402 = x402;
     state.chain = chain;
     state.treasury = treasury;
     state.rounds = roundsBody?.rounds || [];
@@ -485,11 +621,14 @@ async function refresh() {
       state.detections = finishDetections?.detections || [];
       state.replay = await getJson(`/race/round/${state.round.id}/evidence`).catch(() => null);
       state.trace = await getJson(`/race/round/${state.round.id}/telemetry-trace`).catch(() => null);
+      state.operatorPreflight = await getJson(`/race/round/${state.round.id}/operator/settlement-preflight?winner=${encodeURIComponent(currentOperatorWinner())}`)
+        .catch((err) => ({ canSettle: false, blockers: [err.message], warnings: [] }));
     } else {
       state.evidence = null;
       state.detections = [];
       state.replay = null;
       state.trace = null;
+      state.operatorPreflight = null;
     }
     render();
   } catch (err) {
@@ -653,7 +792,7 @@ function defaultCalibration() {
       guard: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
       courier: { cameraForwardFt: 0, cameraRightFt: 0, lidarForwardFt: 0, lidarRightFt: 0 },
     },
-    speedDefaults: { defaultSpeedMode: "medium", maxSpeedMode: "medium" },
+    speedDefaults: { defaultSpeedMode: "high", maxSpeedMode: "high" },
     safetyDefaults: { obstacleStopDistanceFt: 2, warningDistanceFt: 5 },
   };
 }
@@ -824,6 +963,75 @@ async function step(label, fn) {
   }
 }
 
+async function settleSelectedWinner() {
+  if (!state.round?.id) {
+    log("settlement failed: create or load a round first");
+    return;
+  }
+  const winner = currentOperatorWinner();
+  if (!confirm(`Settle ${winner} as winner? This submits the round settlement transaction.`)) return;
+  try {
+    $("settleWinner").disabled = true;
+    $("settlementActions").textContent = `[${new Date().toLocaleTimeString()}] submitting ${winner} settlement...\n` + $("settlementActions").textContent;
+    const result = await postJson(`/race/round/${state.round.id}/operator/settle-winner`, {
+      winner,
+      proof: operatorFinishProof(winner),
+    });
+    state.round = result.round;
+    state.operatorPreflight = result.preflight;
+    const actions = (result.actions || []).map((action) => {
+      const tx = action.tx ? ` ${String(action.tx).slice(0, 12)}...` : "";
+      const reason = action.reason ? ` (${action.reason})` : "";
+      return `${action.type}${tx}${reason}`;
+    }).join("\n") || "no-op";
+    $("settlementActions").textContent = `[${new Date().toLocaleTimeString()}] ${winner} settled\n${actions}\n` + $("settlementActions").textContent;
+    await refresh();
+  } catch (err) {
+    $("settlementActions").textContent = `[${new Date().toLocaleTimeString()}] settlement failed: ${err.message}\n` + $("settlementActions").textContent;
+    log(`settlement failed: ${err.message}`);
+    await refresh();
+  }
+}
+
+function actionSummary(actions) {
+  return (actions || []).map((action) => {
+    const tx = action.tx ? ` ${String(action.tx).slice(0, 12)}...` : "";
+    const reason = action.reason ? ` (${action.reason})` : "";
+    return `${action.type}${tx}${reason}`;
+  }).join("\n") || "no-op";
+}
+
+async function chooseAndSettleWinner(winner) {
+  if (!state.round?.id) {
+    log("choose winner failed: create or load a round first");
+    return;
+  }
+  $("operatorWinner").value = winner;
+  $("chooseChallengerBig").disabled = true;
+  $("chooseOpponentBig").disabled = true;
+  $("chooseWinnerStatus").textContent = `Choosing ${winner} and settling...`;
+  $("chooseWinnerStatus").className = "winner-status warnText";
+  try {
+    const result = await postJson(`/race/round/${state.round.id}/operator/choose-winner`, {
+      winner,
+      proof: operatorFinishProof(winner),
+    });
+    state.round = result.round;
+    state.operatorPreflight = result.preflight;
+    const actions = actionSummary(result.actions);
+    $("settlementActions").textContent = `[${new Date().toLocaleTimeString()}] ${winner} chosen and settled\n${actions}\n` + $("settlementActions").textContent;
+    $("chooseWinnerStatus").textContent = `${winner.toUpperCase()} chosen · ${settlementSummary(result.round)}`;
+    $("chooseWinnerStatus").className = "winner-status ok";
+    await refresh();
+  } catch (err) {
+    $("settlementActions").textContent = `[${new Date().toLocaleTimeString()}] choose winner failed: ${err.message}\n` + $("settlementActions").textContent;
+    $("chooseWinnerStatus").textContent = `Choose winner failed: ${err.message}`;
+    $("chooseWinnerStatus").className = "winner-status badText";
+    log(`choose winner failed: ${err.message}`);
+    await refresh();
+  }
+}
+
 $("create").onclick = () => step("created round", createRound);
 $("openChain").onclick = () => step("opened escrow", () => postJson(`/race/round/${state.round.id}/chain/open`));
 $("fillLocal").onclick = () => {
@@ -839,8 +1047,10 @@ $("lockLocal").onclick = () => step("authorized robots", () => postJson(`/race/r
 $("lockLocalSim").onclick = () => step("local sim locked", () => postJson(`/race/round/${state.round.id}/lock`, { skipRobotAuth: true }));
 $("countdown").onclick = () => step("countdown started", () => postJson(`/race/round/${state.round.id}/countdown`));
 $("startRace").onclick = () => step("local race started", () => postJson(`/race/round/${state.round.id}/start`));
-$("finishChallenger").onclick = () => step("challenger finished", () => postJson(`/race/round/${state.round.id}/finish`, { winner: "challenger", proof: operatorFinishProof("challenger") }));
-$("finishOpponent").onclick = () => step("opponent finished", () => postJson(`/race/round/${state.round.id}/finish`, { winner: "opponent", proof: operatorFinishProof("opponent") }));
+$("chooseChallengerBig").onclick = () => chooseAndSettleWinner("challenger");
+$("chooseOpponentBig").onclick = () => chooseAndSettleWinner("opponent");
+$("finishChallenger").onclick = () => chooseAndSettleWinner("challenger");
+$("finishOpponent").onclick = () => chooseAndSettleWinner("opponent");
 $("detectChallenger").onclick = () => step("challenger finish detected", async () => {
   const result = await postJson(`/race/round/${state.round.id}/finish-detection`, {
     slot: "challenger",
@@ -865,6 +1075,7 @@ $("detectOpponent").onclick = () => step("opponent finish detected", async () =>
 });
 $("chainStart").onclick = () => step("on-chain race started", () => postJson(`/race/round/${state.round.id}/chain/start`));
 $("settle").onclick = () => step("settled race", () => postJson(`/race/round/${state.round.id}/chain/settle`));
+$("settleWinner").onclick = settleSelectedWinner;
 $("cancel").onclick = () => step("canceled race", () => {
   const path = state.round.chainRaceId
     ? `/race/round/${state.round.id}/chain/cancel`
@@ -873,6 +1084,7 @@ $("cancel").onclick = () => step("canceled race", () => {
 });
 $("refresh").onclick = refresh;
 $("publicSidecar").addEventListener("input", render);
+$("operatorWinner").addEventListener("change", refresh);
 document.querySelectorAll("[data-calibration]").forEach((field) => {
   field.addEventListener("input", () => { calibrationDirty = true; });
   field.addEventListener("change", () => { calibrationDirty = true; });

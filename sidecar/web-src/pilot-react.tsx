@@ -52,7 +52,7 @@ const initialSpeedMode = parseSpeedMode(params.get("speed")) ?? "medium";
 
 function App() {
   const [robot, setRobot] = useState(initialRobot);
-  const [transport] = useState<TransportMode>(initialTransport);
+  const [transport, setTransport] = useState<TransportMode>(initialTransport);
   const [speedMode, setSpeedMode] = useState<SpeedMode>(initialSpeedMode);
   const [started, setStarted] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -128,9 +128,9 @@ function App() {
     });
     const dc = dataChannelRef.current;
     const ws = driveWsRef.current;
-    if (transport === "webrtc" && dc?.readyState === "open") {
+    if (dc?.readyState === "open") {
       dc.send(body);
-    } else if (transport === "ws" && ws?.readyState === WebSocket.OPEN) {
+    } else if (ws?.readyState === WebSocket.OPEN) {
       ws.send(body);
     }
     setReadout({ left, right });
@@ -240,7 +240,18 @@ function App() {
       setDebug({ started: true });
       setModalStatus(`connecting ${transport}`);
       if (transport === "webrtc") {
-        await openWebrtc(auth, robot, speedModeRef.current, setControlOpened, startDriveLoop, peerRef, dataChannelRef);
+        try {
+          await openWebrtc(auth, robot, speedModeRef.current, setControlOpened, startDriveLoop, peerRef, dataChannelRef);
+        } catch (err) {
+          dataChannelRef.current?.close();
+          dataChannelRef.current = null;
+          peerRef.current?.close();
+          peerRef.current = null;
+          setControlOpened(false, "webrtc");
+          setTransport("ws");
+          setModalStatus("webrtc unavailable, connecting ws");
+          await openDriveWs(auth, setControlOpened, startDriveLoop, driveWsRef);
+        }
       } else {
         await openDriveWs(auth, setControlOpened, startDriveLoop, driveWsRef);
       }
@@ -251,7 +262,8 @@ function App() {
       startedRef.current = false;
       setStarted(false);
       setDebug({ started: false, dataChannelOpen: false, wsOpen: false });
-      setControlOpened(false, transport);
+      setControlOpened(false, "webrtc");
+      setControlOpened(false, "ws");
       setModalTone("bad");
       setModalStatus(err instanceof Error ? err.message : "connection failed");
     } finally {

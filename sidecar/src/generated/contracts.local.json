@@ -2,7 +2,7 @@
   "chainId": 31337,
   "rpcUrl": "http://127.0.0.1:8545",
   "publicRpcUrl": "http://127.0.0.1:8545",
-  "deployedAt": "1970-01-01T00:00:00.000Z",
+  "deployedAt": "2026-06-14T11:34:49.274Z",
   "accounts": {
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "challenger": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",

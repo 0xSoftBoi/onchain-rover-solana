@@ -6,6 +6,7 @@ import { RTCPeerConnection, type RTCDataChannel } from "werift";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 import { ROBOTS, type RobotName } from "./config.js";
+import * as evidence from "./evidence.js";
 import * as raceStore from "./race-store.js";
 import * as rounds from "./rounds.js";
 import { traceIdForRound } from "./telemetry-trace.js";
@@ -942,6 +943,7 @@ function recordRoundTelemetry(runtime: RobotRuntime, frame: RobotTelemetry) {
       frame: compactTelemetryFrame(frame),
     });
     recordSensorTraceEvents(runtime, target, frame);
+    maybeFinishRoundFromTelemetry(runtime, target, frame);
   }
 }
 
@@ -1059,6 +1061,63 @@ function averageOdometry(frame: RobotTelemetry): number | null {
   if (frame.odometry_left === undefined) return frame.odometry_right ?? null;
   if (frame.odometry_right === undefined) return frame.odometry_left;
   return Number(((frame.odometry_left + frame.odometry_right) / 2).toFixed(4));
+}
+
+function maybeFinishRoundFromTelemetry(
+  runtime: RobotRuntime,
+  target: { round: rounds.Round; slot: rounds.DriverSlot },
+  frame: RobotTelemetry,
+) {
+  if (target.round.status !== "racing" || !target.round.startedAt) return;
+  const currentDistance = averageOdometry(frame);
+  if (currentDistance === null) return;
+  const baseline = raceStartOdometry(runtime, target.round.startedAt);
+  if (baseline === null) return;
+  const deltaM = Math.abs(currentDistance - baseline);
+  const thresholdM = showFinishThresholdM(target.round);
+  if (deltaM < thresholdM) return;
+
+  try {
+    const latest = rounds.getRound(target.round.id);
+    if (latest.status !== "racing") return;
+    let round = rounds.finishRound(target.round.id, target.slot, {
+      source: "sidecar",
+      method: "telemetry-odometry-finish",
+      winner: target.slot,
+      telemetryTraceId: traceIdForRound(latest),
+      robot: runtime.robot,
+      odometryM: Number(deltaM.toFixed(3)),
+      thresholdM: Number(thresholdM.toFixed(3)),
+      frame: compactTelemetryFrame(frame),
+    });
+    evidence.recordRoundSnapshot(round, "finished");
+    const finalized = evidence.finalizeResultProof(round, round.proof);
+    round = rounds.markEvidenceHashes(target.round.id, finalized.proofHash, finalized.evidenceHash);
+    recordRobotTraceEvent(runtime, "race-finished-by-sidecar", {
+      roundId: round.id,
+      winner: target.slot,
+      odometryM: Number(deltaM.toFixed(3)),
+      thresholdM: Number(thresholdM.toFixed(3)),
+      proofHash: round.proofHash ?? null,
+    });
+    for (const robot of ["guard", "courier"] as const) {
+      revokePilotSessions(robot, "race finished");
+    }
+  } catch (e: any) {
+    console.error(`[show-race] finish ${target.round.id}: ${e.message}`);
+  }
+}
+
+function raceStartOdometry(runtime: RobotRuntime, startedAt: number): number | null {
+  const baseline = runtime.telemetryHistory.find((item) => item.ts_ms >= startedAt - 500 && averageOdometry(item) !== null);
+  return baseline ? averageOdometry(baseline) : null;
+}
+
+function showFinishThresholdM(round: rounds.Round): number {
+  const override = finiteNumber(process.env.SHOW_FINISH_ODOMETRY_M);
+  if (override !== undefined && override > 0) return override;
+  const distanceFt = Math.max(1, round.stageCalibration.finishLineFt - round.stageCalibration.startLineFt);
+  return distanceFt / 3.28084;
 }
 
 function activeTraceTargets(robot: RobotName): Array<{ round: rounds.Round; slot: rounds.DriverSlot }> {

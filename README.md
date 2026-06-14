@@ -9,6 +9,24 @@ can unlock with a Ledger**. Identity, payments, reputation, a labor market, and
 human governance — every sponsor doing real work, with a robot on the table the
 whole time.
 
+**Sponsors, at a glance:** ENS + ERC-8004 (identity & reputation) · x402 + Circle/Arc
+(USDC wages & gas) · World ID (sybil-proof betting) · Walrus (proof storage) ·
+Chainlink CRE (decentralized verification) · Privy (TEE custody) · Ledger (clear-signed
+treasury) · Gemini (vision verification) · BigQuery (network leaderboard) · Dynamic +
+Blink (instant wallets & on-ramp).
+
+**Jump to:** [What's real (not mocked)](#whats-real-not-mocked) ·
+[Deployed addresses](#deployed--live-verified-on-chain) ·
+[Run with no hardware](#no-robot-no-gpu-run-the-whole-loop-anyway)
+
+### Links & meta
+- 🎥 **Demo video (3 min):** _TODO: paste link before submitting_
+- 🌐 **Live dashboard:** `http://<deployed>/wall.html`
+- 📜 **License:** _TODO: add a LICENSE file (MIT recommended)_
+- 👥 **Team:** _TODO: names / ETHGlobal handles_
+- 🔍 **Start here:** `sidecar/settle.ts` (all on-chain writes) · `contracts/` (deployed
+  contracts) · `robot/agent.py` (autonomy loop) · [Deployed addresses](#deployed--live-verified-on-chain)
+
 ```
    hire (x402/Arc) → robot acts → Gemini verifies → proof on Walrus
          ▲                                                │
@@ -140,10 +158,18 @@ EventPass minted, ERC-8004 feedback, a Treasury withdrawal gated by a **physical
 Ledger** (owner transferred to the device + gas-funded), Walrus proofs read back
 & hash-matched, and `GET /attest` serving a verified score for the CRE DON.
 
-Things that still need a credential/login to *execute* (no mock fallback):
-**`cre login`** + `simulate --broadcast` (writes the DON verdict — consumer is
-already deployed and `/attest` serves 85/100), and **GCP creds** for the BigQuery
-leaderboard. Everything else above is live.
+### On the two credential-gated pieces (no mock fallback — by design)
+- **Chainlink CRE:** the `AttestationConsumer` is **already deployed on Sepolia**
+  (`0x0fdb04628c8821d2cd7ebd5cc2d23e1a46a077e3`) and the robot's `GET /attest` is
+  **already serving a live 85/100 score**. The only step needing `cre login` is the
+  DON's final `simulate --broadcast` — a judge-side auth, not missing code. Workflow
+  is committed in `cre-workflow/`.
+- **BigQuery:** the partition-pruned, dry-run-guarded query is committed in
+  `sidecar/bigquery.ts`; it needs GCP creds in `.env` to hit the public ERC-8004
+  dataset. Runs live at the booth in ~30s.
+
+We deliberately ship **no mock fallback** for these two, so there's zero ambiguity
+about what's real vs. simulated. Everything else above is live.
 
 ## Layout
 - `robot/` — Python on each Jetson. `api.py` (FastAPI :8000 + MJPEG `/stream` +
@@ -185,6 +211,14 @@ node --import tsx src/index.ts          # sidecar + dashboards on :4021
 # once funded (Circle booth / faucets):
 npx tsx src/register-ens.ts             # real ENS on Sepolia
 npx tsx src/go-live.ts                  # deploy contracts + run the full on-chain loop
+```
+
+### No robot? No GPU? Run the whole loop anyway
+Every off-board service has a `stub` backend, so a judge can validate the full
+pipeline on a laptop with zero hardware:
+```bash
+POLICY_BACKEND=stub BRAIN_BACKEND=stub ./scripts/demo_up.sh   # dry run, no installs
+python robot/test_stack.py                                    # control math, odometry, handshake, settlement plumbing
 ```
 
 ```bash

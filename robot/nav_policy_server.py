@@ -35,9 +35,12 @@ from pydantic import BaseModel
 # Map the policy's steer command in [-1, 1] -> unicycle (linear_x, angular_z).
 V_MAX = float(os.environ.get("NAV_V_MAX", "0.25"))  # m/s, matches rover clamp
 W_MAX = float(os.environ.get("NAV_W_MAX", "1.2"))   # rad/s at full steer
-# + steer in the driving model -> which way the rover yaws. ros2_bridge uses
-# +angular_z = CCW/left. Flip this to -1 if the rover turns the wrong way.
+# + turn -> which way the rover yaws. ros2_bridge uses +angular_z = CCW/left.
+# Flip this to -1 if the rover turns the wrong way.
 STEER_SIGN = float(os.environ.get("NAV_STEER_SIGN", "1.0"))
+# Sign of the trajectory's lateral axis (waypoint x). +x is right-of-path in the
+# packaged NoMaD; left = -x. Flip if your build mirrors it.
+LAT_SIGN = float(os.environ.get("NAV_LAT_SIGN", "1.0"))
 STEER_SLOW = float(os.environ.get("NAV_STEER_SLOW", "0.6"))  # slow fwd in turns
 # Waypoint controller gains (only the trajectory/goal path uses these).
 K_V = float(os.environ.get("NAV_K_V", "0.6"))
@@ -102,8 +105,11 @@ class StubPolicy:
 class NomadPolicy:
     """general-navigation (NoMaD/ViNT/GNM) via the package's own GPTVision stepper.
 
-    GPTVision owns the temporal context queue + runs the diffusion policy and MPC;
-    we feed it a DroneState per frame and read controls.steer in [-1, 1]. Loaded
+    GPTVision owns the temporal context queue + runs the diffusion policy; we feed
+    it a DroneState per frame and read controls.trajectory (8 waypoints, robot
+    frame: x lateral, y forward). We steer off the first non-trivial waypoint via
+    waypoint_to_twist — NOT controls.steer, whose car-MPC needs a non-zero vehicle
+    speed and collapses to 0 at rover speeds (verified with real weights). Loaded
     lazily so importing this module never needs torch. Exploration mode (goal
     masked) -> no goal distance, returns dist = -1."""
     name = "nomad"
@@ -115,7 +121,6 @@ class NomadPolicy:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.cfg = get_default_config()               # nomad.yaml
         self.gpt = GPTVision(self.cfg, device=device)
-        self._last_steer = 0.0
         print(f"[policy] GPTVision loaded on {device} "
               f"(context_size={self.cfg['context_size']})")
 
@@ -123,20 +128,22 @@ class NomadPolicy:
         # clear the temporal buffers so a new run starts clean
         self.gpt.context_queue = []
         self.gpt.trajectory_history = []
-        self._last_steer = 0.0
 
     def infer(self, current, goal):
         from general_navigation.schema.environment import DroneState
         from general_navigation.schema.image import Image
         state = DroneState(
             image=Image(data=current),                # validator JPEG-encodes BGR
-            velocity_x=0.0, velocity_y=0.0, velocity_z=0.0,
-            steering_angle=self._last_steer,
+            velocity_x=0.0, velocity_y=0.0, velocity_z=0.0, steering_angle=0.0,
         )
         controls = self.gpt.step(state)               # warms up over context_size
-        self._last_steer = controls.steer
-        v, ang = steer_to_twist(controls.steer)
-        return v, ang, -1.0
+        # first non-zero waypoint (x lateral, y forward); zeros during warm-up
+        wp = next((p for p in (controls.trajectory or [])
+                   if abs(p[0]) > 1e-6 or abs(p[1]) > 1e-6), None)
+        if wp is None:
+            return 0.0, 0.0, -1.0
+        v, w = waypoint_to_twist(wp[1], -wp[0] * LAT_SIGN)   # (forward, left)
+        return v, STEER_SIGN * w, -1.0
 
 
 def make_policy():

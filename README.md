@@ -1,4 +1,4 @@
-# The Onchain Rover — ETHGlobal NYC 2026
+# Clanker500 — ETHGlobal NYC 2026
 
 ### Give your AI agent a body.
 
@@ -22,7 +22,7 @@ whole time.
   ERC-8004 + EventPass) → rejects it → the robots run a **Texas-auctioneer Dutch
   auction** to negotiate the pass price → pay + mint on Arc → admitted → proof to
   Walrus → reputation ticks up.
-- **Act 2 — Rover GP:** spectators **pay to pilot** the rovers ($1 x402 sessions,
+- **Act 2 — Clanker500 GP:** spectators **pay to pilot** the rovers ($1 x402 sessions,
   WebSocket joystick + deadman) and **bet USDC** on a fruit-obstacle drag race
   (parimutuel, **one bet per human via real World ID**), settled on-chain by the
   guard robot's Walrus-anchored finish photo.

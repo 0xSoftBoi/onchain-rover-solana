@@ -90,6 +90,17 @@ struct Opts {
 
     #[arg(long, env = "ROVER_LIDAR_BLOCK_THRESHOLD_M", default_value_t = 0.30)]
     lidar_block_threshold_m: f64,
+
+    /// Ignore returns closer than this — below the LD06's reliable range, a
+    /// constant near-zero reading is the robot's own chassis/mount, not an
+    /// obstacle. Default 0.06 m filters the self-occlusion that pins `blocked`.
+    #[arg(long, env = "ROVER_LIDAR_MIN_VALID_M", default_value_t = 0.06)]
+    lidar_min_valid_m: f64,
+
+    /// Angular sectors (degrees, 0=forward) occluded by the robot body, masked
+    /// from the scan. Comma-separated ranges, wraparound ok, e.g. "150-210,30-50".
+    #[arg(long, env = "ROVER_LIDAR_MASK_DEG", default_value = "")]
+    lidar_mask_deg: String,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -544,6 +555,8 @@ async fn main() -> Result<()> {
             opts.lidar_port.clone(),
             opts.lidar_baud,
             opts.lidar_block_threshold_m,
+            (opts.lidar_min_valid_m * 1000.0).round().max(0.0) as u16,
+            parse_mask_sectors(&opts.lidar_mask_deg),
         );
     }
 
@@ -1187,6 +1200,8 @@ fn spawn_lidar_reader(
     port_path: String,
     baud: u32,
     block_threshold_m: f64,
+    min_valid_mm: u16,
+    mask: Vec<(f64, f64)>,
 ) {
     thread::spawn(move || loop {
         match serialport::new(&port_path, baud)
@@ -1209,7 +1224,7 @@ fn spawn_lidar_reader(
                                 if now.saturating_sub(window.started_ms) > LIDAR_WINDOW_MS {
                                     window = LidarScanWindow::new(now);
                                 }
-                                window.ingest(&points);
+                                window.ingest(&points, min_valid_mm, &mask);
                                 if window.points > 0 {
                                     publish_lidar_window(
                                         &lidar,
@@ -1263,10 +1278,16 @@ impl LidarScanWindow {
         }
     }
 
-    fn ingest(&mut self, points: &[LidarPoint]) {
+    fn ingest(&mut self, points: &[LidarPoint], min_valid_mm: u16, mask: &[(f64, f64)]) {
+        // floor below the configured min is the chassis/noise, not an obstacle;
+        // never let it fall below the firmware's reliable minimum.
+        let floor = min_valid_mm.max(LIDAR_MIN_VALID_MM);
         for point in points {
-            if point.distance_mm < LIDAR_MIN_VALID_MM {
+            if point.distance_mm < floor {
                 continue;
+            }
+            if angle_in_sectors(point.angle_deg, mask) {
+                continue; // sector physically occluded by the robot body
             }
             let meters = round3(f64::from(point.distance_mm) / 1000.0);
             self.min_m = min_optional(self.min_m, meters);
@@ -1390,6 +1411,34 @@ fn normalize_angle_deg(angle: f64) -> f64 {
 
 fn is_front_angle(angle: f64, cone_deg: f64) -> bool {
     angle <= cone_deg || angle >= 360.0 - cone_deg
+}
+
+/// True if `angle` (deg, normalized 0..360) falls in any masked sector. Sectors
+/// may wrap past 0 (e.g. (350.0, 10.0) covers 350..360 and 0..10).
+fn angle_in_sectors(angle: f64, sectors: &[(f64, f64)]) -> bool {
+    sectors.iter().any(|&(start, end)| {
+        if start <= end {
+            angle >= start && angle <= end
+        } else {
+            angle >= start || angle <= end
+        }
+    })
+}
+
+/// Parse "150-210,30-50" -> [(150,210),(30,50)]. Empty/garbage -> no sectors.
+fn parse_mask_sectors(spec: &str) -> Vec<(f64, f64)> {
+    spec.split(',')
+        .filter_map(|part| {
+            let part = part.trim();
+            if part.is_empty() {
+                return None;
+            }
+            let (a, b) = part.split_once('-')?;
+            let start = a.trim().parse::<f64>().ok()?;
+            let end = b.trim().parse::<f64>().ok()?;
+            Some((normalize_angle_deg(start), normalize_angle_deg(end)))
+        })
+        .collect()
 }
 
 fn min_optional(current: Option<f64>, candidate: f64) -> Option<f64> {

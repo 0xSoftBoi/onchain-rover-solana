@@ -433,6 +433,76 @@ pub mod clanker5000 {
         emit!(JudgeChanged { market_id: ctx.accounts.market.market_id, judge: new_judge });
         Ok(())
     }
+
+    // ----- Reputation (port of ReputationRegistry.sol, ERC-8004) ------------
+
+    /// Register who owns `agent_id` (the robot's wallet), so the registry can
+    /// reject self-feedback. Mirrors `setAgentOwner` (first writer wins — here
+    /// the PDA can only be initialized once).
+    pub fn register_agent(ctx: Context<RegisterAgent>, agent_id: u64, owner: Pubkey) -> Result<()> {
+        let agent = &mut ctx.accounts.agent;
+        agent.agent_id = agent_id;
+        agent.owner = owner;
+        agent.count = 0;
+        agent.sum = 0;
+        agent.bump = ctx.bumps.agent;
+        emit!(AgentRegistered { agent_id, owner });
+        Ok(())
+    }
+
+    /// The requester rates an agent. The signer must not be the agent owner
+    /// ("self-feedback not allowed"). Each feedback is stored in its own PDA
+    /// (index = running count), and the agent's running count/sum back the
+    /// leaderboard average. Emits `NewFeedback` for indexers/BigQuery.
+    #[allow(clippy::too_many_arguments)]
+    pub fn give_feedback(
+        ctx: Context<GiveFeedback>,
+        _agent_id: u64,
+        value: i64,
+        value_decimals: u8,
+        tag1: String,
+        tag2: String,
+        endpoint: String,
+        feedback_uri: String,
+        feedback_hash: [u8; 32],
+    ) -> Result<()> {
+        require!(tag1.len() <= 32 && tag2.len() <= 32, ClankerError::StringTooLong);
+        require!(endpoint.len() <= 96 && feedback_uri.len() <= 160, ClankerError::StringTooLong);
+        let agent = &mut ctx.accounts.agent;
+        require_keys_neq!(ctx.accounts.client.key(), agent.owner, ClankerError::SelfFeedback);
+
+        let index = agent.count;
+        let fb = &mut ctx.accounts.feedback;
+        fb.agent = agent.key();
+        fb.client = ctx.accounts.client.key();
+        fb.index = index;
+        fb.value = value;
+        fb.value_decimals = value_decimals;
+        fb.tag1 = tag1.clone();
+        fb.tag2 = tag2;
+        fb.endpoint = endpoint;
+        fb.feedback_uri = feedback_uri;
+        fb.feedback_hash = feedback_hash;
+        fb.ts = Clock::get()?.unix_timestamp;
+        fb.bump = ctx.bumps.feedback;
+
+        agent.count = index.checked_add(1).ok_or(ClankerError::Overflow)?;
+        agent.sum = agent
+            .sum
+            .checked_add(value as i128)
+            .ok_or(ClankerError::Overflow)?;
+
+        emit!(NewFeedback {
+            agent_id: agent.agent_id,
+            client: fb.client,
+            feedback_index: index,
+            value,
+            value_decimals,
+            tag1,
+            feedback_hash,
+        });
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +518,8 @@ pub const MARKET_VAULT_SEED: &[u8] = b"market_vault";
 pub const MARKET_VAULT_AUTH_SEED: &[u8] = b"market_vault_auth";
 pub const BET_SEED: &[u8] = b"bet";
 pub const NULLIFIER_SEED: &[u8] = b"nullifier";
+pub const AGENT_SEED: &[u8] = b"agent";
+pub const FEEDBACK_SEED: &[u8] = b"feedback";
 
 // ---------------------------------------------------------------------------
 // Accounts: race escrow
@@ -695,6 +767,44 @@ pub struct SetJudge<'info> {
 }
 
 // ---------------------------------------------------------------------------
+// Accounts: reputation
+// ---------------------------------------------------------------------------
+
+#[derive(Accounts)]
+#[instruction(agent_id: u64)]
+pub struct RegisterAgent<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + Agent::INIT_SPACE,
+        seeds = [AGENT_SEED, &agent_id.to_le_bytes()],
+        bump
+    )]
+    pub agent: Account<'info, Agent>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(agent_id: u64)]
+pub struct GiveFeedback<'info> {
+    #[account(mut, seeds = [AGENT_SEED, &agent_id.to_le_bytes()], bump = agent.bump)]
+    pub agent: Account<'info, Agent>,
+    #[account(mut)]
+    pub client: Signer<'info>,
+    #[account(
+        init,
+        payer = client,
+        space = 8 + Feedback::INIT_SPACE,
+        seeds = [FEEDBACK_SEED, agent.key().as_ref(), &agent.count.to_le_bytes()],
+        bump
+    )]
+    pub feedback: Account<'info, Feedback>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
@@ -766,6 +876,37 @@ pub struct Bet {
 pub struct Nullifier {
     pub used: bool,
     pub value: [u8; 32],
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Agent {
+    pub agent_id: u64,
+    pub owner: Pubkey,
+    pub count: u64,
+    pub sum: i128,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Feedback {
+    pub agent: Pubkey,
+    pub client: Pubkey,
+    pub index: u64,
+    pub value: i64,
+    pub value_decimals: u8,
+    #[max_len(32)]
+    pub tag1: String,
+    #[max_len(32)]
+    pub tag2: String,
+    #[max_len(96)]
+    pub endpoint: String,
+    #[max_len(160)]
+    pub feedback_uri: String,
+    pub feedback_hash: [u8; 32],
+    pub ts: i64,
+    pub bump: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -864,6 +1005,21 @@ pub struct JudgeChanged {
     pub market_id: u64,
     pub judge: Pubkey,
 }
+#[event]
+pub struct AgentRegistered {
+    pub agent_id: u64,
+    pub owner: Pubkey,
+}
+#[event]
+pub struct NewFeedback {
+    pub agent_id: u64,
+    pub client: Pubkey,
+    pub feedback_index: u64,
+    pub value: i64,
+    pub value_decimals: u8,
+    pub tag1: String,
+    pub feedback_hash: [u8; 32],
+}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -909,4 +1065,8 @@ pub enum ClankerError {
     BadRacerCount,
     #[msg("arithmetic overflow")]
     Overflow,
+    #[msg("self-feedback not allowed")]
+    SelfFeedback,
+    #[msg("string field exceeds max length")]
+    StringTooLong,
 }

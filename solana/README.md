@@ -10,6 +10,7 @@ One Anchor program, `clanker5000`, replaces the two EVM settlement contracts:
 |---|---|
 | `chain/contracts/RaceEscrow.sol` | `initialize`, `open_race`, `join_race`, `lock_race`, `start_race`, `finish_race`, `settle_race`, `cancel_race`, `set_facilitator` |
 | `contracts/RaceMarket.sol` | `open_market`, `place_bet`, `settle_market`, `claim`, `set_judge` |
+| `contracts/ReputationRegistry.sol` (ERC-8004) | `register_agent`, `give_feedback` (per-agent + per-feedback PDAs, running count/sum, `NewFeedback` event, self-feedback rejected) |
 
 ### Key design changes vs. the EVM contracts
 

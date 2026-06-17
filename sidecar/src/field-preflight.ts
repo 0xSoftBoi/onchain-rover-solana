@@ -1,5 +1,5 @@
 import { ARC, ROBOTS } from "./config.js";
-import * as chain from "./chain.js";
+import * as chain from "./chain-backend.js";
 import * as robotLink from "./robot-link.js";
 import * as rounds from "./rounds.js";
 

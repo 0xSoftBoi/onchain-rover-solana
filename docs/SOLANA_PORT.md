@@ -51,10 +51,14 @@ switch so the existing EVM demo keeps working untouched.
 
 | Piece | Plan | Status |
 |---|---|---|
-| `chain.ts` (viem) | Add `solana-chain.ts` mirroring its 13 exported functions (`openRoundOnChain`, `joinRoundOnChain`, `lock/start/finish/settle/cancelRoundOnChain`, `buildRaceEntryRequest`, `localChainConfig`, `publicLocalChainConfig`, `localChainHealth`, `localTreasuryInfo`, `fundLocalWallet`) using `@coral-xyz/anchor`. | 🟡 scaffolded |
-| `generated/contracts.local.json` | Add `generated/contracts.solana.json` — `{ cluster, rpcUrl, programId, usdcMint, facilitator, treasury, defaults }`. | ⛔ planned |
-| `buildRaceEntryRequest` (typed data for the phone to sign) | On Solana the phone wallet signs the `join_race` transaction itself; this becomes "build a partially-signed tx / instruction" rather than EIP-712 typed data. | 🟡 scaffolded |
-| Dispatch | `chain-backend.ts` re-exports EVM or Solana impl based on `CHAIN_BACKEND=evm|solana` (default `evm`); the 4 `import * as chain from "./chain.js"` call sites switch to `./chain-backend.js`. | ⛔ planned |
+| `chain.ts` (viem) | `sidecar/src/solana-chain.ts` mirrors its 13 exported functions (`openRoundOnChain`, `joinRoundOnChain`, `lock/start/finish/settle/cancelRoundOnChain`, `buildRaceEntryRequest`, `localChainConfig`, `publicLocalChainConfig`, `localChainHealth`, `localTreasuryInfo`, `fundLocalWallet`) using `@coral-xyz/anchor`. | ✅ landed (typechecks) |
+| `generated/contracts.local.json` | `sidecar/src/generated/contracts.solana.example.json` template; copy to `contracts.solana.json` after deploy. Read by `solana-config.ts`. | ✅ landed (template) |
+| `buildRaceEntryRequest` (typed data for the phone to sign) | On Solana the phone wallet signs the `join_race` transaction itself; `buildRaceEntryRequest` now returns the serialized `join_race` instruction (programId/keys/base64 data) for the wallet to sign — no EIP-712, no permit. | ✅ landed |
+| Dispatch | `chain-backend.ts` dispatches to EVM or Solana by `CHAIN_BACKEND` (default `evm`, Solana lazy-imported); the 4 `import * as chain from "./chain.js"` call sites now import `./chain-backend.js`. | ✅ landed |
+
+> **Caveat:** round creation lowercases driver wallets via `normalizeWallet`
+> (EVM-shaped); base58 Solana pubkeys are case-sensitive. Making the wallet
+> normalizer backend-aware is the remaining wiring before a live Solana round.
 
 ### Integration steps (sidecar)
 
@@ -74,8 +78,8 @@ integrations have no 1:1 Solana analog and need a product decision.
 
 | EVM integration | Solana target | Status / notes |
 |---|---|---|
-| ENS (`roverfleet.eth`, subnames, ENSIP-25) | **SNS** (Bonfida `.sol`) + on-chain agent records | ⛔ planned |
-| ERC-8004 `ReputationRegistry` | Anchor reputation program (feedback PDAs per agent) or a Solana attestation service (SAS) schema | ⛔ planned |
+| ENS (`roverfleet.eth`, subnames, ENSIP-25) | **SNS** (Bonfida `.sol`) — `sidecar/src/sns.ts` resolves `guard/courier.roverfleet.sol` owner + agent-context TXT record live | ✅ resolution landed; registration planned |
+| ERC-8004 `ReputationRegistry` | Anchor reputation in the `clanker5000` program — `register_agent` / `give_feedback`, per-agent + per-feedback PDAs, running count/sum, `NewFeedback` event; self-feedback rejected | ✅ landed |
 | EventPass (ERC-721 mint on Arc) | SPL / **Metaplex** NFT (Token Metadata or Core) | ⛔ planned |
 | `Treasury.sol` + Ledger ERC-7730 clear-sign | **Squads** multisig (or PDA treasury) + Ledger Solana app clear-signing | ⛔ planned — ERC-7730 descriptor has no direct Solana equivalent |
 | x402 + Circle/Arc (USDC-as-gas wages) | x402 has Solana support via SPL USDC; gas is SOL (no USDC-as-gas) | ⛔ planned — fee model differs |

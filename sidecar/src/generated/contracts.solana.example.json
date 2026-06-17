@@ -1,0 +1,9 @@
+{
+  "cluster": "localnet",
+  "rpcUrl": "http://127.0.0.1:8899",
+  "programId": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+  "usdcMint": "<spl-mint-pubkey>",
+  "facilitator": "<facilitator-pubkey>",
+  "treasury": "<treasury-usdc-token-account>",
+  "defaults": { "stakeUnits": "1000000", "feeUnits": "250000" }
+}

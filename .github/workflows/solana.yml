@@ -63,11 +63,15 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
-      # Install anchor-cli directly (no avm layer) — the canonical, reliable path.
+      # Install anchor-cli from a pinned checkout so `--locked` uses Anchor's own
+      # Cargo.lock — a bare `cargo install --git … --locked` re-resolves to latest
+      # transitive deps, which break on Rust 1.79 (`edition2024`) or newer Rust
+      # (`time 0.3.29`). The locked tree pins both to versions that build on 1.79.
       - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }}
         run: |
           if ! command -v anchor >/dev/null 2>&1; then
-            cargo install --git https://github.com/coral-xyz/anchor --tag v${ANCHOR_VERSION} anchor-cli --locked --force
+            git clone --depth 1 --branch v${ANCHOR_VERSION} https://github.com/coral-xyz/anchor.git "$RUNNER_TEMP/anchor"
+            cargo install --path "$RUNNER_TEMP/anchor/cli" anchor-cli --locked --force
           fi
           anchor --version
 

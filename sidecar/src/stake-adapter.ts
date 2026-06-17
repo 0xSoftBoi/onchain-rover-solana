@@ -8,7 +8,7 @@ import {
   type Hex,
 } from "viem";
 
-import * as chain from "./chain.js";
+import * as chain from "./chain-backend.js";
 import type { DriverSlot, Round, StakeAuthorization } from "./rounds.js";
 
 export type StakeAdapterKind = "base-spend-permission";

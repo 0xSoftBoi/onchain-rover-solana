@@ -1,4 +1,4 @@
-import * as chain from "./chain.js";
+import * as chain from "./chain-backend.js";
 import * as rounds from "./rounds.js";
 
 type FeeLedgerStatus = "paid" | "pending" | "failed";

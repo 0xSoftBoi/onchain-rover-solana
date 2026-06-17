@@ -24,7 +24,7 @@ import * as privy from "./privy.js";
 import * as bq from "./bigquery.js";
 import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
-import * as chain from "./chain.js";
+import * as chain from "./chain-backend.js";
 import * as evidence from "./evidence.js";
 import * as fieldPreflight from "./field-preflight.js";
 import * as localDevWallets from "./local-dev-wallets.js";

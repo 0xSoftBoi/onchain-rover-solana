@@ -15,3 +15,6 @@ runs/
 .demo-run/
 .demo-venv/
 robot-harness/deploy/stage-fingerprints.json
+solana/.anchor/
+solana/test-ledger/
+Cargo.lock

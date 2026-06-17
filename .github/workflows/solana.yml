@@ -1,0 +1,99 @@
+name: Solana (Clanker 5000)
+
+# Builds and tests the native-Solana settlement core and typechecks the sidecar.
+# This is the toolchain that can't run in every dev container — CI is where the
+# Anchor program actually gets built/tested. See docs/SOLANA_PORT.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "solana/**"
+      - "sidecar/**"
+      - ".github/workflows/solana.yml"
+  pull_request:
+    paths:
+      - "solana/**"
+      - "sidecar/**"
+      - ".github/workflows/solana.yml"
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: solana-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOLANA_VERSION: "1.18.26"
+  ANCHOR_VERSION: "0.30.1"
+
+jobs:
+  anchor:
+    name: Anchor build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solana
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            solana/target
+          key: ${{ runner.os }}-anchor-${{ env.ANCHOR_VERSION }}-${{ hashFiles('solana/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-anchor-${{ env.ANCHOR_VERSION }}-
+
+      # Fast, deterministic gate — also runs in dev containers without the
+      # Solana toolchain.
+      - name: cargo check
+        run: cargo check -p clanker5000
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor (avm)
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --tag v${ANCHOR_VERSION} --locked --force
+          avm install ${ANCHOR_VERSION}
+          avm use ${ANCHOR_VERSION}
+
+      - name: Solana keypair (test validator default signer)
+        run: solana-keygen new --no-bip39-passphrase --force -o "$HOME/.config/solana/id.json"
+
+      # Align declare_id! / Anchor.toml with the freshly generated program
+      # keypair so `anchor test` deploys and runs cleanly.
+      - name: anchor keys sync
+        run: anchor keys sync
+
+      - name: anchor build
+        run: anchor build
+
+      - name: anchor test
+        run: |
+          npm install --no-audit --no-fund
+          anchor test
+
+  sidecar:
+    name: Sidecar typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sidecar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit -p tsconfig.json

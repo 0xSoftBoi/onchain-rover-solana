@@ -373,3 +373,100 @@ function requireChainRaceId(round: Round): string {
   if (!round.chainRaceId) throw new Error("round is not open on-chain");
   return round.chainRaceId;
 }
+
+// ---- EventPass (port of EventPass.sol) -------------------------------------
+
+function passConfigPda(): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("pass_config")], pid())[0];
+}
+function passPda(passId: number | bigint | string): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("pass"), leU64(passId)], pid())[0];
+}
+
+/** Guard (facilitator) mints an access pass at the auction-settled price. */
+export async function mintEventPass(to: string, priceUsdc6: string) {
+  const p = program();
+  const cfg = await (p.account as any).passConfig.fetch(passConfigPda());
+  const passId: BN = cfg.nextId;
+  const tx = await (p.methods as any)
+    .mintPass(passId, new PublicKey(to), units(priceUsdc6))
+    .accounts({
+      passConfig: passConfigPda(),
+      minter: facilitatorKeypair().publicKey,
+      pass: passPda(passId.toString()),
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+  return { id: passId.toString(), to, priceUsdc6, tx };
+}
+
+/** holds(who): off-chain getProgramAccounts query (Solana idiom for balanceOf). */
+export async function eventPassHolds(owner: string) {
+  // Pass layout: discriminator(8) + id(8) + owner(32) -> owner offset = 16.
+  const passes = await (program().account as any).pass.all([
+    { memcmp: { offset: 16, bytes: owner } },
+  ]);
+  return {
+    owner,
+    holds: passes.length > 0,
+    count: passes.length,
+    passes: passes.map((a: any) => ({
+      id: a.account.id.toString(),
+      priceUsdc6: a.account.priceUsdc6.toString(),
+    })),
+  };
+}
+
+// ---- Treasury (port of Treasury.sol) ---------------------------------------
+
+function treasuryConfigPda(): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("treasury_config")], pid())[0];
+}
+function treasuryVaultPda(): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("treasury_vault")], pid())[0];
+}
+function treasuryAuthPda(): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("treasury_auth")], pid())[0];
+}
+
+export async function treasuryBalance() {
+  const conn = connection();
+  let balanceUnits = "0";
+  try {
+    const acct = await getAccount(conn, treasuryVaultPda());
+    balanceUnits = acct.amount.toString();
+  } catch {
+    /* vault not yet created */
+  }
+  return { vault: treasuryVaultPda().toBase58(), balanceUnits, balance: formatUnits(balanceUnits) };
+}
+
+/**
+ * Build the owner-gated withdrawal instruction for the Ledger to clear-sign.
+ * The sidecar never holds the treasury owner key — withdrawal is gated on a
+ * physical Ledger Solana signature, mirroring the EVM ERC-7730 flow.
+ */
+export async function buildTreasuryWithdraw(recipientTokenAccount: string, amount: string) {
+  const p = program();
+  const cfg = await (p.account as any).treasuryConfig.fetch(treasuryConfigPda());
+  const ix = await (p.methods as any)
+    .withdrawTreasury(units(amount))
+    .accounts({
+      treasuryConfig: treasuryConfigPda(),
+      owner: new PublicKey(cfg.owner),
+      vault: treasuryVaultPda(),
+      treasuryAuthority: treasuryAuthPda(),
+      recipient: new PublicKey(recipientTokenAccount),
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .instruction();
+  return {
+    owner: new PublicKey(cfg.owner).toBase58(),
+    amount,
+    instruction: {
+      programId: ix.programId.toBase58(),
+      keys: ix.keys.map((k: any) => ({ pubkey: k.pubkey.toBase58(), isSigner: k.isSigner, isWritable: k.isWritable })),
+      data: Buffer.from(ix.data).toString("base64"),
+    },
+  };
+}

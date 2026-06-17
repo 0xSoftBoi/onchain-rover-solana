@@ -792,8 +792,19 @@ function getMutableRound(id: string): Round {
   return round;
 }
 
+// base58 (Bitcoin alphabet); a 32-byte Solana pubkey encodes to 32–44 chars.
+const SOLANA_BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const SOLANA_BACKEND = (process.env.CHAIN_BACKEND ?? "evm").toLowerCase() === "solana";
+
 function normalizeWallet(wallet?: string): string {
   const trimmed = (wallet ?? "").trim();
+  if (SOLANA_BACKEND) {
+    // Solana base58 pubkeys are case-sensitive — do not lowercase.
+    if (!SOLANA_BASE58.test(trimmed)) {
+      throw new Error("valid Solana wallet (base58 pubkey) required");
+    }
+    return trimmed;
+  }
   if (!/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
     throw new Error("valid EVM wallet required");
   }

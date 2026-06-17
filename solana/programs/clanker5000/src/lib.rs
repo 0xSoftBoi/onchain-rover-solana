@@ -503,6 +503,77 @@ pub mod clanker5000 {
         });
         Ok(())
     }
+
+    // ----- EventPass (port of EventPass.sol) --------------------------------
+
+    /// One-time init. `minter` is the guard robot's wallet (the only key that
+    /// can mint passes).
+    pub fn init_event_pass(ctx: Context<InitEventPass>, minter: Pubkey) -> Result<()> {
+        let c = &mut ctx.accounts.pass_config;
+        c.minter = minter;
+        c.next_id = 0;
+        c.bump = ctx.bumps.pass_config;
+        Ok(())
+    }
+
+    /// Mint an access pass to `to` at the auction-settled `price_usdc6`. The
+    /// pass is a program-native record (PDA per id); `holds(who)` is an
+    /// off-chain getProgramAccounts query filtered by `owner` (the Solana
+    /// idiom in place of an ERC-721 balanceOf). Minter only.
+    pub fn mint_pass(ctx: Context<MintPass>, pass_id: u64, to: Pubkey, price_usdc6: u64) -> Result<()> {
+        let c = &mut ctx.accounts.pass_config;
+        require_keys_eq!(ctx.accounts.minter.key(), c.minter, ClankerError::NotMinter);
+        require!(pass_id == c.next_id, ClankerError::BadPassId);
+        let pass = &mut ctx.accounts.pass;
+        pass.id = pass_id;
+        pass.owner = to;
+        pass.price_usdc6 = price_usdc6;
+        pass.bump = ctx.bumps.pass;
+        c.next_id = pass_id.checked_add(1).ok_or(ClankerError::Overflow)?;
+        emit!(PassMinted { id: pass_id, to, price_usdc6 });
+        Ok(())
+    }
+
+    // ----- Treasury (port of Treasury.sol) ----------------------------------
+
+    /// Init the fleet treasury. `owner` is the Ledger hardware-wallet address;
+    /// the USDC vault is a PDA token account.
+    pub fn init_treasury(ctx: Context<InitTreasury>, owner: Pubkey) -> Result<()> {
+        let t = &mut ctx.accounts.treasury_config;
+        t.owner = owner;
+        t.usdc_mint = ctx.accounts.usdc_mint.key();
+        t.vault = ctx.accounts.vault.key();
+        t.bump = ctx.bumps.treasury_config;
+        Ok(())
+    }
+
+    /// Withdraw fleet earnings. Owner-gated (the Ledger-held key) — the
+    /// governance boundary for the demo climax. Kept minimal so a Ledger Solana
+    /// clear-sign renders "Withdraw <amount> USDC to <recipient>".
+    pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
+        let bump = ctx.bumps.treasury_authority;
+        let signer: &[&[&[u8]]] = &[&[TREASURY_AUTH_SEED, &[bump]]];
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.recipient.to_account_info(),
+                    authority: ctx.accounts.treasury_authority.to_account_info(),
+                },
+                signer,
+            ),
+            amount,
+        )?;
+        emit!(TreasuryWithdraw { to: ctx.accounts.recipient.key(), amount });
+        Ok(())
+    }
+
+    pub fn set_treasury_owner(ctx: Context<SetTreasuryOwner>, new_owner: Pubkey) -> Result<()> {
+        ctx.accounts.treasury_config.owner = new_owner;
+        emit!(TreasuryOwnerChanged { new_owner });
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +591,11 @@ pub const BET_SEED: &[u8] = b"bet";
 pub const NULLIFIER_SEED: &[u8] = b"nullifier";
 pub const AGENT_SEED: &[u8] = b"agent";
 pub const FEEDBACK_SEED: &[u8] = b"feedback";
+pub const PASS_CONFIG_SEED: &[u8] = b"pass_config";
+pub const PASS_SEED: &[u8] = b"pass";
+pub const TREASURY_CONFIG_SEED: &[u8] = b"treasury_config";
+pub const TREASURY_VAULT_SEED: &[u8] = b"treasury_vault";
+pub const TREASURY_AUTH_SEED: &[u8] = b"treasury_auth";
 
 // ---------------------------------------------------------------------------
 // Accounts: race escrow
@@ -805,6 +881,97 @@ pub struct GiveFeedback<'info> {
 }
 
 // ---------------------------------------------------------------------------
+// Accounts: EventPass + Treasury
+// ---------------------------------------------------------------------------
+
+#[derive(Accounts)]
+pub struct InitEventPass<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + PassConfig::INIT_SPACE,
+        seeds = [PASS_CONFIG_SEED],
+        bump
+    )]
+    pub pass_config: Account<'info, PassConfig>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(pass_id: u64)]
+pub struct MintPass<'info> {
+    #[account(mut, seeds = [PASS_CONFIG_SEED], bump = pass_config.bump)]
+    pub pass_config: Account<'info, PassConfig>,
+    #[account(mut)]
+    pub minter: Signer<'info>,
+    #[account(
+        init,
+        payer = minter,
+        space = 8 + Pass::INIT_SPACE,
+        seeds = [PASS_SEED, &pass_id.to_le_bytes()],
+        bump
+    )]
+    pub pass: Account<'info, Pass>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitTreasury<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + TreasuryConfig::INIT_SPACE,
+        seeds = [TREASURY_CONFIG_SEED],
+        bump
+    )]
+    pub treasury_config: Account<'info, TreasuryConfig>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [TREASURY_VAULT_SEED],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = treasury_authority
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    /// CHECK: PDA authority over the treasury vault.
+    #[account(seeds = [TREASURY_AUTH_SEED], bump)]
+    pub treasury_authority: UncheckedAccount<'info>,
+    pub usdc_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawTreasury<'info> {
+    #[account(seeds = [TREASURY_CONFIG_SEED], bump = treasury_config.bump)]
+    pub treasury_config: Account<'info, TreasuryConfig>,
+    #[account(constraint = owner.key() == treasury_config.owner @ ClankerError::NotOwner)]
+    pub owner: Signer<'info>,
+    #[account(mut, address = treasury_config.vault @ ClankerError::BadVault)]
+    pub vault: Account<'info, TokenAccount>,
+    /// CHECK: PDA authority over the treasury vault.
+    #[account(seeds = [TREASURY_AUTH_SEED], bump)]
+    pub treasury_authority: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub recipient: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct SetTreasuryOwner<'info> {
+    #[account(mut, seeds = [TREASURY_CONFIG_SEED], bump = treasury_config.bump)]
+    pub treasury_config: Account<'info, TreasuryConfig>,
+    #[account(constraint = owner.key() == treasury_config.owner @ ClankerError::NotOwner)]
+    pub owner: Signer<'info>,
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
@@ -906,6 +1073,32 @@ pub struct Feedback {
     pub feedback_uri: String,
     pub feedback_hash: [u8; 32],
     pub ts: i64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct PassConfig {
+    pub minter: Pubkey,
+    pub next_id: u64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Pass {
+    pub id: u64,
+    pub owner: Pubkey,
+    pub price_usdc6: u64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct TreasuryConfig {
+    pub owner: Pubkey,
+    pub usdc_mint: Pubkey,
+    pub vault: Pubkey,
     pub bump: u8,
 }
 
@@ -1020,6 +1213,21 @@ pub struct NewFeedback {
     pub tag1: String,
     pub feedback_hash: [u8; 32],
 }
+#[event]
+pub struct PassMinted {
+    pub id: u64,
+    pub to: Pubkey,
+    pub price_usdc6: u64,
+}
+#[event]
+pub struct TreasuryWithdraw {
+    pub to: Pubkey,
+    pub amount: u64,
+}
+#[event]
+pub struct TreasuryOwnerChanged {
+    pub new_owner: Pubkey,
+}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -1069,4 +1277,10 @@ pub enum ClankerError {
     SelfFeedback,
     #[msg("string field exceeds max length")]
     StringTooLong,
+    #[msg("caller is not the pass minter")]
+    NotMinter,
+    #[msg("pass id does not match the running counter")]
+    BadPassId,
+    #[msg("caller is not the treasury owner (Ledger approval required)")]
+    NotOwner,
 }

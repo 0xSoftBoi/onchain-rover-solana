@@ -56,9 +56,10 @@ switch so the existing EVM demo keeps working untouched.
 | `buildRaceEntryRequest` (typed data for the phone to sign) | On Solana the phone wallet signs the `join_race` transaction itself; `buildRaceEntryRequest` now returns the serialized `join_race` instruction (programId/keys/base64 data) for the wallet to sign — no EIP-712, no permit. | ✅ landed |
 | Dispatch | `chain-backend.ts` dispatches to EVM or Solana by `CHAIN_BACKEND` (default `evm`, Solana lazy-imported); the 4 `import * as chain from "./chain.js"` call sites now import `./chain-backend.js`. | ✅ landed |
 
-> **Caveat:** round creation lowercases driver wallets via `normalizeWallet`
-> (EVM-shaped); base58 Solana pubkeys are case-sensitive. Making the wallet
-> normalizer backend-aware is the remaining wiring before a live Solana round.
+> **Resolved:** `normalizeWallet` (rounds.ts) is now backend-aware — under
+> `CHAIN_BACKEND=solana` it validates base58 Solana pubkeys and preserves case
+> instead of requiring/lowercasing an `0x` EVM address. This unblocks creating
+> and joining a round with Solana wallets end-to-end.
 
 ### Integration steps (sidecar)
 
@@ -80,8 +81,8 @@ integrations have no 1:1 Solana analog and need a product decision.
 |---|---|---|
 | ENS (`roverfleet.eth`, subnames, ENSIP-25) | **SNS** (Bonfida `.sol`) — `sidecar/src/sns.ts` resolves `guard/courier.roverfleet.sol` owner + agent-context TXT record live | ✅ resolution landed; registration planned |
 | ERC-8004 `ReputationRegistry` | Anchor reputation in the `clanker5000` program — `register_agent` / `give_feedback`, per-agent + per-feedback PDAs, running count/sum, `NewFeedback` event; self-feedback rejected | ✅ landed |
-| EventPass (ERC-721 mint on Arc) | SPL / **Metaplex** NFT (Token Metadata or Core) | ⛔ planned |
-| `Treasury.sol` + Ledger ERC-7730 clear-sign | **Squads** multisig (or PDA treasury) + Ledger Solana app clear-signing | ⛔ planned — ERC-7730 descriptor has no direct Solana equivalent |
+| EventPass (ERC-721 mint on Arc) | Program-native pass record in `clanker5000` — `init_event_pass` / `mint_pass` (PDA per id, minter-gated, price recorded); `holds(who)` is an off-chain `getProgramAccounts` query (`eventPassHolds` in `solana-chain.ts`). A Metaplex NFT wrapper is the optional production upgrade. | ✅ landed |
+| `Treasury.sol` + Ledger ERC-7730 clear-sign | PDA treasury in `clanker5000` — `init_treasury` / `withdraw_treasury` (owner-gated) / `set_treasury_owner`. The sidecar never holds the owner key: `buildTreasuryWithdraw` returns the instruction for a physical Ledger Solana clear-sign. (Squads multisig is the optional upgrade.) | ✅ landed |
 | x402 + Circle/Arc (USDC-as-gas wages) | x402 has Solana support via SPL USDC; gas is SOL (no USDC-as-gas) | ⛔ planned — fee model differs |
 | World ID betting gate | Keep World ID proof off-chain; store the nullifier in the `nullifier` PDA (already wired in `place_bet`) | ✅ on-chain nullifier landed; off-chain verifier reuse planned |
 | Chainlink CRE `AttestationConsumer` (Sepolia) | **Switchboard** / Chainlink Solana functions writing the verdict to an attestation PDA | ⛔ planned |

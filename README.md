@@ -313,6 +313,10 @@ about what's real vs. simulated. Everything else above is live.
 - `contracts/` — `EventPass.sol`, `ReputationRegistry.sol`, `RaceMarket.sol`,
   `Treasury.sol`, `AttestationConsumer.sol`, `erc7730/treasury.json`.
 - `cre-workflow/` — Chainlink CRE workflow (`main.ts` + `config.json` + `SETUP.md`).
+- `solana/` — **Clanker 5000**, the native-Solana settlement core: one Anchor
+  program porting `RaceEscrow` + `RaceMarket` to SPL/USDC PDAs. First landed
+  slice of the EVM→Solana rewrite; full migration map in
+  **[docs/SOLANA_PORT.md](docs/SOLANA_PORT.md)**.
 - `docs/LOCAL_CHAIN_RACE_HARNESS.md` - local chain, Compose, phone flow,
   robot-link, evidence, sensor replay, and field simulator runbook.
 - `docs/HARDWARE_BRINGUP.md` - cold-boot rover readiness runbook.

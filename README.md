@@ -3,6 +3,16 @@
 
 *(formerly "The Onchain Rover")*
 
+> **⚡ Native-Solana-only fork.** This branch (`solana-native-only`) is a
+> deliberate cutover in which **all EVM code has been removed** and the
+> clanker5000 Anchor program is the *sole* settlement backend. Every former EVM
+> piece (Arc/viem payments, ENS, ERC-8004, Chainlink CRE, the Hardhat
+> RaceEscrow/contracts, EIP-3009 gasless) is replaced by its native-Solana
+> equivalent (SPL-USDC, SNS, the program's own reputation/attestation, Kora). The
+> EVM demo lives in a different repo. See
+> [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) for the
+> per-component decision record driving every replacement.
+
 Every other agent at this hackathon is stuck in the pits — behind a screen. We put two
 of them on the track: a fleet of **Waveshare UGV rovers (Jetson Orin NX)** that you
 **hire over HTTP**, that earn an **on-chain reputation**, and whose **winnings only a

@@ -220,7 +220,7 @@ const mockLearning = () => ({
 // x402 backend: EVM uses Circle's Gateway middleware; Solana uses our SPL-USDC
 // gate (solana-x402.ts). The Gateway is only constructed for the EVM path so a
 // base58 TREASURY_ADDRESS never trips the EVM seller-address validation.
-const X402_SOLANA = (process.env.CHAIN_BACKEND ?? "evm").toLowerCase() === "solana";
+const X402_SOLANA = (process.env.CHAIN_BACKEND ?? "solana").toLowerCase() !== "evm";
 const gateway = X402_SOLANA
   ? null
   : createGatewayMiddleware({

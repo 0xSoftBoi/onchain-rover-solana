@@ -794,7 +794,7 @@ function getMutableRound(id: string): Round {
 
 // base58 (Bitcoin alphabet); a 32-byte Solana pubkey encodes to 32–44 chars.
 const SOLANA_BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const SOLANA_BACKEND = (process.env.CHAIN_BACKEND ?? "evm").toLowerCase() === "solana";
+const SOLANA_BACKEND = (process.env.CHAIN_BACKEND ?? "solana").toLowerCase() !== "evm";
 
 function normalizeWallet(wallet?: string): string {
   const trimmed = (wallet ?? "").trim();

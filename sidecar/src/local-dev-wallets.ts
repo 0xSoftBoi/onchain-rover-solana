@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 
-import type { TypedDataEnvelope } from "./chain.js";
+import type { TypedDataEnvelope } from "./chain-types.js";
 import type { DriverSlot } from "./rounds.js";
 
 export const LOCAL_DEV_PRIVATE_KEYS: Record<DriverSlot, Hex> = {

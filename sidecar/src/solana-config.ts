@@ -42,13 +42,31 @@ export function readSolanaDeployment(): SolanaDeployment {
   return JSON.parse(fs.readFileSync(deploymentUrl, "utf8"));
 }
 
+/** Helius RPC URL for a cluster, or null if no key. Free tier: 10 RPS, 1M
+ *  credits/mo (DAS API capped at 2 RPS) — see docs/HELIUS.md. */
+export function heliusRpcUrl(cluster: string): string | null {
+  const key = process.env.HELIUS_API_KEY;
+  if (!key) return null;
+  const net = cluster.includes("main") ? "mainnet" : "devnet";
+  return `https://${net}.helius-rpc.com/?api-key=${key}`;
+}
+/** Keyless public endpoint for a cluster — safe to hand to phone/frontend. */
+function publicClusterRpc(cluster: string): string {
+  return cluster.includes("main")
+    ? "https://api.mainnet-beta.solana.com"
+    : "https://api.devnet.solana.com";
+}
+
 export function solanaChainConfig(): SolanaChainConfig {
   const d = readSolanaDeployment();
-  const rpcUrl = process.env.SOLANA_RPC_URL ?? d.rpcUrl;
+  const cluster = process.env.SOLANA_CLUSTER ?? d.cluster;
+  // Backend RPC: explicit override > keyed Helius (if HELIUS_API_KEY set) > deploy default.
+  const rpcUrl = process.env.SOLANA_RPC_URL ?? heliusRpcUrl(cluster) ?? d.rpcUrl;
   return {
-    cluster: process.env.SOLANA_CLUSTER ?? d.cluster,
+    cluster,
     rpcUrl,
-    publicRpcUrl: process.env.PUBLIC_SOLANA_RPC_URL ?? rpcUrl,
+    // NEVER expose the keyed Helius URL to clients — fall back to a keyless public RPC.
+    publicRpcUrl: process.env.PUBLIC_SOLANA_RPC_URL ?? publicClusterRpc(cluster),
     sidecarUrl: process.env.PUBLIC_SIDECAR_URL ?? "",
     programId: process.env.SOLANA_PROGRAM_ID ?? d.programId,
     usdcMint: process.env.SOLANA_USDC_MINT ?? d.usdcMint,

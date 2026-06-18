@@ -1,39 +1,39 @@
 /**
- * Demo doctor — one command that checks every dependency and prints a
- * green/red readiness board before judging.  npx tsx src/preflight.ts
+ * Demo doctor — native Solana. One command that checks every dependency and
+ * prints a green/red readiness board before judging.  npx tsx src/preflight.ts
+ *
+ * Probes the Solana program/cluster (localChainHealth), SNS resolution (sns.ts),
+ * robot health, USDC balances, treasury, World ID config, and Walrus — replacing
+ * the EVM Arc/Sepolia/World-Chain/ENS probes.
  */
 import "./env.js";
-import { createPublicClient, http, parseAbi, getAddress } from "viem";
-import { mainnet, sepolia, worldchain } from "viem/chains";
-import { ARC, ROBOTS } from "./config.js";
-import { arcTestnet } from "./settle.js";
+import { ROBOTS } from "./config.js";
+import { localChainHealth, localTreasuryInfo, usdcBalanceOf } from "./solana-chain.js";
+import { fleet as snsFleet } from "./sns.js";
 import { buildFieldPreflight } from "./field-preflight.js";
 
 const ok = (b: boolean) => (b ? "✅" : "❌");
 const rows: { ok: boolean; label: string; detail: string }[] = [];
 const check = (label: string, pass: boolean, detail = "") => rows.push({ ok: pass, label, detail });
 
-const arc = createPublicClient({ chain: arcTestnet, transport: http() });
-const usdcAbi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
-const codeAt = (c: any, a?: string) => a ? c.getBytecode({ address: a as `0x${string}` }).then((b: any) => !!b && b !== "0x").catch(() => false) : Promise.resolve(false);
-const usdc = async (a: string) => {
+const usdc = async (a: string): Promise<bigint> => {
   try {
-    if (!/^0x[a-fA-F0-9]{40}$/.test(a)) return -1n;
-    return await arc.readContract({
-      address: ARC.usdc as `0x${string}`,
-      abi: usdcAbi,
-      functionName: "balanceOf",
-      args: [getAddress(a)],
-    });
+    if (!a) return -1n;
+    return await usdcBalanceOf(a);
   } catch {
     return -1n;
   }
 };
 
 async function main() {
-  // Arc RPC
-  const chainId = await arc.getChainId().catch(() => 0);
-  check("Arc RPC", chainId === ARC.chainId, `chainId ${chainId}`);
+  // Solana program / cluster health
+  let health: any = null;
+  try {
+    health = await localChainHealth();
+    check("Solana program reachable", !!health?.ok, health?.programId ? `program ${health.programId}` : JSON.stringify(health ?? {}).slice(0, 48));
+  } catch (e: any) {
+    check("Solana program reachable", false, e.message?.slice(0, 48) ?? "unreachable");
+  }
 
   // Robots
   for (const [n, r] of Object.entries(ROBOTS)) {
@@ -43,32 +43,29 @@ async function main() {
     } catch { check(`Robot ${n}`, false, `${r.url} unreachable`); }
   }
 
-  // Wallet balances on Arc (need gas+stake)
+  // Wallet USDC balances (need stake + fee)
   for (const [n, r] of Object.entries(ROBOTS)) {
     const b = await usdc(r.wallet);
-    check(`${n} USDC funded`, b > 0n, b < 0n ? "read failed" : `${Number(b) / 1e6} USDC`);
-  }
-  if (process.env.TREASURY_ADDRESS) {
-    const b = await usdc(process.env.TREASURY_ADDRESS);
-    check("treasury USDC funded", b > 0n, `${Number(b) / 1e6} USDC`);
+    check(`${n} USDC funded`, b > 0n, b < 0n ? "read failed / wallet unset" : `${Number(b) / 1e6} USDC`);
   }
 
-  // Contracts deployed on Arc
-  check("EventPass deployed", await codeAt(arc, process.env.EVENTPASS_ADDRESS), process.env.EVENTPASS_ADDRESS ?? "unset");
-  check("ReputationRegistry deployed", await codeAt(arc, process.env.REPUTATION_ADDRESS), process.env.REPUTATION_ADDRESS ?? "unset");
-  check("RaceMarket deployed", await codeAt(arc, process.env.RACEMARKET_ADDRESS), process.env.RACEMARKET_ADDRESS ?? "unset");
-  check("Treasury deployed", await codeAt(arc, process.env.TREASURY_CONTRACT), process.env.TREASURY_CONTRACT ?? "unset");
-
-  // ENS (Sepolia/mainnet) live resolution
-  const ensChain = (process.env.ENS_CHAIN ?? "sepolia") === "mainnet" ? mainnet : sepolia;
-  const ensClient = createPublicClient({ chain: ensChain, transport: http() });
-  const parent = `${process.env.ENS_PARENT_LABEL ?? "roverfleet"}.eth`;
+  // Treasury PDA vault
   try {
-    const addr = await ensClient.getEnsAddress({ name: `guard.${parent}` });
-    check("ENS resolves", !!addr, `guard.${parent} -> ${addr ?? "unresolved"} (${ensChain.name})`);
-  } catch (e: any) { check("ENS resolves", false, e.message.slice(0, 40)); }
+    const t = await localTreasuryInfo();
+    const bal = Number((t as any)?.balanceUsdc ?? (t as any)?.balance ?? 0);
+    check("treasury vault", true, `${bal} USDC${(t as any)?.owner ? ` · owner ${(t as any).owner}` : ""}`);
+  } catch (e: any) {
+    check("treasury vault", false, e.message?.slice(0, 48) ?? "read failed");
+  }
 
-  // World ID configured
+  // SNS (.sol) live resolution
+  try {
+    const f = await snsFleet();
+    check("SNS resolves", f.guard.resolved || f.courier.resolved,
+      `guard ${f.guard.address ?? "unresolved"} · courier ${f.courier.address ?? "unresolved"}`);
+  } catch (e: any) { check("SNS resolves", false, e.message?.slice(0, 40) ?? "resolution failed"); }
+
+  // World ID configured (off-chain verifier)
   check("World ID configured", !!process.env.WORLD_APP_ID, process.env.WORLD_APP_ID ?? "WORLD_APP_ID unset");
 
   // Walrus reachable
@@ -77,18 +74,12 @@ async function main() {
     check("Walrus reachable", w.status < 500, `HTTP ${w.status}`);
   } catch { check("Walrus reachable", false, "unreachable"); }
 
-  // AgentBook (World Chain) reachable
-  try {
-    const wc = createPublicClient({ chain: worldchain, transport: http(process.env.WORLDCHAIN_RPC ?? "https://worldchain-mainnet.gateway.tenderly.co") });
-    const bn = await wc.getBlockNumber();
-    check("AgentBook chain reachable", bn > 0n, `World Chain block ${bn}`);
-  } catch { check("AgentBook chain reachable", false, "RPC unreachable"); }
-
-  // Ledger config
-  check("Ledger owner set", !!process.env.LEDGER_ADDRESS, process.env.LEDGER_ADDRESS ?? "LEDGER_ADDRESS unset (Treasury owner=guard fallback)");
+  // Treasury owner (Ledger Solana / Squads v4) config
+  check("Treasury owner set", !!process.env.TREASURY_OWNER_PUBKEY,
+    process.env.TREASURY_OWNER_PUBKEY ?? "TREASURY_OWNER_PUBKEY unset (facilitator fallback)");
 
   // print board
-  console.log("\n  CLANKER500 — PRE-FLIGHT\n  " + "─".repeat(46));
+  console.log("\n  CLANKER500 — PRE-FLIGHT (Solana)\n  " + "─".repeat(46));
   for (const r of rows) console.log(`  ${ok(r.ok)} ${r.label.padEnd(26)} ${r.detail}`);
   const blockers = rows.filter((r) => !r.ok).length;
   console.log("  " + "─".repeat(46));
@@ -100,10 +91,10 @@ async function main() {
     allowLocalDevWallets: process.env.ALLOW_LOCAL_DEV_WALLETS === "1" || process.env.ALLOW_FREE_PILOT === "1",
   });
   console.log("\n  FIELD READINESS\n  " + "─".repeat(46));
-  for (const check of field.checks) {
-    const icon = check.status === "pass" ? "✅" : check.status === "warn" ? "⚠️ " : "❌";
-    console.log(`  ${icon} ${check.name.padEnd(26)} ${check.detail}`);
-    if (check.status !== "pass") console.log(`     fix: ${check.remediation}`);
+  for (const fieldCheck of field.checks) {
+    const icon = fieldCheck.status === "pass" ? "✅" : fieldCheck.status === "warn" ? "⚠️ " : "❌";
+    console.log(`  ${icon} ${fieldCheck.name.padEnd(26)} ${fieldCheck.detail}`);
+    if (fieldCheck.status !== "pass") console.log(`     fix: ${fieldCheck.remediation}`);
   }
   console.log("  " + "─".repeat(46));
   console.log(field.ok ? "  🟢 FIELD READY" : `  🟡 ${field.summary.fail} fail / ${field.summary.warn} warn\n`);

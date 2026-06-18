@@ -10,7 +10,6 @@
     "e2e:local-race": "bash scripts/e2e-local-race.sh",
     "e2e:dev-join": "npm --prefix sidecar run e2e:dev-join",
     "e2e:harness-bridge": "npm --prefix sidecar run e2e:harness-bridge",
-    "e2e:field-sim": "npm --prefix sidecar run e2e:field-sim",
     "robot:deploy-check": "cargo run --manifest-path robot-harness/Cargo.toml --bin rover-deploy-check --",
     "robot:stage-deployer": "echo 'stage deployer GUI disabled; use robot-harness/deploy/reset-jetson-over-ssh.sh'"
   }

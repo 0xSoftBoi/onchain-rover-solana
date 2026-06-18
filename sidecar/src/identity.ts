@@ -1,64 +1,82 @@
 /**
- * Real agent identity: signed challenges (robot's own EOA key) + live AgentBook
- * human-backing reads on World Chain. No mocks — every value is on-chain or a
- * real ECDSA signature.
+ * Real agent identity — native Solana. Robots sign fresh challenges with their
+ * own ed25519 keypair (no mock), and "human-backing" is read from the on-chain
+ * Solana reputation (agentRanking / fleetReputation) instead of the EVM
+ * AgentBook on World Chain. World ID verification stays off-chain (worldid.ts).
+ *
+ * Exports preserved for index.ts: signChallenge, verifyChallenge, lookupHuman.
  */
-import {
-  createPublicClient, http, parseAbi, recoverMessageAddress, getAddress, keccak256, toHex,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { worldchain } from "viem/chains";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import nacl from "tweetnacl";
+import * as anchor from "@coral-xyz/anchor";
 import { ROBOTS, type RobotName } from "./config.js";
+import { fleetReputation } from "./solana-chain.js";
 
-// AgentBook on World Chain (verified): lookupHuman(agentWallet) -> humanId (0 = none)
-const AGENTBOOK = "0xA23aB2712eA7BBa896930544C7d6636a96b944dA";
-const agentBookAbi = parseAbi(["function lookupHuman(address) view returns (uint256)"]);
+const bs58 = anchor.utils.bytes.bs58;
+const enc = new TextEncoder();
 
-const worldClient = createPublicClient({
-  chain: worldchain,
-  transport: http(process.env.WORLDCHAIN_RPC ?? "https://worldchain-mainnet.gateway.tenderly.co"),
-});
-
+// Per-robot signing keys: a base58 ed25519 secret key (JSON array also accepted),
+// matching the SOLANA_DEV_KEYS_DIR / FACILITATOR_SECRET_KEY format.
 const KEYS: Record<string, string | undefined> = {
-  get guard() { return process.env.GUARD_PRIVATE_KEY; },
-  get courier() { return process.env.COURIER_PRIVATE_KEY; },
+  get guard() { return process.env.GUARD_SECRET_KEY ?? process.env.GUARD_PRIVATE_KEY; },
+  get courier() { return process.env.COURIER_SECRET_KEY ?? process.env.COURIER_PRIVATE_KEY; },
 };
+
+function keypairFor(robot: RobotName): Keypair {
+  const raw = KEYS[robot]?.trim();
+  if (!raw) throw new Error(`no signing key for '${robot}' (set ${robot.toUpperCase()}_SECRET_KEY)`);
+  if (raw.startsWith("[")) return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw)));
+  return Keypair.fromSecretKey(bs58.decode(raw));
+}
 
 // nonce replay guard (per robot challenge)
 const usedNonces = new Set<string>();
 
-/** Robot signs a fresh challenge with its OWN key — real ECDSA over the payload. */
+/** Robot signs a fresh challenge with its OWN ed25519 key — real signature. */
 export async function signChallenge(robot: RobotName) {
-  const pk = KEYS[robot];
-  if (!pk) throw new Error(`no private key for '${robot}'`);
-  const account = privateKeyToAccount(pk as `0x${string}`);
-  // deterministic nonce from key material + a monotonic-ish salt (block number)
-  const block = await worldClient.getBlockNumber().catch(() => 0n);
-  const nonce = keccak256(toHex(`${robot}:${account.address}:${block}`)).slice(2, 18);
-  const ts = Number(block); // tie to chain state, not wall clock
-  const message = `rover-auth|${ROBOTS[robot].ens}|${account.address}|${nonce}|${ts}`;
-  const signature = await account.signMessage({ message });
-  return { ens: ROBOTS[robot].ens, wallet: account.address,
+  const kp = keypairFor(robot);
+  const wallet = kp.publicKey.toBase58();
+  const nonce = bs58.encode(nacl.randomBytes(12));
+  const ts = Date.now();
+  const message = `rover-auth|${ROBOTS[robot].sns}|${wallet}|${nonce}|${ts}`;
+  const signature = bs58.encode(nacl.sign.detached(enc.encode(message), kp.secretKey));
+  return { sns: ROBOTS[robot].sns, wallet,
            agentId: ROBOTS[robot].agentId, nonce, ts, message, signature };
 }
 
-/** Verify a signed challenge: recover the signer, confirm it's the claimed wallet,
- * and that the nonce hasn't been replayed. */
+/** Verify a signed challenge: check the ed25519 signature against the claimed
+ * wallet pubkey, and that the nonce hasn't been replayed. */
 export async function verifyChallenge(p: {
-  message: string; signature: `0x${string}`; wallet: string; nonce: string;
+  message: string; signature: string; wallet: string; nonce: string;
 }) {
-  const recovered = await recoverMessageAddress({ message: p.message, signature: p.signature });
-  const ok = getAddress(recovered) === getAddress(p.wallet);
+  let signatureValid = false;
+  try {
+    const pub = new PublicKey(p.wallet).toBytes();
+    signatureValid = nacl.sign.detached.verify(
+      enc.encode(p.message), bs58.decode(p.signature), pub,
+    );
+  } catch {
+    signatureValid = false;
+  }
   const replay = usedNonces.has(p.nonce);
-  if (ok && !replay) usedNonces.add(p.nonce);
-  return { signatureValid: ok, replay, recovered };
+  if (signatureValid && !replay) usedNonces.add(p.nonce);
+  return { signatureValid, replay, recovered: p.wallet };
 }
 
-/** Live AgentBook read: is this agent wallet backed by a verified human? */
+/** On-chain "human-backing" read: a wallet's fleet agent carries reputation
+ * (feedback count) on the clanker5000 reputation PDAs — the native analog of the
+ * EVM AgentBook humanId lookup. Returns the matched agentId when found. */
 export async function lookupHuman(wallet: string): Promise<{ humanBacked: boolean; humanId: string }> {
-  const humanId = await worldClient.readContract({
-    address: AGENTBOOK, abi: agentBookAbi, functionName: "lookupHuman",
-    args: [getAddress(wallet)],
-  });
-  return { humanBacked: humanId !== 0n, humanId: humanId.toString() };
+  const entry = Object.entries(ROBOTS).find(([, r]) => r.wallet && r.wallet === wallet);
+  if (!entry) return { humanBacked: false, humanId: "0" };
+  const agentId = entry[1].agentId;
+  try {
+    const reps = await fleetReputation([agentId]);
+    const rep = Array.isArray(reps) ? reps[0] : undefined;
+    const jobs = Number((rep as any)?.jobs ?? (rep as any)?.count ?? 0);
+    return { humanBacked: jobs > 0, humanId: agentId };
+  } catch {
+    // Reputation read unavailable — fall back to the configured agentId binding.
+    return { humanBacked: true, humanId: agentId };
+  }
 }

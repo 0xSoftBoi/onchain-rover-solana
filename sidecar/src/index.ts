@@ -1,17 +1,13 @@
 /**
  * Clanker500 sidecar — the crypto rails + PUBLIC paid surface (port 4021).
  *
- * Paid routes sit behind Circle's x402 Gateway middleware (nanopayments on
- * Arc testnet, gas-free EIP-3009). Free routes serve the demo orchestrator
- * and the web UI. Robot FastAPIs are LAN-only behind this.
- *
- * 🚨 facilitatorUrl MUST be set to the testnet URL (default is mainnet).
- * 🚨 Buyer wallets must be plain EOAs (Privy server wallets are).
+ * Paid routes sit behind the native-Solana x402 gate (SPL-USDC `exact`,
+ * solana-x402.ts). Free routes serve the demo orchestrator and the web UI.
+ * Robot FastAPIs are LAN-only behind this.
  */
 import express from "express";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import { solanaPaymentGate, x402SolanaPublicConfig } from "./solana-x402.js";
 import * as clawpump from "./clawpump.js";
 
@@ -23,7 +19,6 @@ import * as identity from "./identity.js";
 import * as worldid from "./worldid.js";
 import * as cre from "./cre.js";
 import * as privy from "./privy.js";
-import * as bq from "./bigquery.js";
 import * as lb from "./leaderboard.js";
 import * as race from "./race.js";
 import * as chain from "./chain-backend.js";
@@ -217,20 +212,12 @@ const mockLearning = () => ({
   ],
 });
 
-// x402 backend: EVM uses Circle's Gateway middleware; Solana uses our SPL-USDC
-// gate (solana-x402.ts). The Gateway is only constructed for the EVM path so a
-// base58 TREASURY_ADDRESS never trips the EVM seller-address validation.
-const X402_SOLANA = (process.env.CHAIN_BACKEND ?? "solana").toLowerCase() !== "evm";
-const gateway = X402_SOLANA
-  ? null
-  : createGatewayMiddleware({
-      sellerAddress: process.env.TREASURY_ADDRESS!,  // fleet treasury (Ledger-governed)
-      facilitatorUrl: ARC.facilitatorUrl,            // testnet! default is mainnet
-      networks: [ARC.caip2],
-    });
+// x402 backend: native Solana SPL-USDC gate (solana-x402.ts). EVM is removed, so
+// the Solana path is always taken; X402_SOLANA is retained (=true) for the few
+// wallet-format helpers below that branch on it.
+const X402_SOLANA = true;
 const RACE_NETWORK_FEE_USDC = normalizeUsdcAmount(process.env.RACE_NETWORK_FEE_USDC ?? "0.25");
-const payGate = (amount: string) =>
-  X402_SOLANA ? solanaPaymentGate(amount) : gateway!.require(amount);
+const payGate = (amount: string) => solanaPaymentGate(amount);
 const raceJoinFeeGate = payGate(`$${RACE_NETWORK_FEE_USDC}`);
 const autoStartTimers = new Map<string, NodeJS.Timeout>();
 
@@ -414,10 +401,10 @@ app.get("/cre/config", (_req, res) => res.json(cre.config()));
 app.get("/cre/latest", async (_req, res) => res.json(await cre.latest()));
 app.get("/privy/status", (_req, res) => res.json(privy.config()));
 
-// --- BigQuery: network-wide ERC-8004 reputation leaderboard ----------------
+// --- Network-wide reputation leaderboard (on-chain Solana reputation PDAs) --
 app.get("/leaderboard/network", async (_req, res) => {
-  try { res.json(await bq.leaderboard()); }
-  catch (e: any) { res.status(200).json({ configured: bq.configured(), error: e.message, rows: [] }); }
+  try { res.json(await lb.mainnetRanking()); }
+  catch (e: any) { res.status(200).json({ configured: false, error: e.message, rows: [] }); }
 });
 
 // Real World ID verify -> real nullifier. Frontend posts the IDKit proof here
@@ -1000,12 +987,12 @@ app.post("/race/round/:id/show-enter", (req, res) => {
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/race/round/:id/stake/prepare", (req, res) => {
+app.post("/race/round/:id/stake/prepare", async (req, res) => {
   try {
     const round = rounds.getRound(req.params.id);
     const slot = requireDriverSlot(req.body.slot);
     const adapter = stakeAdapters.stakeAdapter(req.body.adapter);
-    res.json(adapter.prepareStake(round, slot, req.body.wallet));
+    res.json(await adapter.prepareStake(round, slot, req.body.wallet));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 

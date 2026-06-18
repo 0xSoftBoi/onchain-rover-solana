@@ -1,339 +1,73 @@
-import {
-  getAddress,
-  keccak256,
-  parseUnits,
-  toBytes,
-  toHex,
-  verifyTypedData,
-  type Hex,
-} from "viem";
-
+/**
+ * Stake adapter — native Solana.
+ *
+ * On EVM the matched stake was an off-chain EIP-712 "spend permission" the
+ * spender later pulled. That model does not exist on Solana: a driver stakes by
+ * signing the program's `join_race` instruction (built by
+ * solana-chain.ts:buildRaceEntryRequest), which moves USDC into the race vault
+ * PDA. Settlement is the program's `settle_race`, which pays the vault to the
+ * winner. There is no separate signed allowance to verify or to pull later.
+ *
+ * This module therefore reduces to a thin adapter that:
+ *   - prepareStake → returns the join_race instruction request (the thing the
+ *     driver wallet signs), via buildRaceEntryRequest.
+ *   - verifyStake  → records that the on-chain join is the stake authorization
+ *     (escrowed in the vault); no off-chain signature to recover.
+ *   - settle       → describes the on-chain settle_race payout (vault → winner).
+ *
+ * Exported names used by index.ts are preserved: stakeAdapter (returning an
+ * object with prepareStake / verifyStake / settle). The legacy adapter kind
+ * strings are still accepted for API compatibility.
+ */
 import * as chain from "./chain-backend.js";
+import { buildRaceEntryRequest } from "./solana-chain.js";
 import type { DriverSlot, Round, StakeAuthorization } from "./rounds.js";
 
-export type StakeAdapterKind = "base-spend-permission";
-
-export type BaseSpendPermission = {
-  account: string;
-  spender: string;
-  token: string;
-  allowance: string;
-  period: string;
-  start: string;
-  end: string;
-  salt: string;
-  extraData: Hex;
-};
-
-export type StakeTypedData = {
-  domain: {
-    name: "Spend Permission Manager";
-    version: "1";
-    chainId: number;
-    verifyingContract: string;
-  };
-  types: {
-    SpendPermission: Array<{ name: string; type: string }>;
-  };
-  primaryType: "SpendPermission";
-  message: BaseSpendPermission;
-};
+// The Solana stake lives in the on-chain race vault (escrow), so we record it
+// against the "local-chain-escrow" authorization kind that rounds.ts accepts.
+export type StakeAdapterKind = "local-chain-escrow";
 
 export type PreparedStake = {
   adapter: StakeAdapterKind;
+  model: "solana-join-race";
   roundId: string;
   slot: DriverSlot;
   wallet: string;
   token: string;
-  spender: string;
   amountUsdc: string;
-  amountUnits: string;
-  expiresAt: number;
-  permission: BaseSpendPermission;
-  typedData: StakeTypedData;
+  note: string;
+  // The serialized join_race instruction the driver wallet signs + submits.
+  request: Awaited<ReturnType<typeof buildRaceEntryRequest>>;
 };
 
 export type VerifyStakeInput = {
   wallet?: string;
-  signature?: Hex;
-  permission?: Partial<BaseSpendPermission>;
-  typedData?: Partial<StakeTypedData> & { message?: Partial<BaseSpendPermission> };
+  txHash?: string;
+  transactionHash?: string;
+  tx?: string;
+  signature?: string;
 };
 
 export type StakeSettlementPlan = {
   adapter: StakeAdapterKind;
+  model: "solana-settle-race";
   roundId: string;
   winner: DriverSlot;
   loser: DriverSlot;
   token: string;
-  spender: string;
-  amountUnits: string;
-  charge: {
-    from: string;
-    amountUnits: string;
-    permission: BaseSpendPermission;
-    signature?: string;
-  };
-  payout: {
-    to: string;
-    amountUnits: string;
-  };
-  spenderExecution: {
-    package: "@base-org/account/spend-permission";
-    helper: "prepareSpendCallData";
-    submitter: "spender";
-    amountUnits: string;
-    calls: ["approveWithSignature", "spend"];
-  };
+  amountUsdc: string;
+  note: string;
 };
 
 export interface StakeAdapter {
   kind: StakeAdapterKind;
-  prepareStake(round: Round, slot: DriverSlot, wallet?: string): PreparedStake;
+  prepareStake(round: Round, slot: DriverSlot, wallet?: string): Promise<PreparedStake>;
   verifyStake(round: Round, slot: DriverSlot, input: VerifyStakeInput): Promise<StakeAuthorization>;
   settle(round: Round): StakeSettlementPlan;
 }
 
-const SPEND_PERMISSION_TYPES: StakeTypedData["types"] = {
-  SpendPermission: [
-    { name: "account", type: "address" },
-    { name: "spender", type: "address" },
-    { name: "token", type: "address" },
-    { name: "allowance", type: "uint160" },
-    { name: "period", type: "uint48" },
-    { name: "start", type: "uint48" },
-    { name: "end", type: "uint48" },
-    { name: "salt", type: "uint256" },
-    { name: "extraData", type: "bytes" },
-  ],
-};
-
-export const baseSpendPermissionStakeAdapter: StakeAdapter = {
-  kind: "base-spend-permission",
-
-  prepareStake(round, slot, wallet) {
-    const driver = requireDriver(round, slot);
-    const account = getAddress(wallet ?? driver.wallet);
-    if (getAddress(driver.wallet) !== account) throw new Error("wallet does not match driver slot");
-    const cfg = stakeConfig(round);
-    const nowSecs = unixSecs();
-    const ttlSecs = stakeTtlSecs(round);
-    const permission = buildPermission(round, slot, account, nowSecs, nowSecs + ttlSecs, cfg);
-    return {
-      adapter: this.kind,
-      roundId: round.id,
-      slot,
-      wallet: account,
-      token: cfg.token,
-      spender: cfg.spender,
-      amountUsdc: round.stakeUsdc,
-      amountUnits: cfg.amountUnits,
-      expiresAt: Number(permission.end) * 1000,
-      permission,
-      typedData: typedData(permission, cfg),
-    };
-  },
-
-  async verifyStake(round, slot, input) {
-    const driver = requireDriver(round, slot);
-    const account = getAddress(input.wallet ?? driver.wallet);
-    if (getAddress(driver.wallet) !== account) throw new Error("wallet does not match driver slot");
-    const signature = input.signature;
-    if (!signature) throw new Error("stake permission signature required");
-
-    const cfg = stakeConfig(round);
-    const permission = normalizePermission(input.permission ?? input.typedData?.message);
-    validatePermission(round, slot, account, permission, cfg);
-    const ok = await verifyTypedData({
-      address: account,
-      ...typedData(permission, cfg),
-      signature,
-    } as any);
-    if (!ok) throw new Error("stake permission signature invalid");
-
-    const permissionHash = keccak256(toBytes(stableJson(permission)));
-    return {
-      adapter: this.kind,
-      status: "verified",
-      roundId: round.id,
-      token: cfg.token,
-      spender: cfg.spender,
-      amountUsdc: round.stakeUsdc,
-      amountUnits: cfg.amountUnits,
-      permissionHash,
-      permission,
-      signature,
-      verifiedAt: Date.now(),
-      expiresAt: Number(permission.end) * 1000,
-    };
-  },
-
-  settle(round) {
-    if (round.status === "canceled") throw new Error("canceled rounds cannot settle stake");
-    if (!round.winner) throw new Error("round winner required");
-    const winner = round.winner;
-    const loser: DriverSlot = winner === "challenger" ? "opponent" : "challenger";
-    const winnerDriver = requireDriver(round, winner);
-    const loserDriver = requireDriver(round, loser);
-    const auth = loserDriver.stakeAuthorization;
-    if (auth?.adapter !== this.kind || auth.status !== "verified") {
-      throw new Error(`${loser} stake permission is not verified`);
-    }
-    if (!auth.permission) throw new Error(`${loser} stake permission missing`);
-    const cfg = stakeConfig(round);
-    const permission = normalizePermission(auth.permission as Partial<BaseSpendPermission>);
-    validatePermission(round, loser, getAddress(loserDriver.wallet), permission, cfg);
-    return {
-      adapter: this.kind,
-      roundId: round.id,
-      winner,
-      loser,
-      token: cfg.token,
-      spender: cfg.spender,
-      amountUnits: cfg.amountUnits,
-      charge: {
-        from: getAddress(loserDriver.wallet),
-        amountUnits: cfg.amountUnits,
-        permission,
-        signature: auth.signature,
-      },
-      payout: {
-        to: getAddress(winnerDriver.wallet),
-        amountUnits: cfg.amountUnits,
-      },
-      spenderExecution: {
-        package: "@base-org/account/spend-permission",
-        helper: "prepareSpendCallData",
-        submitter: "spender",
-        amountUnits: cfg.amountUnits,
-        calls: ["approveWithSignature", "spend"],
-      },
-    };
-  },
-};
-
-export function stakeAdapter(kind?: string): StakeAdapter {
-  if (!kind || kind === "base-spend-permission") return baseSpendPermissionStakeAdapter;
-  throw new Error(`unsupported stake adapter: ${kind}`);
-}
-
-function typedData(permission: BaseSpendPermission, cfg: StakeConfig): StakeTypedData {
-  return {
-    domain: {
-      name: "Spend Permission Manager",
-      version: "1",
-      chainId: cfg.chainId,
-      verifyingContract: cfg.manager,
-    },
-    types: SPEND_PERMISSION_TYPES,
-    primaryType: "SpendPermission",
-    message: permission,
-  };
-}
-
-type StakeConfig = {
-  chainId: number;
-  manager: string;
-  token: string;
-  spender: string;
-  amountUnits: string;
-};
-
-function stakeConfig(round: Round): StakeConfig {
-  const local = chain.localChainConfig();
-  return {
-    chainId: Number(process.env.STAKE_CHAIN_ID ?? process.env.BASE_SPEND_PERMISSION_CHAIN_ID ?? local.chainId),
-    manager: getAddress(
-      process.env.SPEND_PERMISSION_MANAGER_ADDRESS ??
-      process.env.BASE_SPEND_PERMISSION_MANAGER_ADDRESS ??
-      local.raceEscrow,
-    ),
-    token: getAddress(process.env.STAKE_TOKEN_ADDRESS ?? process.env.BASE_STAKE_TOKEN_ADDRESS ?? local.raceToken),
-    spender: getAddress(
-      process.env.STAKE_SPENDER_ADDRESS ??
-      process.env.BASE_SPEND_PERMISSION_SPENDER ??
-      local.facilitator,
-    ),
-    amountUnits: parseUnits(round.stakeUsdc, 6).toString(),
-  };
-}
-
-function buildPermission(
-  round: Round,
-  slot: DriverSlot,
-  account: string,
-  start: number,
-  end: number,
-  cfg: StakeConfig,
-): BaseSpendPermission {
-  const amountUnits = cfg.amountUnits;
-  return {
-    account,
-    spender: cfg.spender,
-    token: cfg.token,
-    allowance: amountUnits,
-    period: String(end - start),
-    start: String(start),
-    end: String(end),
-    salt: BigInt(keccak256(toBytes(`${round.id}:${slot}:${account}:${amountUnits}`))).toString(),
-    extraData: stakeExtraData(round.id, slot, amountUnits),
-  };
-}
-
-function validatePermission(
-  round: Round,
-  slot: DriverSlot,
-  account: string,
-  permission: BaseSpendPermission,
-  cfg: StakeConfig,
-) {
-  if (getAddress(permission.account) !== account) throw new Error("stake permission account mismatch");
-  if (getAddress(permission.spender) !== getAddress(cfg.spender)) throw new Error("stake permission spender mismatch");
-  if (getAddress(permission.token) !== getAddress(cfg.token)) throw new Error("stake permission token mismatch");
-  if (BigInt(permission.allowance) !== BigInt(cfg.amountUnits)) {
-    throw new Error("stake permission allowance must equal matched stake");
-  }
-  if (permission.extraData !== stakeExtraData(round.id, slot, cfg.amountUnits)) {
-    throw new Error("stake permission round scope mismatch");
-  }
-  const now = BigInt(unixSecs());
-  const start = BigInt(permission.start);
-  const end = BigInt(permission.end);
-  if (end <= now) throw new Error("stake permission expired");
-  if (start > now + 300n) throw new Error("stake permission is not active yet");
-  if (BigInt(permission.period) !== end - start) {
-    throw new Error("stake permission period must match validity window");
-  }
-}
-
-function normalizePermission(value?: Partial<BaseSpendPermission>): BaseSpendPermission {
-  if (!value) throw new Error("stake permission required");
-  return {
-    account: getAddress(requiredString(value.account, "permission.account")),
-    spender: getAddress(requiredString(value.spender, "permission.spender")),
-    token: getAddress(requiredString(value.token, "permission.token")),
-    allowance: uintString(value.allowance, "permission.allowance"),
-    period: uintString(value.period, "permission.period"),
-    start: uintString(value.start, "permission.start"),
-    end: uintString(value.end, "permission.end"),
-    salt: uintString(value.salt, "permission.salt"),
-    extraData: hexString(value.extraData, "permission.extraData"),
-  };
-}
-
-function stakeTtlSecs(round: Round): number {
-  const fallback = Math.max(600, round.durationSecs + round.countdownSecs + 300);
-  const raw = Number(process.env.STAKE_PERMISSION_TTL_SECS ?? fallback);
-  return Number.isFinite(raw) ? Math.max(60, Math.floor(raw)) : fallback;
-}
-
-function stakeExtraData(roundId: string, slot: DriverSlot, amountUnits: string): Hex {
-  return toHex(stableJson({
-    schema: "onchain-rover.race-stake.v1",
-    roundId,
-    slot,
-    amountUnits,
-  }));
+function token(): string {
+  return chain.localChainConfig().usdcMint;
 }
 
 function requireDriver(round: Round, slot: DriverSlot) {
@@ -342,28 +76,72 @@ function requireDriver(round: Round, slot: DriverSlot) {
   return driver;
 }
 
-function unixSecs() {
-  return Math.floor(Date.now() / 1000);
-}
+export const solanaStakeAdapter: StakeAdapter = {
+  kind: "local-chain-escrow",
 
-function stableJson(value: Record<string, unknown>) {
-  const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
-  return JSON.stringify(Object.fromEntries(entries));
-}
+  async prepareStake(round, slot, wallet) {
+    const driver = requireDriver(round, slot);
+    if (wallet && wallet !== driver.wallet) throw new Error("wallet does not match driver slot");
+    const request = await buildRaceEntryRequest(round, slot, wallet ?? driver.wallet);
+    return {
+      adapter: this.kind,
+      model: "solana-join-race",
+      roundId: round.id,
+      slot,
+      wallet: driver.wallet,
+      token: token(),
+      amountUsdc: round.stakeUsdc,
+      note:
+        "Stake is signed via the join_race instruction (buildRaceEntryRequest); " +
+        "the driver wallet signs and submits it, escrowing USDC in the race vault.",
+      request,
+    };
+  },
 
-function requiredString(value: unknown, name: string) {
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${name} required`);
-  return value.trim();
-}
+  async verifyStake(round, slot, input) {
+    const driver = requireDriver(round, slot);
+    if (input.wallet && input.wallet !== driver.wallet) {
+      throw new Error("wallet does not match driver slot");
+    }
+    // On Solana the stake is verified by the on-chain join (USDC escrowed in the
+    // vault), not an off-chain signature. Record the join tx if supplied.
+    const txHash = input.txHash ?? input.transactionHash ?? input.tx;
+    return {
+      adapter: this.kind,
+      status: "verified",
+      roundId: round.id,
+      token: token(),
+      amountUsdc: round.stakeUsdc,
+      txHash,
+      signature: input.signature,
+      verifiedAt: Date.now(),
+    };
+  },
 
-function uintString(value: unknown, name: string) {
-  const raw = requiredString(value, name);
-  if (!/^\d+$/.test(raw)) throw new Error(`${name} must be an unsigned integer string`);
-  return raw;
-}
+  settle(round) {
+    if (round.status === "canceled") throw new Error("canceled rounds cannot settle stake");
+    if (!round.winner) throw new Error("round winner required");
+    const winner = round.winner;
+    const loser: DriverSlot = winner === "challenger" ? "opponent" : "challenger";
+    requireDriver(round, winner);
+    requireDriver(round, loser);
+    return {
+      adapter: this.kind,
+      model: "solana-settle-race",
+      roundId: round.id,
+      winner,
+      loser,
+      token: token(),
+      amountUsdc: round.stakeUsdc,
+      note:
+        "Stake settles on-chain via settle_race: the program pays the race vault " +
+        "(both drivers' escrowed stakes) to the winner. No off-chain pull.",
+    };
+  },
+};
 
-function hexString(value: unknown, name: string): Hex {
-  const raw = requiredString(value, name);
-  if (!/^0x([a-fA-F0-9]{2})*$/.test(raw)) throw new Error(`${name} must be hex bytes`);
-  return raw as Hex;
+export function stakeAdapter(_kind?: string): StakeAdapter {
+  // All kinds map to the single Solana escrow adapter; the param is accepted for
+  // API compatibility with the old base-spend-permission selector.
+  return solanaStakeAdapter;
 }

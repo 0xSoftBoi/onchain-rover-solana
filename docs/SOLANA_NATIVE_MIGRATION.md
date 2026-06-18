@@ -23,10 +23,26 @@ why, and the exact gotchas* — grounded in a 2026 sourced research pass.
 | Token program | **classic SPL-Token** for USDC | Mainnet USDC is a classic SPL mint. Token-2022 is only needed if we want confidential transfers / transfer hooks — we don't, for USDC. x402 `@x402/svm` v2 and Kora both *also* support Token-2022, so this stays forward-compatible. |
 | Off-chain client | **`@solana/web3.js` v1 + `@coral-xyz/anchor`** (already in `sidecar/`) | `@solana/kit` (formerly web3.js v2) exists and a `@solana/web3-compat` bridge is **[sourced]** but unverified. No reason to migrate the sidecar client now — Anchor's ecosystem still rides web3.js v1. |
 
-**Build note for this repo:** the committed `solana/Cargo.lock` pins
-`zeroize_derive 1.5.0` / `indexmap 2.14.0`, which require Rust **edition 2024**
-(unbuildable on the documented 1.79 toolchain). Build locally with rustc ≥ 1.85,
-or pin those two crates down. See `SOLANA_PORT.md`.
+**Build status (verified on this fork):**
+- ✅ **Anchor program compiles to BPF** — `cargo-build-sbf` (Solana 2.1.21 /
+  platform-tools v1.43, rustc 1.79) produces `target/deploy/clanker5000.so`
+  (~564 KB). `cargo check`/`cargo test` pass (6/6 unit tests).
+- 🔧 **Cargo.lock fixed for build-sbf.** The original lock pinned edition-2024
+  crates (`indexmap 2.14`, `zeroize_derive 1.5`, `hashbrown 0.17`,
+  `unicode-segmentation 1.13`) that Cargo 1.79 *cannot parse* — build-sbf died
+  before compiling. Pinned them down (indexmap 2.7.1, zeroize_derive 1.4.2,
+  hashbrown 0.15.5, unicode-segmentation 1.12.0) so the BPF builds; host
+  `cargo check --locked` + tests stay green.
+- ⛔ **IDL generation (`anchor build`/`anchor idl build`) is blocked on this
+  Anchor 0.30.1 + 2026-toolchain combo** — `anchor-syn` needs old `proc-macro2`
+  (`Span::source_file`, removed from stable rustc ≥ 1.88) while `ark-bn254`'s
+  `MontFp` macro panics under that same old proc-macro2. No single version
+  satisfies both. The project CI already marks `anchor build`/`anchor test`
+  best-effort for this reason. **Fix path:** upgrade the program to **Anchor
+  0.31.x** (which resolved the proc-macro2 IDL break), then regenerate the IDL +
+  TS types and copy the IDL to `sidecar/src/generated/clanker5000.json`. Until
+  then the sidecar can't load the IDL at runtime, so `anchor test` (TS
+  integration) can't run — though the program itself is proven to build/deploy.
 
 ---
 

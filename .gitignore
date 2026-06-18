@@ -18,3 +18,6 @@ robot-harness/deploy/stage-fingerprints.json
 solana/.anchor/
 solana/test-ledger/
 Cargo.lock
+# but commit the program lockfile: build-sbf (rustc 1.79) needs deps pinned
+# below the edition2024 jump, and a committed lock keeps that reproducible.
+!solana/Cargo.lock

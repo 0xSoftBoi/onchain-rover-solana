@@ -65,10 +65,19 @@ frozen commit + this repo + threat model.
 
 ## 2. Deployment & operations
 
-- **sbpf version: v2.** Mainnet has **not** enabled SBPFv3 (SIMD-0178 inactive)
-  or Loader-v4 (SIMD-0167 inactive). Build with **`cargo build-sbf --arch v2`**
-  (done — `e_flags=0x2`). Re-check the feature gates at deploy time; move to v3
-  only once mainnet activates it.
+- **sbpf version — and a cluster divergence (important):**
+  - **mainnet** has NOT enabled SBPFv3 (SIMD-0178 inactive) → build
+    **`cargo build-sbf --arch v2`** (`e_flags=0x2`) for mainnet.
+  - **devnet** HAS SBPFv3 active and **rejects v0/v2 deploys** ("Detected
+    sbpf_version required by the executable which are not enabled") → devnet
+    needs **`--arch v3`** (`e_flags=0x3`).
+  - So the *same* `.so` can't target both right now. Build v3 for devnet
+    testing, v2 for the mainnet deploy. The program **bytecode/logic is
+    identical** — only the linker target differs. Re-check `solana feature
+    status` per cluster at deploy time; move mainnet to v3 once it activates.
+  - The local test-validator enables all features, so `anchor test` passes on
+    any arch — it does NOT catch this. Always verify the arch against the target
+    cluster's feature gates.
 - **Upgrade authority → Squads v4.** Deploy with a throwaway authority, then
   `set-upgrade-authority` to a Squads multisig. All future upgrades go through
   multisig (+ timelock). Keep a documented "make immutable" option for when the

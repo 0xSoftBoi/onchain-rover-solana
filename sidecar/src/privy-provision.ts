@@ -1,19 +1,20 @@
 import "./env.js";
 /**
- * Provision Privy server wallets for the fleet (real secp256k1 EOAs in Privy's
- * TEE). Run once:  npx tsx src/privy-provision.ts
+ * Provision Privy server wallets for the fleet (ed25519 Solana keypairs held in
+ * Privy's TEE). Run once:  npx tsx src/privy-provision.ts
  * Needs PRIVY_APP_ID + PRIVY_APP_SECRET (Privy dashboard → app settings).
- * Prints wallet ids + addresses — add to .env:
- *   PRIVY_WALLET_GUARD=<id>   PRIVY_WALLET_COURIER=<id>
- * Then fund the printed addresses with Arc USDC and set CUSTODY=privy to route
- * settlement through the enclave.
+ * Prints wallet ids + base58 addresses — add to .env:
+ *   PRIVY_WALLET_GUARD=<id>   PRIVY_ADDR_GUARD=<pubkey>
+ *   PRIVY_WALLET_COURIER=<id> PRIVY_ADDR_COURIER=<pubkey>
+ * Then fund the printed addresses with SPL-USDC and set CUSTODY=privy to route
+ * signing through the enclave.
  */
 import { client } from "./privy.js";
 
 const wallets = client().wallets();
 for (const role of ["guard", "courier"]) {
-  const w: any = await wallets.create({ chain_type: "ethereum" } as any);
+  const w: any = await wallets.create({ chain_type: "solana" } as any);
   console.log(`${role}: id=${w.id ?? w.walletId}  address=${w.address}`);
 }
-console.log("\nAdd the ids to .env (PRIVY_WALLET_GUARD / PRIVY_WALLET_COURIER),");
-console.log("fund the addresses with Arc USDC, then set CUSTODY=privy.");
+console.log("\nAdd the ids + addresses to .env (PRIVY_WALLET_* / PRIVY_ADDR_*),");
+console.log("fund the addresses with SPL-USDC, then set CUSTODY=privy.");

@@ -238,13 +238,13 @@ server-wallet Solana signing call against the Privy recipe.
 |---|---|---|---|---|---|
 | 1 | ERC-20 / x402 gate | x402 `exact` on SPL-USDC | `@faremeter/{payment-solana,fetch,info}` | confirmed | gate ✅ (align to v2 headers) |
 | 1b | USDC bridge | Circle CCTP V2 | `developers.circle.com/cctp` | confirmed | not wired (optional) |
-| 2 | EIP-3009 gasless | **Kora** relayer (fee payer) | `solana-foundation/kora` | confirmed | retire `eip3009.ts`; stand up Kora |
-| 3 | ENS | **SNS** `.sol` | `@bonfida/sns-sdk` | sourced | resolution ✅; registration TODO |
+| 2 | EIP-3009 gasless | **Kora** relayer (fee payer) | `solana-foundation/kora` | confirmed | client scaffolded (`solana-gasless.ts`); needs Kora node |
+| 3 | ENS | **SNS** `.sol` | `@bonfida/spl-name-service` | sourced | resolution ✅; registration scaffolded (`sns.ts:registerSubdomain`) |
 | 4 | ERC-8004 | own Anchor reputation (+8004-solana interop) | `clanker5000` / `QuantuLabs/8004-solana` | sourced | program ✅; **writes landed this pass** |
 | 5 | EventPass ERC-721 | program-native pass (or Metaplex Core) | `@metaplex-foundation/mpl-core` | sourced | program pass ✅ |
 | 6 | Treasury + Ledger | program PDA vault + **Squads v4** / Ledger Solana | `Squads-Protocol/v4` | sourced | program ✅; submit flow TODO |
 | 7 | Chainlink CRE | **Switchboard On-Demand** | `@switchboard-xyz/on-demand` | sourced | program ✅; DON wiring TODO |
-| 8 | Privy TEE | Privy **Solana** wallets | `docs.privy.io/recipes/solana` | sourced | provision/sign branch TODO |
+| 8 | Privy TEE | Privy **Solana** wallets | `docs.privy.io/recipes/solana` | sourced | converted to `chain_type:"solana"` (privy.ts/wallets.ts/privy-provision.ts) |
 | 9 | World ID | off-chain verify + on-chain nullifier | (Wormhole if on-chain) | sourced | ✅ complete |
 | 10 | BigQuery | `getProgramAccounts` (+ Helius/Yellowstone) | `docs.helius.dev` | sourced | on-chain ranking ✅ |
 
@@ -252,31 +252,34 @@ server-wallet Solana signing call against the Privy recipe.
 
 ## Remaining cutover plan (ordered)
 
-1. **Client wrappers — DONE this pass.** Market (`openMarketOnChain`,
-   `placeBetOnChain`, `settleMarketOnChain`) + reputation writes
-   (`registerAgentOnChain`, `giveFeedbackOnChain`, `repSummaryOnChain`) +
-   payments (`payOnChain`, `usdcBalanceOf`) in `solana-chain.ts`.
-2. **Solana robot/wallet config.** `config.ts:ROBOTS` holds EVM `0x` addresses;
-   add Solana pubkeys (in `solana-config.ts` / env) for guard/courier so
-   `settle.ts` money paths can resolve role → Solana wallet. **Blocks the
-   settle.ts cutover.**
-3. **Make `settle.ts` backend-aware** (delegate `pay`/`mintPass`/`holdsPass`/
-   `giveFeedback`/`open|bet|settle market`/`treasury`/`repSummary` to
-   `solana-chain.ts` when `CHAIN_BACKEND=solana`). Needs (2) first.
-4. **Betting signer model.** `place_bet` is per-bettor-signed (PDA seeded by
-   bettor), so the EVM single-relayer staking model doesn't port. Use the
-   human's phone wallet (prod) or per-human dev keypairs (`SOLANA_DEV_KEYS_DIR`).
-5. **Ledger Solana submit** helper (`submitSignedSolanaTx`) to replace
-   `broadcastSigned`; confirm clear-sign rendering.
-6. **External integrations** (need keys/standup): Kora relayer, Switchboard DON,
-   Privy Solana, SNS registration, Squads v4 owner.
-7. **Flip the default** `CHAIN_BACKEND` to `solana` once (2)–(5) land and the
-   deploy artifacts (`anchor build` IDL + `contracts.solana.json`) exist, then
-   archive the EVM-only setup scripts (`deploy-*.ts`, `register-ens.ts`,
-   `eip3009.ts`).
+> **This is the native-Solana-only fork** — the EVM cutover is DONE here (the
+> hybrid demo lives in the sibling repo). Status updated below.
 
-**Why not flip the default now:** the Solana backend can't run without the
-deployment artifacts (`anchor build` IDL, deployed program id, USDC mint,
-facilitator key) *and* the Solana robot-wallet config (step 2). Flipping before
-those exist would break `main`'s working EVM demo for zero gain. The flip is the
-*last* step, after the money paths are wired and verifiable.
+1. ✅ **Client wrappers** — market (`openMarketOnChain` / `placeBetOnChain` /
+   `settleMarketOnChain`), reputation writes (`registerAgentOnChain` /
+   `giveFeedbackOnChain` / `repSummaryOnChain`), payments (`payOnChain` /
+   `usdcBalanceOf`) in `solana-chain.ts`.
+2. ✅ **Solana robot/wallet config** — `config.ts:ROBOTS.wallet` is now a base58
+   Solana pubkey; ENS name replaced by an `sns` field.
+3. ✅ **`settle.ts` is Solana-only** — all paths delegate to `solana-chain.ts`
+   (the EVM viem body was removed entirely, not gated).
+4. ✅ **Betting signer model** — `placeBetOnChain` signs per-bettor (phone wallet
+   in prod, `SOLANA_DEV_KEYS_DIR` for dev), matching the program's bet PDA.
+5. ✅ **Ledger Solana submit** — `submitSignedSolanaTx` lands the Ledger-signed
+   tx; `settle.ts:broadcastSigned` delegates to it. (Clear-sign *rendering* on
+   the Ledger Solana app still to confirm on device.)
+6. **External integrations** — code scaffolded; need keys/standup to go live:
+   - ✅ scaffolded: **Kora** gasless client (`solana-gasless.ts`), **SNS**
+     registration (`sns.ts:registerSubdomain`), **Privy Solana** custody
+     (`privy.ts` / `wallets.ts` / `privy-provision.ts` now `chain_type:"solana"`).
+   - ⛔ still TODO: **Switchboard On-Demand** DON wiring (set the program
+     `forwarder` to the Switchboard authority), **Squads v4** as treasury owner.
+7. ✅ **Default flipped** — `CHAIN_BACKEND` defaults to `solana`; all EVM
+   Solidity/hardhat/viem removed. `sidecar/src` is 100% EVM-free.
+
+**Before running:** still need the deploy artifacts — `anchor build` IDL copied
+to `sidecar/src/generated/clanker5000.json`, a deployed program id + USDC mint +
+facilitator key in `contracts.solana.json` / env. The TS is syntactically valid
+but **not type-checked here** (no `node_modules` / IDL); run `npm run typecheck`
++ `anchor build` in CI. External services (Kora node, Switchboard feed, Privy
+app, SNS parent domain) need their own keys/accounts.

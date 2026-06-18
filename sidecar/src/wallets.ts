@@ -1,7 +1,9 @@
 /**
- * Robot wallets = Privy SERVER wallets (real secp256k1 EOAs — Circle Gateway
- * requires plain EOA signatures; NEVER route through smart-wallet/4337 products).
- * Visitor/bettor wallets = Dynamic embedded (web/ side).
+ * Robot wallets = Privy SERVER wallets on Solana (TEE-held ed25519 keypairs;
+ * the host never holds the secret). Visitor/bettor wallets = embedded wallets on
+ * the web/ side. Native-Solana fork: chain_type is "solana" (was "ethereum").
+ * Method names per docs.privy.io/recipes/solana — confirm against the installed
+ * @privy-io/node version.
  */
 import { PrivyClient } from "@privy-io/node";
 
@@ -11,17 +13,19 @@ const privy = new PrivyClient({
 });
 
 export async function createRobotWallet() {
-  const wallet = await privy.wallets().create({ chain_type: "ethereum" });
+  const wallet = await privy.wallets().create({ chain_type: "solana" });
   return { walletId: wallet.id, address: wallet.address };
 }
 
-export async function signTypedData(walletId: string, typedData: any) {
-  // Emits standard ECDSA — Gateway/EIP-3009 compatible.
-  return privy.wallets().ethereum().signTypedData(walletId, {
-    params: { typed_data: typedData },
+/** Sign a base64-serialized Solana transaction inside the Privy TEE. */
+export async function signTransaction(walletId: string, txBase64: string) {
+  return (privy.wallets() as any).solana().signTransaction(walletId, {
+    params: { transaction: txBase64 },
   });
 }
 
 export async function signMessage(walletId: string, message: string) {
-  return privy.wallets().ethereum().signMessage(walletId, { message });
+  return (privy.wallets() as any).solana().signMessage(walletId, {
+    params: { message },
+  });
 }

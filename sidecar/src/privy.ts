@@ -13,7 +13,7 @@ import "./env.js";
  * Re-check method signatures against the installed @privy-io/node.
  */
 import { PrivyClient } from "@privy-io/node";
-import { createViemAccount } from "@privy-io/node/viem";
+import { PublicKey } from "@solana/web3.js";
 
 const APP_ID = process.env.PRIVY_APP_ID;
 const APP_SECRET = process.env.PRIVY_APP_SECRET;
@@ -40,15 +40,36 @@ export function config() {
   };
 }
 
-/** A viem account whose signing happens inside Privy's TEE (no local key).
- *  Uses Privy's official viem integration (handles BigInt→hex over the wire). */
-export function privyAccount(walletId: string, address: `0x${string}`) {
-  return createViemAccount(client(), { walletId, address });
+/**
+ * A Solana signer adapter whose signing happens inside Privy's TEE (no local
+ * key on the host). `address` is the wallet's base58 Solana pubkey. Returns
+ * `{ publicKey, signTransaction, signMessage }`. The Privy Solana method names
+ * are per docs.privy.io/recipes/solana — confirm against the installed
+ * @privy-io/node version (kept defensive with `as any`).
+ */
+export function privyAccount(walletId: string, address: string) {
+  const c = client();
+  return {
+    publicKey: new PublicKey(address),
+    /** Sign a base64-serialized Solana transaction in the TEE; returns base64. */
+    async signTransaction(txBase64: string): Promise<string> {
+      const res: any = await (c.wallets() as any)
+        .solana()
+        .signTransaction(walletId, { params: { transaction: txBase64 } });
+      return res.signed_transaction ?? res.signedTransaction ?? res;
+    },
+    async signMessage(message: string): Promise<string> {
+      const res: any = await (c.wallets() as any)
+        .solana()
+        .signMessage(walletId, { params: { message } });
+      return res.signature ?? res;
+    },
+  };
 }
 
-/** Resolve a robot name to a Privy-backed viem account, or null if not provisioned. */
+/** Resolve a robot name to a Privy-backed Solana signer, or null if unprovisioned. */
 export function accountFor(name: string) {
   const w = WALLETS[name];
   if (!APP_ID || !APP_SECRET || !w?.id || !w?.addr) return null;
-  return privyAccount(w.id, w.addr as `0x${string}`);
+  return privyAccount(w.id, w.addr);
 }

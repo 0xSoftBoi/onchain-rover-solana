@@ -8,15 +8,19 @@
  * The gate verifies the settled transfer on-chain.
  */
 import {
+  ComputeBudgetProgram,
   Connection,
   PublicKey,
   Transaction,
 } from "@solana/web3.js";
 import {
   createTransferInstruction,
+  getAccount,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { USDC_MINT } from "../config";
+
+const usdc = (units: bigint) => (Number(units) / 1e6).toFixed(6);
 
 export type PayWallet = {
   publicKey: PublicKey;
@@ -51,11 +55,32 @@ export async function x402Fetch(
   onPay?.({ amountUsdc });
 
   const fromAta = getAssociatedTokenAddressSync(USDC_MINT, wallet.publicKey);
+
+  // Pre-check balance so we fail with a clear message instead of a wallet reject.
+  let have = 0n;
+  try {
+    have = (await getAccount(conn, fromAta)).amount;
+  } catch {
+    throw new Error("no USDC token account for this wallet — fund it first");
+  }
+  if (have < units) {
+    throw new Error(`insufficient USDC: have ${usdc(have)}, need ${usdc(units)}`);
+  }
+
+  // Minimal, legible tx (one transfer) + a small priority fee so it lands.
   const tx = new Transaction().add(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 20_000 }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
     createTransferInstruction(fromAta, payTo, wallet.publicKey, units),
   );
   tx.feePayer = wallet.publicKey;
   tx.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
+
+  // Simulate before prompting Phantom — catch failures up front, no surprise sign.
+  const sim = await conn.simulateTransaction(tx);
+  if (sim.value.err) {
+    throw new Error(`payment would fail: ${JSON.stringify(sim.value.err)}`);
+  }
 
   const signature = await wallet.sendTransaction(tx, conn);
   await conn.confirmTransaction(signature, "confirmed");

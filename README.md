@@ -1,422 +1,208 @@
-# 🏁 The Clanker 500 — ETHGlobal NYC 2026
-### Two robots. Real USDC on the line. Every lap settled on-chain.
+# 🏁 Clanker 5000 — a robot race & labor market, settled natively on Solana
 
-*(formerly "The Onchain Rover")*
+### Two physical rovers. Real USDC on the line. Every lap settled by one Anchor program.
 
-> **⚡ Native-Solana-only fork.** This branch (`solana-native-only`) is a
-> deliberate cutover in which **all EVM code has been removed** and the
-> clanker5000 Anchor program is the *sole* settlement backend. Every former EVM
-> piece (Arc/viem payments, ENS, ERC-8004, Chainlink CRE, the Hardhat
-> RaceEscrow/contracts, EIP-3009 gasless) is replaced by its native-Solana
-> equivalent (SPL-USDC, SNS, the program's own reputation/attestation, Kora). The
-> EVM demo lives in a different repo. See
-> [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) for the
-> per-component decision record driving every replacement.
->
-> **Status (verified):** `anchor build` ✅ (BPF + IDL, Anchor 0.31 / Agave 4.0.3) ·
-> `anchor test` ✅ **3/3** on a local validator (race payout + parimutuel market +
-> World-ID nullifier reject) · sidecar `tsc --noEmit` ✅ 0 errors · `sidecar/src`
-> is 100% EVM-free. RPC + priority fees + DAS via **Helius** (free tier) —
-> [`docs/HELIUS.md`](docs/HELIUS.md). Deploy runbook:
-> [`docs/DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md).
+*Native-Solana rebuild of The Clanker 500 / "Onchain Rover." **All EVM code is
+removed** — one Solana program is the sole settlement backend. The EVM/Arc demo
+lives in a separate repo.*
 
-Every other agent at this hackathon is stuck in the pits — behind a screen. We put two
-of them on the track: a fleet of **Waveshare UGV rovers (Jetson Orin NX)** that you
-**hire over HTTP**, that earn an **on-chain reputation**, and whose **winnings only a
-human can unlock with a Ledger**. Identity, payments, reputation, a labor market, and
-human governance — every sponsor doing real work, with a robot on the table the whole
-time.
+> **Status — verified end-to-end:**
+> `anchor build` ✅ (BPF + IDL, **Anchor 0.31 / Agave 4.0.3**) ·
+> `anchor test` ✅ **3/3** on a local validator (race payout 2× · parimutuel
+> bet→settle→claim · World-ID nullifier reject) ·
+> sidecar `tsc --noEmit` ✅ 0 errors · `sidecar/src` is **100% EVM-free**.
+> Decision record: [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) ·
+> RPC/fees/DAS: [`docs/HELIUS.md`](docs/HELIUS.md) ·
+> deploy: [`docs/DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md).
 
-**Sponsors, at a glance:** ENS + ERC-8004 (identity & reputation) · x402 + Circle/Arc
-(USDC wages & gas) · World ID (sybil-proof betting) · Walrus (proof storage) ·
-Chainlink CRE (decentralized verification) · Privy (TEE custody) · Ledger (clear-signed
-treasury) · Gemini (vision verification) · BigQuery (network leaderboard) · Dynamic +
-Blink (instant wallets & on-ramp).
+Every other agent at a hackathon is stuck behind a screen. We put two on the
+track: a fleet of **Waveshare UGV rovers (Jetson Orin NX)** you **hire over
+HTTP**, that earn an **on-chain reputation**, race for **USDC stakes**, and whose
+**winnings only a human can unlock with a Ledger**. Identity, payments,
+reputation, a betting market, and human governance — all native Solana, with a
+robot on the table the whole time.
 
-**Jump to:** [What's real (not mocked)](#whats-real-not-mocked) ·
-[Deployed addresses](#deployed--live-verified-on-chain) ·
-[Show runbook](#show-runbook) ·
-[Run with no hardware](#no-robot-no-gpu-run-the-whole-loop-anyway)
+---
 
-### Links & meta
-- 🎥 **Demo video (3 min):** _TODO: paste link before submitting_
-- 🏁 **Live dashboard (no setup):** **https://0xsoftboi.github.io/onchain-rover/** — the
-  full **Clanker 500** wall, running standalone in your browser (mock data baked in).
-- 🌐 **Local dashboards (with sidecar on :4021):** `mux.html` (the unified Clanker 500
-  wall) · `wall.html` (cinematic big-screen) · `index.html` (Mission Control)
-- 📜 **License:** _TODO: add a LICENSE file (MIT recommended)_
-- 👥 **Team:** _TODO: names / ETHGlobal handles_
-- 🔍 **Start here:** `sidecar/settle.ts` (all on-chain writes) · `contracts/` (deployed
-  contracts) · `robot/agent.py` (autonomy loop) · [Deployed addresses](#deployed--live-verified-on-chain)
+## The stack
 
-```
-   hire (x402/Arc) → robot acts → Gemini verifies → proof on Walrus
-         ▲                                                │
-    BigQuery rank ◄── ERC-8004 reputation ◄── requester rates the job
-```
-
-## The two acts
-- **Qualifying — The Checkpoint:** a courier robot is hired, drives to the guard
-  robot, they greet in speech then **switch to GibberLink** (data-over-sound);
-  the guard verifies it **on-chain** (signed challenge + AgentBook human-backing +
-  ERC-8004 + EventPass) → rejects it → the robots run a **Texas-auctioneer Dutch
-  auction** to negotiate the pass price → pay + mint on Arc → admitted → proof to
-  Walrus → reputation ticks up.
-- **Race day — The Clanker 500:** spectators **pay to pilot** the rovers ($1 x402
-  sessions, WebRTC joystick with WebSocket fallback + deadman) through the sidecar.
-  The Rust `robot-harness` on each Jetson enforces speed caps, estop, telemetry,
-  camera, and lidar contracts while drivers **bet USDC** on a fruit-obstacle drag
-  race (parimutuel, **one bet per human via real World ID**), settled on-chain by
-  the guard robot's Walrus-anchored finish photo.
-- **Parc Fermé (the climax):** withdrawing the fleet's earnings **blocks** until a
-  human clear-signs on a **Ledger** (ERC-7730: "Withdraw N USDC → recipient").
-
-## Show runbook
-
-For a live booth run, keep the sidecar on the laptop and expose only the sidecar's
-public URL. The QR links point players at round entry; the operator keeps a separate
-settlement control page and never has to expose raw robot URLs.
-
-```bash
-cp .env.compose.example .env.compose
-docker compose --env-file .env.compose up --detach --wait
-```
-
-Set `COMPOSE_PUBLIC_SIDECAR_URL` to the tunnel URL before printing QR codes. Keep
-`COMPOSE_ALLOW_FREE_PILOT=0` for public play, use `COMPOSE_ALLOW_ROUND_PILOT=1` for
-paid round control, and set `COMPOSE_ALLOW_SHOW_RACE_AUTOSTART=1` when the first two
-confirmed players should trigger the countdown automatically. The local fallback flag
-`COMPOSE_ALLOW_SHOW_X402_FALLBACK=1` is for rehearsals only; leave it off when Arc
-testnet settlement is the source of truth.
-
-Key booth URLs:
-- Operator wall: `<public-sidecar-url>/round.html`
-- Guard entry: `<public-sidecar-url>/round.html?robot=guard&entry=x402`
-- Courier entry: `<public-sidecar-url>/round.html?robot=courier&entry=x402`
-- Manual pilot: `<public-sidecar-url>/pilot-react.html?robot=guard&mode=manual&transport=webrtc&speed=high`
-- Preflight: `<public-sidecar-url>/field.html`
-
-### Live show topology
-
-```mermaid
-flowchart LR
-    subgraph PUBLIC["Public network"]
-      P1["Player phone<br/>guard QR"]
-      P2["Player phone<br/>courier QR"]
-      W["Spectator wall"]
-      X["x402 / Arc testnet<br/>USDC entry"]
-    end
-    subgraph LAPTOP["Booth laptop"]
-      T["Public tunnel<br/>COMPOSE_PUBLIC_SIDECAR_URL"]
-      S["Sidecar :4021<br/>rounds, x402, telemetry, WebRTC"]
-      C["Docker local chain<br/>rehearsal escrow"]
-    end
-    subgraph FIELD["Robot field"]
-      G["Guard Jetson<br/>Rust harness :8000"]
-      R["Courier Jetson<br/>Rust harness :8000"]
-      Cam["MJPEG cameras<br/>telemetry + odometry"]
-    end
-
-    P1 --> T
-    P2 --> T
-    W --> T
-    T --> S
-    S --> X
-    S --> C
-    S -->|WebRTC drive + HTTP stop| G
-    S -->|WebRTC drive + HTTP stop| R
-    G --> Cam --> S
-    R --> Cam
-```
-
-### Race lifecycle
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant O as Operator
-    participant S as Sidecar
-    participant A as Arc / x402
-    participant G as Guard driver
-    participant C as Courier driver
-    participant R as Robots
-    participant W as Wall
-
-    O->>S: create show round
-    G->>S: scan QR and enter as guard
-    C->>S: scan QR and enter as courier
-    S->>A: verify x402 payment
-    A-->>S: payment accepted
-    S->>W: show confirmed drivers
-    S->>S: lock first two drivers
-    S->>W: countdown
-    S-->>G: enable WebRTC control
-    S-->>C: enable WebRTC control
-    G->>R: drive guard
-    C->>R: drive courier
-    R-->>S: telemetry and odometry
-    S->>W: winner candidate
-    O->>S: settle winner
-    S->>A: settle race transactions
-    S->>W: final result
-```
-
-### Control and safety path
-
-```mermaid
-flowchart TB
-    J["Browser joystick"] --> D["WebRTC drive DataChannel<br/>unordered, maxRetransmits=0"]
-    J --> WS["WebSocket fallback"]
-    D --> H["Shared command handler"]
-    WS --> H
-    H --> V["Validate token, round, speed cap, and interval"]
-    V --> B["Robot bridge"]
-    B --> RH["Rust harness service on Jetson"]
-    RH --> M["Motor controller"]
-    H --> Last["lastCommand + telemetry broadcast"]
-    Stop["STOP button"] --> D
-    Stop --> Http["HTTP stop backup"]
-    Http --> B
-```
-
-## Current race runtime
-
-The fielded race path is centered on the Node sidecar and Rust rover harness.
-The older Python autonomy stack still exists for Act 1 checkpoint work; it is
-documented separately in **[ROBOTICS.md](ROBOTICS.md)** because it cannot own the
-same serial and camera devices at the same time as `robot-harness`.
-
-```mermaid
-flowchart TB
-    Phone["Phone pilot UI<br/>pilot.html or pilot-react.html"] -->|"WebRTC DataChannel<br/>or WS fallback"| Sidecar
-    Operator["Operator screens<br/>round.html, field.html, finish-camera.html"] --> Sidecar
-    Agent["agent-client<br/>paid /task hire"] --> Sidecar
-
-    subgraph LAPTOP["Laptop / operator host"]
-      direction TB
-      Sidecar["sidecar/src/index.ts<br/>Express :4021<br/>x402, rounds, evidence, telemetry"]
-      Chain["Hardhat local chain<br/>MockRaceToken + RaceEscrow"]
-      Store["sidecar/data/races<br/>round, evidence, telemetry trace"]
-      Bridge["harness-bridge.ts<br/>/ws/robot adapter"]
-    end
-
-    subgraph JETSONS["Each Jetson rover"]
-      direction TB
-      Harness["robot-harness<br/>Rust :8000"]
-      Serial["ESP32 serial<br/>/dev/ttyTHS1"]
-      Sensors["camera + lidar + IMU<br/>/dev/video0, /dev/ttyACM0"]
-    end
-
-    Sidecar --> Chain
-    Sidecar --> Store
-    Sidecar <-->|"/ws/robot"| Bridge
-    Bridge -->|"/ws/drive, /ws/camera"| Harness
-    Harness --> Serial
-    Harness --> Sensors
-    Harness -->|"/ws/telemetry"| Bridge
-```
-
-### Clanker500 GP race flow
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Challenger phone
-    participant B as Opponent phone
-    participant S as Sidecar :4021
-    participant C as RaceEscrow
-    participant R as robot-harness
-    participant O as Operator / detector
-    A->>S: create round + pay fixed x402 fee
-    B->>S: accept round + pay fixed x402 fee
-    S->>C: open race
-    A->>S: sign entry + permit typed data
-    B->>S: sign entry + permit typed data
-    S->>C: join, lock, start
-    S-->>A: delegated pilot session + WebRTC offer URL
-    S-->>B: delegated pilot session + WebRTC offer URL
-    A->>S: drive frames over WebRTC or WS
-    B->>S: drive frames over WebRTC or WS
-    S->>R: bridge commands to /ws/drive
-    R-->>S: telemetry, camera, lidar, odometry
-    alt automatic finish
-        R-->>S: telemetry crosses finish threshold
-        S->>S: record finish detection + proof hash
-    else operator-confirmed finish
-        O->>S: choose winner or settle winner
-        S->>S: capture proof frame + evidence hash
-    end
-    S->>C: finish + settle payout
-    S-->>O: persisted round, trace, proof frame
-```
-
-## What's real (not mocked)
-The sponsor integrations are real code paths. The repo also has explicit local
-simulators and dev-wallet gates for rehearsing without hardware or public funds:
-- **Identity** — robots sign challenges with their own EOA keys (verified by
-  recovery); **live AgentBook reads** on World Chain for human-backing.
-- **World ID** — real IDKit proof → World cloud verifier → real nullifier; every
-  bet requires it (no proof = no bet).
-- **ENS** — real on-chain registration on Sepolia (`roverfleet.eth` + guard/
-  courier subnames + ENSIP-25 `agent-registration` records), resolved live via viem.
-- **Payments / settlement** — real USDC transfers, EventPass mint, RaceMarket
-  bets + settle on **Arc** (USDC-as-gas), via viem.
-- **Reputation** — ERC-8004-compatible `ReputationRegistry` on Arc, requester
-  rates the agent, feeds the leaderboard.
-- **Proof** — finish/job photos stored on **Walrus** (real blobId, read-back
-  verified), hash anchored on-chain.
-- **Governance** — `Treasury` withdrawable only by the Ledger-held owner,
-  clear-signed via an ERC-7730 descriptor. (Owner transferred to a real Ledger
-  device; gas-funded so the device-signed withdrawal broadcasts.)
-- **Decentralized verification (Chainlink CRE)** — a DON independently calls the
-  robot's `GET /attest`, reaches **median consensus** on the verification score,
-  and `writeReport`s the verdict to `AttestationConsumer` on Sepolia. The robot's
-  self-claim never settles — `isVerified(job)` gates the mint/payment/reputation.
-- **Custody (Privy)** — robot signing keys live in Privy's TEE, not on the host;
-  `settle.pay()` signs through the enclave (`CUSTODY=privy`). **LIVE**: real Arc
-  tx signed in the TEE (`0x6a9b8fdd…`).
-- **Network reputation (BigQuery)** — ranks every on-chain agent by ERC-8004
-  `NewFeedback` volume on the canonical mainnet registry (partition-pruned,
-  dry-run guarded); the rover's local Arc reputation shown alongside.
-
-## Deployed & live (verified on-chain)
-| Thing | Address / id | Chain |
+| Capability | Native-Solana tech | Where |
 |---|---|---|
-| EventPass | `0xb4fd7be40fb501433f403f8ecf46084075af4d77` | Arc 5042002 |
-| ReputationRegistry | `0x876bdebd935696982a906ea51609b518d6902b68` | Arc |
-| Treasury (Ledger-owned) | `0xfd15f8ffc6d82df92b77ded9a2b3535e23a86f43` | Arc |
-| AttestationConsumer (CRE) | `0x0fdb04628c8821d2cd7ebd5cc2d23e1a46a077e3` | Sepolia |
-| World ID app / RP | `app_2c9c29e4…` / `rp_8fe1202b…` (action `rover-gp-bet`) | World 4.0 (on-chain) |
-| Privy wallets (TEE) | guard `0x4C726E70…` · courier `0x76f7c993…` | Arc |
+| **Settlement** (escrow, market, reputation, passes, treasury, attestation) | **one Anchor program — `clanker5000`** | `solana/programs/clanker5000` |
+| **Money** | **SPL-USDC** (6dp), held in per-race/market **PDA vaults**; payouts via token CPI | program + `sidecar/src/solana-chain.ts` |
+| **Paid routes** | **x402** `exact` scheme over SPL-USDC (hire a robot / pilot / join a race) | `sidecar/src/solana-x402.ts` |
+| **Gasless** | **Kora** relayer (fee payer; users pay fees in USDC) — replaces EIP-3009 | `sidecar/src/solana-gasless.ts` |
+| **RPC + priority fees + assets** | **Helius** (free tier): keyed backend RPC, `getPriorityFeeEstimate`, DAS | `sidecar/src/helius.ts`, `solana-config.ts` |
+| **Identity / naming** | **SNS** `.sol` — `guard/courier.roverfleet.sol` + agent-context record | `sidecar/src/sns.ts` |
+| **Reputation** | on-program ERC-8004-style registry (`register_agent`/`give_feedback`, running avg) | program + `sidecar/src/leaderboard.ts` |
+| **Sybil-proof betting** | **World ID** (off-chain verify) + on-chain **nullifier PDA** (one human, one bet) | `worldid.ts` + `place_bet` |
+| **Verification oracle** | **Switchboard On-Demand** writes the finish verdict via the program's `forwarder` | `write_attestation` + `cre.ts` |
+| **Proof storage** | **Walrus** (chain-agnostic); the verdict/photo hash is anchored on-chain | `evidence.ts` + `proof_hash` fields |
+| **Custody** | **Privy** Solana server wallets (TEE signing, `chain_type:"solana"`) | `privy.ts`, `wallets.ts` |
+| **Treasury governance** | PDA USDC vault, owner-gated; owner = **Ledger Solana** / **Squads v4** clear-sign | `withdraw_treasury` + `treasury-ledger.ts` |
+| **Robots** | **Jetson Orin NX** rovers, **Rust harness** (speed caps, e-stop, telemetry, camera/lidar) | `robot-harness/` |
+| **Off-chain server** | **Node 22 + TS** sidecar (:4021): rounds, x402, WebRTC pilot bridge, settlement | `sidecar/` |
 
-Verified live: real USDC settlements on Arc (incl. **TEE-signed via Privy**),
-EventPass minted, ERC-8004 feedback, a Treasury withdrawal gated by a **physical
-Ledger** (owner transferred to the device + gas-funded), Walrus proofs read back
-& hash-matched, and `GET /attest` serving a verified score for the CRE DON.
+**Toolchain:** Anchor **0.31.0**, Agave (Solana CLI) **4.0.3** / platform-tools
+v1.53, `@coral-xyz/anchor` (TS) ^0.31.1, SPL-Token (classic) for USDC,
+`@solana/web3.js` v1.
 
-### On the two credential-gated pieces (no mock fallback — by design)
-- **Chainlink CRE:** the `AttestationConsumer` is **already deployed on Sepolia**
-  (`0x0fdb04628c8821d2cd7ebd5cc2d23e1a46a077e3`) and the robot's `GET /attest` is
-  **already serving a live 85/100 score**. The only step needing `cre login` is the
-  DON's final `simulate --broadcast` — a judge-side auth, not missing code. Workflow
-  is committed in `cre-workflow/`.
-- **BigQuery:** the partition-pruned, dry-run-guarded query is committed in
-  `sidecar/bigquery.ts`; it needs GCP creds in `.env` to hit the public ERC-8004
-  dataset. Runs live at the booth in ~30s.
+---
 
-We deliberately ship **no mock fallback** for these two, so there's zero ambiguity
-about what's real vs. simulated. Everything else above is live.
+## The on-chain program (`clanker5000`)
 
-## Layout
-- `robot-harness/` - Rust service for each Jetson. It owns `/dev/ttyTHS1`,
-  camera/lidar hooks, pilot tokens, deadman, speed caps, estop, and
-  `/ws/drive`/`/ws/camera`/`/ws/telemetry`. Deployment and recovery live in
-  `robot-harness/deploy/`.
-- `sidecar/` - Node 22 + TS (:4021). x402 paid routes, local race rounds,
-  sidecar-owned pilot sessions, WebRTC/WS control bridge, telemetry traces,
-  local chain routes, field preflight, evidence packets, and operator settlement.
-  `harness-bridge.ts` adapts each Rust rover to the sidecar `/ws/robot` socket.
-- `sidecar/public/` — **`wall.html`** the FLEET COMMAND master wall (cinematic
-  big-screen view: cognition stream, on-chain ledger, holo dials, Walrus proof,
-  CRE oracle), `round.html`/`lobby.html` for the operator race board,
-  `field.html` for preflight, `finish-camera.html`, `pilot.html`,
-  `pilot-react.html`, `show-links.html`, `race.html`, and `ledger.html`.
-- `chain/` - Hardhat local-chain project for `MockRaceToken` and `RaceEscrow`;
-  deployment exports `sidecar/src/generated/contracts.local.json`.
-- `robot/` - Python Act 1/autonomy stack. It still contains the FastAPI robot
-  API, serial wrapper, NoMaD/RoboBrain/RoboOS integration, GibberLink, speech,
-  proof, and checkpoint code, but it is an alternate hardware owner to the Rust
-  harness.
-- `contracts/` — `EventPass.sol`, `ReputationRegistry.sol`, `RaceMarket.sol`,
-  `Treasury.sol`, `AttestationConsumer.sol`, `erc7730/treasury.json`.
-- `cre-workflow/` — Chainlink CRE workflow (`main.ts` + `config.json` + `SETUP.md`).
-- `solana/` — **Clanker 5000**, the native-Solana settlement core: one Anchor
-  program porting `RaceEscrow` + `RaceMarket` to SPL/USDC PDAs. First landed
-  slice of the EVM→Solana rewrite; full migration map in
-  **[docs/SOLANA_PORT.md](docs/SOLANA_PORT.md)**.
-- `docs/LOCAL_CHAIN_RACE_HARNESS.md` - local chain, Compose, phone flow,
-  robot-link, evidence, sensor replay, and field simulator runbook.
-- `docs/HARDWARE_BRINGUP.md` - cold-boot rover readiness runbook.
-  `docs/JETSON_BRIDGE.md` - robot/sidecar boundary.
-- `ROBOTICS.md` — autonomy stack (NoMaD nav foundation model, RoboBrain brain, RoboOS multi-agent).
+One Anchor program replaces what used to be six Solidity contracts. 24
+instructions, grouped:
 
-## Run
-```bash
-# local chain + sidecar in containers
-npm install
-npm run compose:up
-npm run compose:logs
+- **Race escrow** — `initialize` · `open_race` · `join_race` · `lock_race` ·
+  `start_race` · `finish_race` · `settle_race` (winner gets 2× stake) ·
+  `cancel_race` (refund) · `set_facilitator`. Stakes live in a per-race PDA token
+  vault (`[b"vault", race]`); the driver signs `join_race` directly (no relayed
+  EIP-712/permit — that EVM dance collapses on Solana).
+- **Parimutuel market** — `open_market` · `place_bet` · `settle_market` ·
+  `claim` · `set_judge`. Payout = `stake × total_pool / winning_pool` (u128
+  math). **One-human-one-bet** is structural: a `nullifier` PDA seeded by the
+  World ID nullifier `init`s once; a reused nullifier collides and fails.
+- **Reputation (ERC-8004 port)** — `register_agent` · `give_feedback`
+  (per-agent + per-feedback PDAs, running count/sum, `NewFeedback` event,
+  self-feedback rejected).
+- **EventPass** — `init_event_pass` · `mint_pass` (PDA per id, minter-gated,
+  price recorded; `holds(who)` via `getProgramAccounts`).
+- **Treasury** — `init_treasury` · `withdraw_treasury` (owner-gated, the Ledger/
+  Squads governance boundary) · `set_treasury_owner` (PDA USDC vault).
+- **Attestation (oracle verdict)** — `init_attestation` · `set_forwarder` ·
+  `write_attestation` (per-job PDA, threshold 70, forwarder-gated). The robot's
+  own claim never settles anything — downstream reads `verified`.
+
+`settle_race` / `settle_market` attach **Helius-priced ComputeBudget
+instructions** so payouts land under congestion.
+
+---
+
+## The show (three acts)
+
+- **Qualifying — the checkpoint.** A courier rover is hired (x402, SPL-USDC),
+  drives to the guard rover, they greet in speech then switch to **GibberLink**
+  (data-over-sound). The guard verifies it on-chain (signed challenge + SNS
+  identity + reputation + EventPass), runs a Dutch auction for the pass price,
+  pays + mints on Solana, and anchors the proof to Walrus.
+- **Race day — Clanker 5000.** Spectators **pay to pilot** the rovers ($1 x402
+  sessions, WebRTC joystick + deadman). The Rust harness enforces speed caps,
+  e-stop, and telemetry while drivers **bet USDC** on a fruit-obstacle drag race
+  (parimutuel, **one bet per human via World ID**), settled on-chain from the
+  guard's Walrus-anchored finish photo, verdict landed by a Switchboard DON.
+- **Parc fermé — the climax.** Withdrawing the fleet's earnings **blocks** until
+  a human clear-signs on a **Ledger** (the treasury owner): "Withdraw N USDC →
+  recipient."
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+    Phone["Phone pilot / bettor<br/>x402 SPL-USDC"] -->|WebRTC or WS| Sidecar
+    Operator["Operator screens"] --> Sidecar
+    Agent["agent-client<br/>paid /task hire"] --> Sidecar
+    subgraph HOST["Operator host"]
+      Sidecar["sidecar/src/index.ts — Node :4021<br/>rounds · x402 · telemetry · WebRTC · settlement"]
+      SC["solana-chain.ts<br/>@coral-xyz/anchor client"]
+      Sidecar --> SC
+    end
+    subgraph SOLANA["Solana (devnet/mainnet)"]
+      Prog["clanker5000 program<br/>escrow · market · reputation · pass · treasury · attest"]
+      Vault["PDA USDC vaults"]
+    end
+    subgraph SVC["Off-chain services"]
+      Helius["Helius RPC / priority fees / DAS"]
+      Kora["Kora gasless relayer"]
+      Walrus["Walrus proof storage"]
+      SB["Switchboard On-Demand verdict"]
+    end
+    subgraph JETSONS["Each Jetson rover"]
+      Harness["robot-harness — Rust :8000<br/>speed caps · e-stop · camera · lidar"]
+    end
+    SC -->|RPC| Helius --> Prog
+    Prog --> Vault
+    SC -. fee payer .-> Kora --> Prog
+    SB --> Prog
+    Sidecar --> Walrus
+    Sidecar <-->|/ws/robot| Harness
 ```
 
-### The dashboard — the Clanker 500 wall
-One unified "wall of mini terminals" shows the whole stack at once — onboard cams,
-on-device Gemma3 reasoning, the live **RACE CONTROL** event bus, pending→confirmed
-settlements (with gas/block/latency), parimutuel odds, World ID betting, reputation,
-the photo-finish proof on Walrus, and the Ledger-governed winner's purse — laid out as
-the three-act arc (Qualifying → The Main Event → Chequered Flag).
+---
 
-- **Published, zero-setup:** **https://0xsoftboi.github.io/onchain-rover/** runs fully
-  standalone — `site/clanker-mock.js` patches `fetch` + `EventSource` so every tile
-  animates with no backend. Source lives in [`site/`](site/); deployed on the
-  `gh-pages` branch.
-- **Attach a live rig:** append `?api=<sidecar-url>` (e.g. an ngrok tunnel) to stream
-  **real** data, with automatic fall-back to mock per-call if the backend is down.
-  Requires the current sidecar build (the bus lives at `GET /events/stream`) — CORS is
-  enabled for read-only viewers.
-- **Local (with sidecar on :4021):** open `mux.html`. `DEMO_MOCK=1 npm start` fills
-  every panel server-side for hardware-free review.
+## Repo layout
 
-### No robot? No GPU? Run the whole loop anyway
-Every off-board service has a `stub` backend, so a judge can validate the full
-pipeline on a laptop with zero hardware:
-```bash
-POLICY_BACKEND=stub BRAIN_BACKEND=stub ./scripts/demo_up.sh   # dry run, no installs
-python robot/test_stack.py                                    # control math, odometry, handshake, settlement plumbing
-```
+- **`solana/`** — the `clanker5000` Anchor program (`programs/clanker5000/src/lib.rs`),
+  `tests/clanker5000.ts` (integration suite), `Anchor.toml`, IDL/types.
+- **`sidecar/`** — Node 22 + TS (:4021). x402 paid routes, race rounds, WebRTC/WS
+  pilot bridge, telemetry, evidence, operator settlement. Solana client +
+  integrations: `solana-chain.ts`, `solana-config.ts`, `solana-x402.ts`,
+  `solana-gasless.ts` (Kora), `helius.ts`, `sns.ts`, `settle.ts`, `privy.ts`,
+  `worldid.ts`. Generated IDL at `sidecar/src/generated/clanker5000.json`.
+- **`robot-harness/`** — Rust service per Jetson: serial/motor control, camera/
+  lidar, pilot tokens, deadman, speed caps, e-stop, `/ws/drive|camera|telemetry`.
+- **`robot/`** — Python Act-1 autonomy stack (FastAPI, GibberLink, speech, nav).
+  See [`ROBOTICS.md`](ROBOTICS.md). (Alternate hardware owner to the Rust harness.)
+- **`docs/`** — [`SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md)
+  (per-component decision record), [`HELIUS.md`](docs/HELIUS.md),
+  [`DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md), [`SOLANA_PORT.md`](docs/SOLANA_PORT.md).
 
-```bash
-# manual local sidecar development
-npm --prefix chain install
-npm --prefix sidecar install
-npm run chain:node
-npm run chain:deploy
-cd sidecar
-npm run build:pilot
-ALLOW_FREE_PILOT=1 ALLOW_LOCAL_DEV_WALLETS=1 npm start
-```
+> Gone with the EVM cutover: `contracts/` (Solidity), `chain/` (Hardhat),
+> `cre-workflow/` (Chainlink CRE), and all viem/ENS/Arc code.
+
+---
+
+## Build, test, deploy
 
 ```bash
-# no-hardware verification against the Rust simulator
-SIDECAR_URL=http://127.0.0.1:4021 npm --prefix sidecar run e2e:harness-bridge
-SIDECAR_URL=http://127.0.0.1:4021 npm --prefix sidecar run e2e:field-sim
+# toolchain (see docs/DEPLOY_SOLANA.md for the version pins that matter)
+sh -c "$(curl -sSfL https://release.anza.xyz/v4.0.3/install)"
+npm i -g @coral-xyz/anchor-cli@0.31.0
+
+cd solana
+anchor build                 # BPF + IDL + types
+cp target/idl/clanker5000.json ../sidecar/src/generated/clanker5000.json
+anchor test                  # local validator → 3/3
 ```
+
+Deploy to a cluster (RPC throughput matters — use a keyed Helius/QuickNode URL;
+free public RPCs rate-limit the ~640-write upload):
 
 ```bash
-# Jetson recovery/deploy, then laptop deploy check
-./robot-harness/deploy/reset-good-state.sh \
-  --role guard \
-  --sidecar-url http://<laptop-ip>:4021 \
-  --profile wifi \
-  --drive-invert
-
-npm run robot:deploy-check -- \
-  --bot guard=http://<guard-ip>:8000 \
-  --bot courier=http://<courier-ip>:8000 \
-  --sidecar-url http://<laptop-ip>:4021
+solana program deploy target/deploy/clanker5000.so \
+  --program-id target/deploy/clanker5000-keypair.json \
+  --url "$RPC" --use-rpc --max-sign-attempts 5000
 ```
+
+> **Program ID:** `4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD` (declared).
+> Devnet deployment in progress; address confirmed here once finalized.
+
+### Run the sidecar
 
 ```bash
-# deep integrations once their creds/funds are in .env
-cd sidecar
-npx tsx src/register-ens.ts
-npx tsx src/go-live.ts
-npx tsx src/deploy-consumer.ts
-npx tsx src/privy-provision.ts
-npx tsx src/ledger-handover.ts 0x<dev>
-# CRE: see cre-workflow/SETUP.md
+cd sidecar && npm install
+# .env: CHAIN_BACKEND=solana, HELIUS_API_KEY=…, SOLANA_PROGRAM_ID, SOLANA_USDC_MINT,
+#       FACILITATOR_SECRET_KEY, TREASURY_ADDRESS  (see ../.env.example)
+npm start
 ```
 
-Demo at `http://<laptop>:4021/wall.html` (the big-screen FLEET COMMAND wall) ·
-`/round.html` (operator race board) · `/field.html` (preflight) ·
-`/pilot.html` or `/pilot-react.html` (driver) · `/finish-camera.html` ·
-`/ledger.html`.
+The Solana backend needs the deploy artifacts: `anchor build` IDL copied into
+`sidecar/src/generated/clanker5000.json`, plus a deployed program id + USDC mint
++ facilitator key in `contracts.solana.json` / env. `HELIUS_API_KEY` is used
+server-side only — the key is never exposed to phone/frontend clients.
+
+---
+
+## Status of the external integrations
+
+| Integration | State |
+|---|---|
+| Program (escrow/market/reputation/pass/treasury/attest) | ✅ built + `anchor test` 3/3 |
+| Sidecar client, x402 gate, SNS resolve, reputation, Helius | ✅ implemented, `tsc` clean |
+| Kora gasless · SNS registration · Privy-Solana · Switchboard forwarder · Squads owner | 🟡 code/scaffold landed — need accounts/keys to go live |
+| Devnet deployment | 🟡 in progress (RPC throughput) |
+
+See [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) for the
+sourced per-integration recommendations and the remaining cutover steps.

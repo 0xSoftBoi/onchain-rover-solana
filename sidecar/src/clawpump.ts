@@ -95,7 +95,10 @@ export async function agentEarnings(): Promise<Record<string, unknown>> {
  */
 export async function launchWinnerToken(round: Round): Promise<Record<string, unknown>> {
   if (!round.winner) throw new Error("round has no winner to commemorate");
-  const robot = round.winner === "challenger" ? "Guard" : "Courier";
+  // Use the round's actual robot assignment (it can differ per round) rather
+  // than a fixed challenger/opponent → robot mapping.
+  const robotName = round.stageCalibration.robotAssignments[round.winner].robot;
+  const robot = robotName.charAt(0).toUpperCase() + robotName.slice(1);
   const symbol = `C5K${round.id.slice(0, 4).toUpperCase()}`;
   return launchAgentToken({
     name: `Clanker 500 — ${robot} #${round.id}`,

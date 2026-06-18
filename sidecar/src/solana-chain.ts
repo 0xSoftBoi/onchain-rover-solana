@@ -35,6 +35,7 @@ import {
 
 import type { DriverSlot, Round } from "./rounds.js";
 import { solanaChainConfig, publicSolanaChainConfig } from "./solana-config.js";
+import { priorityPreInstructions } from "./helius.js";
 
 export { solanaChainConfig as localChainConfig, publicSolanaChainConfig as publicLocalChainConfig };
 
@@ -275,6 +276,7 @@ export async function settleRoundOnChain(round: Round) {
       winnerToken: ata(new PublicKey(winnerWallet)),
       tokenProgram: TOKEN_PROGRAM_ID,
     })
+    .preInstructions(await priorityPreInstructions(null, solanaChainConfig().cluster))
     .rpc();
   return { tx };
 }
@@ -761,6 +763,7 @@ export async function settleMarketOnChain(
       market: marketPda(marketId),
       judge: facilitatorKeypair().publicKey,
     })
+    .preInstructions(await priorityPreInstructions(null, solanaChainConfig().cluster))
     .rpc();
   return { tx };
 }

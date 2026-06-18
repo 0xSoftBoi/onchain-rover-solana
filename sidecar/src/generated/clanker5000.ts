@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/clanker5000.json`.
  */
 export type Clanker5000 = {
-  "address": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+  "address": "4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD",
   "metadata": {
     "name": "clanker5000",
     "version": "0.1.0",
@@ -1919,6 +1919,105 @@ export type Clanker5000 = {
       ]
     },
     {
+      "name": "sweepMarket",
+      "docs": [
+        "Sweep residual vault balance (parimutuel rounding dust) to a recipient",
+        "after the claim window. Operator-gated and **time-locked**: callable only",
+        "once `CLAIM_WINDOW_SECS` have elapsed since settlement, so winners always",
+        "have a guaranteed window to claim before any sweep. Fixes the otherwise",
+        "unreclaimable dust from `claim`'s flooring. See docs/MAINNET_READINESS.md §1."
+      ],
+      "discriminator": [
+        108,
+        51,
+        86,
+        64,
+        135,
+        30,
+        91,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "marketId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "marketVaultAuthority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "marketId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "withdrawTreasury",
       "docs": [
         "Withdraw fleet earnings. Owner-gated (the Ledger-held key) — the",
@@ -2018,7 +2117,7 @@ export type Clanker5000 = {
         "Land the DON's consensus verdict for a job (keyed by `job_hash` =",
         "sha256/keccak of the job string, computed client-side). The robot's own",
         "claim never settles anything — this is the verdict downstream reads via",
-        "`verified`. Reporter must be the configured forwarder (or any, if unset)."
+        "`verified`. Reporter MUST be the configured forwarder (no open path)."
       ],
       "discriminator": [
         64,
@@ -2396,6 +2495,19 @@ export type Clanker5000 = {
       ]
     },
     {
+      "name": "marketSwept",
+      "discriminator": [
+        5,
+        246,
+        135,
+        203,
+        78,
+        240,
+        3,
+        251
+      ]
+    },
+    {
       "name": "newFeedback",
       "discriminator": [
         14,
@@ -2664,6 +2776,16 @@ export type Clanker5000 = {
       "code": 6024,
       "name": "unauthorized",
       "msg": "reporter is not the authorized forwarder"
+    },
+    {
+      "code": 6025,
+      "name": "badForwarder",
+      "msg": "forwarder must not be the zero key"
+    },
+    {
+      "code": 6026,
+      "name": "marketNotSettled",
+      "msg": "market is not settled"
     }
   ],
   "types": [
@@ -3142,6 +3264,22 @@ export type Clanker5000 = {
           {
             "name": "walrusBlobId",
             "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "marketSwept",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "marketId",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
           }
         ]
       }

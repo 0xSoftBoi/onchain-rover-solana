@@ -122,3 +122,23 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck (tsc --noEmit)
         run: npx tsc --noEmit -p tsconfig.json
+
+  # Deterministic, reproducible build for on-chain verification (mainnet
+  # requirement). solana-verify builds in a pinned Docker image; the resulting
+  # hash is what you publish + match against the deployed program with
+  # `solana-verify verify-from-repo`. See docs/MAINNET_READINESS.md §1.
+  verified-build:
+    name: Verifiable build (solana-verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install solana-verify
+        run: cargo install solana-verify --locked
+      - name: Deterministic build (Docker)
+        working-directory: solana
+        run: solana-verify build --library-name clanker5000
+      - name: Executable hash (publish + match on-chain)
+        working-directory: solana
+        run: solana-verify get-executable-hash target/deploy/clanker5000.so

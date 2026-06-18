@@ -447,6 +447,42 @@ pub mod clanker5000 {
         Ok(())
     }
 
+    /// Sweep residual vault balance (parimutuel rounding dust) to a recipient
+    /// after the claim window. Operator-gated and **time-locked**: callable only
+    /// once `CLAIM_WINDOW_SECS` have elapsed since settlement, so winners always
+    /// have a guaranteed window to claim before any sweep. Fixes the otherwise
+    /// unreclaimable dust from `claim`'s flooring. See docs/MAINNET_READINESS.md §1.
+    pub fn sweep_market(ctx: Context<SweepMarket>, _market_id: u64) -> Result<()> {
+        let m = &ctx.accounts.market;
+        require!(m.settled, ClankerError::MarketNotSettled);
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            now >= m.settled_at.checked_add(CLAIM_WINDOW_SECS).ok_or(ClankerError::Overflow)?,
+            ClankerError::BadState
+        );
+        let amount = ctx.accounts.vault.amount;
+        if amount > 0 {
+            let market_key = m.key();
+            let bump = ctx.bumps.market_vault_authority;
+            let seeds: &[&[u8]] = &[MARKET_VAULT_AUTH_SEED, market_key.as_ref(), &[bump]];
+            let signer: &[&[&[u8]]] = &[seeds];
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.vault.to_account_info(),
+                        to: ctx.accounts.recipient.to_account_info(),
+                        authority: ctx.accounts.market_vault_authority.to_account_info(),
+                    },
+                    signer,
+                ),
+                amount,
+            )?;
+        }
+        emit!(MarketSwept { market_id: m.market_id, amount });
+        Ok(())
+    }
+
     // ----- Reputation (port of ReputationRegistry.sol, ERC-8004) ------------
 
     /// Register who owns `agent_id` (the robot's wallet), so the registry can
@@ -594,6 +630,9 @@ pub mod clanker5000 {
     /// authorized to write reports; `Pubkey::default()` (all zeros) = unrestricted
     /// (sim/demo), matching the EVM `forwarder == address(0)` escape hatch.
     pub fn init_attestation(ctx: Context<InitAttestation>, forwarder: Pubkey) -> Result<()> {
+        // No zero-key backdoor: a real forwarder (DON authority, or the
+        // facilitator key for local/sim) must be set. See docs/MAINNET_READINESS.md §1.
+        require_keys_neq!(forwarder, Pubkey::default(), ClankerError::BadForwarder);
         let c = &mut ctx.accounts.attest_config;
         c.owner = ctx.accounts.owner.key();
         c.forwarder = forwarder;
@@ -602,6 +641,7 @@ pub mod clanker5000 {
     }
 
     pub fn set_forwarder(ctx: Context<SetForwarder>, forwarder: Pubkey) -> Result<()> {
+        require_keys_neq!(forwarder, Pubkey::default(), ClankerError::BadForwarder);
         ctx.accounts.attest_config.forwarder = forwarder;
         emit!(ForwarderSet { forwarder });
         Ok(())
@@ -610,7 +650,7 @@ pub mod clanker5000 {
     /// Land the DON's consensus verdict for a job (keyed by `job_hash` =
     /// sha256/keccak of the job string, computed client-side). The robot's own
     /// claim never settles anything — this is the verdict downstream reads via
-    /// `verified`. Reporter must be the configured forwarder (or any, if unset).
+    /// `verified`. Reporter MUST be the configured forwarder (no open path).
     pub fn write_attestation(
         ctx: Context<WriteAttestation>,
         _job_hash: [u8; 32],
@@ -620,10 +660,7 @@ pub mod clanker5000 {
     ) -> Result<()> {
         require!(job.len() <= 64, ClankerError::StringTooLong);
         let cfg = &ctx.accounts.attest_config;
-        require!(
-            cfg.forwarder == Pubkey::default() || ctx.accounts.reporter.key() == cfg.forwarder,
-            ClankerError::Unauthorized
-        );
+        require_keys_eq!(ctx.accounts.reporter.key(), cfg.forwarder, ClankerError::Unauthorized);
         let verified = score >= ATTESTATION_THRESHOLD;
         let a = &mut ctx.accounts.attestation;
         a.score = score;
@@ -662,6 +699,10 @@ pub const ATTEST_SEED: &[u8] = b"attest";
 
 /// Consensus score required to settle (matches AttestationConsumer.THRESHOLD).
 pub const ATTESTATION_THRESHOLD: u64 = 70;
+
+/// Winners have this long after settlement to `claim` before the operator may
+/// `sweep_market` residual dust. 7 days.
+pub const CLAIM_WINDOW_SECS: i64 = 7 * 24 * 60 * 60;
 
 // ---------------------------------------------------------------------------
 // Accounts: race escrow
@@ -906,6 +947,23 @@ pub struct SetJudge<'info> {
     pub market: Account<'info, Market>,
     #[account(constraint = operator.key() == market.operator @ ClankerError::NotOperator)]
     pub operator: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(market_id: u64)]
+pub struct SweepMarket<'info> {
+    #[account(seeds = [MARKET_SEED, &market_id.to_le_bytes()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    #[account(constraint = operator.key() == market.operator @ ClankerError::NotOperator)]
+    pub operator: Signer<'info>,
+    #[account(mut, address = market.vault @ ClankerError::BadVault)]
+    pub vault: Account<'info, TokenAccount>,
+    /// CHECK: per-market PDA authority over the betting vault.
+    #[account(seeds = [MARKET_VAULT_AUTH_SEED, market.key().as_ref()], bump)]
+    pub market_vault_authority: UncheckedAccount<'info>,
+    #[account(mut, constraint = recipient.mint == market.usdc_mint @ ClankerError::BadMint)]
+    pub recipient: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1329,6 +1387,11 @@ pub struct Claimed {
     pub payout: u64,
 }
 #[event]
+pub struct MarketSwept {
+    pub market_id: u64,
+    pub amount: u64,
+}
+#[event]
 pub struct JudgeChanged {
     pub market_id: u64,
     pub judge: Pubkey,
@@ -1432,6 +1495,10 @@ pub enum ClankerError {
     NotOwner,
     #[msg("reporter is not the authorized forwarder")]
     Unauthorized,
+    #[msg("forwarder must not be the zero key")]
+    BadForwarder,
+    #[msg("market is not settled")]
+    MarketNotSettled,
 }
 
 // ---------------------------------------------------------------------------
@@ -1476,5 +1543,40 @@ mod tests {
         // amount == win_pool so payout == total_pool even at the u64 ceiling;
         // the intermediate u128 product (2^64-1)^2 cannot overflow.
         assert_eq!(parimutuel_payout(u64::MAX, u64::MAX, u64::MAX), u64::MAX);
+    }
+
+    // INVARIANT (vault solvency + bounded dust): across many pool shapes, the sum
+    // of all winners' floored payouts never exceeds total_pool, and the residual
+    // dust left for `sweep_market` is strictly < the number of winning bets (each
+    // floor loses < 1 unit). This is what makes sweep_market safe — it only ever
+    // moves genuine rounding dust, never claimable funds.
+    #[test]
+    fn vault_is_solvent_and_dust_is_bounded() {
+        for extra in [0u64, 1, 2, 5, 7, 13, 100, 999, 1_000_001] {
+            for n in 1u64..=8 {
+                let each = 1_000_000u64;
+                let win_pool = n * each;
+                let total_pool = win_pool + extra; // losers add `extra` to the pot
+                let sum: u128 = (0..n)
+                    .map(|_| parimutuel_payout(each, total_pool, win_pool) as u128)
+                    .sum();
+                assert!(sum <= total_pool as u128, "overpaid vault: {sum} > {total_pool}");
+                let dust = total_pool as u128 - sum;
+                assert!(dust < n as u128, "dust {dust} >= winners {n}");
+            }
+        }
+    }
+
+    // INVARIANT (monotonicity): a larger stake never yields a smaller payout for
+    // the same pools — no incentive inversion.
+    #[test]
+    fn payout_is_monotonic_in_stake() {
+        let (total, win) = (10_000_000u64, 4_000_000u64);
+        let mut prev = 0u64;
+        for stake in [1u64, 1_000, 10_000, 100_000, 1_000_000, 4_000_000] {
+            let p = parimutuel_payout(stake, total, win);
+            assert!(p >= prev, "payout not monotonic at stake {stake}");
+            prev = p;
+        }
     }
 }

@@ -17,7 +17,6 @@ import path from "node:path";
 import { Keypair } from "@solana/web3.js";
 import * as anchor from "@coral-xyz/anchor";
 
-import type { TypedDataEnvelope } from "./chain-types.js";
 import type { DriverSlot } from "./rounds.js";
 
 const bs58 = anchor.utils.bytes.bs58;
@@ -88,7 +87,9 @@ export function localDevWallets() {
  */
 export async function signLocalDevRaceEntry(
   slot: DriverSlot,
-  _request: { entry: TypedDataEnvelope; permit: TypedDataEnvelope },
+  // The Solana buildRaceEntryRequest shape ({ chain, slot, instruction }); unused
+  // because the driver keypair signs join_race directly in joinRoundOnChain.
+  _request: unknown,
 ) {
   const pubkey = persistKey(slot);
   const note = `solana:join_race signed by ${pubkey} via SOLANA_DEV_KEYS_DIR`;

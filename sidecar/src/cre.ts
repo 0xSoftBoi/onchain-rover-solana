@@ -26,7 +26,7 @@ export function config() {
 export async function latest() {
   try {
     const a = await getAttestation(JOB);
-    return { configured: true, job: JOB, ...a };
+    return { configured: true, ...a };
   } catch (e: any) {
     return { configured: true, job: JOB, error: e.message };
   }

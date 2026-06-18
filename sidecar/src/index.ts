@@ -482,8 +482,8 @@ app.get("/reputation", async (_req, res) => {
   if (MOCK) return res.json(mockRep());
   const out: Record<string, any> = {};
   for (const [n, r] of Object.entries(ROBOTS)) {
-    try { out[n] = { ens: r.ens, ...(await settle.repSummary(Number(r.agentId ?? 0))) }; }
-    catch (e: any) { out[n] = { ens: r.ens, error: e.message }; }
+    try { out[n] = { sns: r.sns, ...(await settle.repSummary(Number(r.agentId ?? 0))) }; }
+    catch (e: any) { out[n] = { sns: r.sns, error: e.message }; }
   }
   res.json(out);
 });
@@ -1224,7 +1224,7 @@ app.get("/status", async (_req, res) => {
     } catch {}
     let usdc6 = "0";
     try { if (r.wallet) usdc6 = (await settle.usdcBalance(r.wallet)).toString(); } catch {}
-    return [n, { ...health, ens: r.ens, wallet: r.wallet, usdc6, url: r.url }];
+    return [n, { ...health, sns: r.sns, wallet: r.wallet, usdc6, url: r.url }];
   }));
   let ensFleet: any = null;
   try { ensFleet = await ens.fleet(); } catch {}

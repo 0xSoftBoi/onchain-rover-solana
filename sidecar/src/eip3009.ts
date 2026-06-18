@@ -52,7 +52,6 @@ export async function settleOverGibber(
   return {
     transportedOverGibber,
     gasless: false, // TODO: route via Kora relayer for buyer-gas-$0 settlement
-    amountUsdc,
-    ...onchain,
+    ...onchain, // includes amountUsdc, tx, status, from, to
   };
 }

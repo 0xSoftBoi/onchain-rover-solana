@@ -90,10 +90,12 @@ jobs:
       - name: anchor keys sync
         run: anchor keys sync
 
-      # --locked forces build-sbf to use the committed (pinned, pre-edition2024)
-      # lockfile instead of re-resolving to crates its bundled Rust 1.79 can't parse.
+      # The committed v3 Cargo.lock is readable by build-sbf's Rust 1.79 and
+      # consistent with Cargo.toml, so build-sbf uses its pinned (pre-edition2024)
+      # versions without re-resolving — no --locked flag needed (and build-sbf
+      # rejects it as an option anyway).
       - name: anchor build
-        run: anchor build -- --locked
+        run: anchor build
 
       - name: anchor test
         run: |

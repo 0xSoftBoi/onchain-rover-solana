@@ -12,6 +12,13 @@
 > EVM demo lives in a different repo. See
 > [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) for the
 > per-component decision record driving every replacement.
+>
+> **Status (verified):** `anchor build` ✅ (BPF + IDL, Anchor 0.31 / Agave 4.0.3) ·
+> `anchor test` ✅ **3/3** on a local validator (race payout + parimutuel market +
+> World-ID nullifier reject) · sidecar `tsc --noEmit` ✅ 0 errors · `sidecar/src`
+> is 100% EVM-free. RPC + priority fees + DAS via **Helius** (free tier) —
+> [`docs/HELIUS.md`](docs/HELIUS.md). Deploy runbook:
+> [`docs/DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md).
 
 Every other agent at this hackathon is stuck in the pits — behind a screen. We put two
 of them on the track: a fleet of **Waveshare UGV rovers (Jetson Orin NX)** that you

@@ -8,6 +8,19 @@ Solana** implementation, branded **Clanker 5000** after ClawPump
 It is the source of truth for what has landed, what is scaffolded, and what is
 still planned — so there is zero ambiguity about real vs. aspirational.
 
+> **Library/protocol choices** for every remaining EVM→Solana replacement (x402
+> on Solana, Kora gasless, SNS, Switchboard, Privy Solana, Squads/Ledger, CCTP,
+> indexing) live in the 2026 sourced decision record:
+> [`SOLANA_NATIVE_MIGRATION.md`](./SOLANA_NATIVE_MIGRATION.md).
+>
+> **Client wrappers landed (2026 pass):** `solana-chain.ts` now also exposes the
+> parimutuel **market** (`openMarketOnChain` / `placeBetOnChain` /
+> `settleMarketOnChain`), **reputation writes** (`registerAgentOnChain` /
+> `giveFeedbackOnChain` / `repSummaryOnChain`), and **USDC payments**
+> (`payOnChain` / `usdcBalanceOf`) — the Solana equivalents of the EVM-only
+> `settle.ts`. Wiring `settle.ts` to dispatch to them is gated on adding Solana
+> robot-wallet config (see the decision record's cutover plan).
+
 > **On the ClawPump docs.** `clawpump.tech` is a client-side Next.js app, but
 > its `sitemap.xml` exposes `agents.clawpump.tech/{docs,guide,marketplace}` and
 > the public docs describe a concrete HTTP API: agents call **`POST /api/launch`**

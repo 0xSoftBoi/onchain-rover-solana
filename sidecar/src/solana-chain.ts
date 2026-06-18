@@ -30,6 +30,7 @@ import {
   getAssociatedTokenAddressSync,
   getOrCreateAssociatedTokenAccount,
   mintTo,
+  transfer,
 } from "@solana/spl-token";
 
 import type { DriverSlot, Round } from "./rounds.js";
@@ -558,4 +559,232 @@ export async function fleetReputation(agentIds: Array<string | number | bigint>)
       return { agentId: id.toString(), jobs: count, avgScore: count ? sum / count : null };
     })
   );
+}
+
+// ---- Reputation writes (port of ReputationRegistry.giveFeedback) ------------
+
+/** Register who owns an agent id (first writer wins; the PDA inits once). */
+export async function registerAgentOnChain(agentId: number, owner: string) {
+  const p = program();
+  const tx = await (p.methods as any)
+    .registerAgent(new BN(agentId), new PublicKey(owner))
+    .accounts({
+      agent: agentPda(agentId),
+      payer: facilitatorKeypair().publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+  return { agentId: String(agentId), owner, tx };
+}
+
+/**
+ * The requester rates an agent after a completed job, tagged by skill, with the
+ * Walrus proof URI + hash. Mirrors settle.ts:giveFeedback. The facilitator key
+ * is the requester here; it must NOT be the agent owner (program rejects
+ * self-feedback), so register the agent owner as a distinct key.
+ */
+export async function giveFeedbackOnChain(opts: {
+  agentId: number;
+  score: number;
+  skill: string;
+  blobId?: string;
+  sha256?: string;
+}) {
+  const p = program();
+  const agent = agentPda(opts.agentId);
+  const acct = await (p.account as any).agent.fetch(agent);
+  const index: BN = acct.count;
+  const feedback = PublicKey.findProgramAddressSync(
+    [enc.encode("feedback"), agent.toBuffer(), index.toArrayLike(Buffer, "le", 8)],
+    pid()
+  )[0];
+  const hex = (opts.sha256 ?? "").replace(/^0x/, "");
+  const feedbackHash = /^[a-fA-F0-9]{64}$/.test(hex)
+    ? Array.from(Buffer.from(hex, "hex"))
+    : new Array(32).fill(0);
+  const tx = await (p.methods as any)
+    .giveFeedback(
+      new BN(opts.agentId),
+      new BN(opts.score),
+      0, // value_decimals
+      opts.skill.slice(0, 32),
+      "starred",
+      "", // endpoint
+      opts.blobId ? `walrus://${opts.blobId}`.slice(0, 160) : "",
+      feedbackHash
+    )
+    .accounts({
+      agent,
+      client: facilitatorKeypair().publicKey,
+      feedback,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+  return { agentId: String(opts.agentId), score: opts.score, tx };
+}
+
+export async function repSummaryOnChain(agentId: number) {
+  const acct = await (program().account as any).agent.fetchNullable(agentPda(agentId));
+  const count = acct ? Number(acct.count.toString()) : 0;
+  const sum = acct ? Number(acct.sum.toString()) : 0;
+  return { count, avg: count ? sum / count : 0 };
+}
+
+// ---- Parimutuel market (port of RaceMarket.sol) ----------------------------
+
+function marketPda(marketId: number | bigint | string): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("market"), leU64(marketId)], pid())[0];
+}
+function marketVaultPda(market: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("market_vault"), market.toBuffer()], pid())[0];
+}
+function marketVaultAuthPda(market: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync([enc.encode("market_vault_auth"), market.toBuffer()], pid())[0];
+}
+function betPda(market: PublicKey, bettor: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [enc.encode("bet"), market.toBuffer(), bettor.toBuffer()],
+    pid()
+  )[0];
+}
+function nullifierPda(market: PublicKey, nullifier32: Buffer): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [enc.encode("nullifier"), market.toBuffer(), nullifier32],
+    pid()
+  )[0];
+}
+
+/** World ID nullifier_hash (a 0x… field element) -> 32 LE bytes for the PDA seed. */
+function nullifierBytes(nullifier: string): Buffer {
+  return new BN(nullifier.replace(/^0x/, ""), nullifier.startsWith("0x") ? 16 : 10)
+    .toArrayLike(Buffer, "le", 32);
+}
+
+/** Facilitator (judge) opens a parimutuel market. Returns the marketId. */
+export async function openMarketOnChain(numRacers = 2) {
+  const p = program();
+  // Derive the next market id from existing market accounts (the program keys
+  // markets by caller-supplied id; we use a monotonic count).
+  const existing = await (p.account as any).market.all();
+  const marketId = existing.length;
+  const market = marketPda(marketId);
+  const fac = facilitatorKeypair().publicKey;
+  const tx = await (p.methods as any)
+    .openMarket(new BN(marketId), numRacers, fac)
+    .accounts({
+      market,
+      judge: fac,
+      vault: marketVaultPda(market),
+      marketVaultAuthority: marketVaultAuthPda(market),
+      usdcMint: usdcMint(),
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+      rent: SYSVAR_RENT_PUBKEY,
+    })
+    .rpc();
+  return { raceId: marketId, marketId, tx };
+}
+
+/**
+ * Place a parimutuel bet. The Solana program enforces one-bet-per-bettor (a
+ * `bet` PDA seeded by the bettor) and one-human-one-bet (a `nullifier` PDA), so
+ * — unlike the EVM relayer that staked every bet from one treasury wallet — the
+ * bettor must sign. Production: the human's phone wallet signs the instruction.
+ * Local/dev: the bettor keypair is loaded from SOLANA_DEV_KEYS_DIR (same model
+ * as join_race). `bettorWallet` defaults to the World-ID-bound dev wallet.
+ */
+export async function placeBetOnChain(
+  marketId: number,
+  racerIdx: number,
+  amountUsdc: string,
+  nullifier: string,
+  bettorWallet?: string
+) {
+  const p = program();
+  const market = marketPda(marketId);
+  const signer = bettorWallet ? driverKeypair(bettorWallet) : null;
+  if (!signer) {
+    throw new Error(
+      "Solana place_bet must be signed by the bettor wallet (one-bet-per-bettor PDA); " +
+        "submit the human's signed instruction, or set SOLANA_DEV_KEYS_DIR + bettorWallet for local dev"
+    );
+  }
+  const null32 = nullifierBytes(nullifier);
+  const tx = await (p.methods as any)
+    .placeBet(new BN(marketId), racerIdx, units(amountUsdc), Array.from(null32))
+    .accounts({
+      market,
+      bettor: signer.publicKey,
+      bettorToken: ata(signer.publicKey),
+      vault: marketVaultPda(market),
+      bet: betPda(market, signer.publicKey),
+      nullifier: nullifierPda(market, null32),
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([signer])
+    .rpc();
+  return { tx };
+}
+
+/** Judge settles the market with the Gemini-verified finish proof. */
+export async function settleMarketOnChain(
+  marketId: number,
+  winnerIdx: number,
+  sha256: string,
+  blobId: string
+) {
+  const p = program();
+  const hex = (sha256 || "").replace(/^0x/, "");
+  const proof = /^[a-fA-F0-9]{64}$/.test(hex)
+    ? Array.from(Buffer.from(hex, "hex"))
+    : new Array(32).fill(0);
+  const tx = await (p.methods as any)
+    .settleMarket(new BN(marketId), winnerIdx, proof, (blobId || "").slice(0, 64))
+    .accounts({
+      market: marketPda(marketId),
+      judge: facilitatorKeypair().publicKey,
+    })
+    .rpc();
+  return { tx };
+}
+
+// ---- USDC payments (port of the Arc ERC-20 transfer in settle.ts) -----------
+
+/** SPL-USDC (6dp) balance of a wallet's associated token account. */
+export async function usdcBalanceOf(wallet: string): Promise<bigint> {
+  try {
+    const acct = await getAccount(connection(), ata(new PublicKey(wallet)));
+    return acct.amount;
+  } catch {
+    return 0n;
+  }
+}
+
+/**
+ * Transfer the negotiated USDC from one fleet wallet to another (the native
+ * equivalent of settle.ts:pay's Arc ERC-20 transfer). Signed by the `from`
+ * wallet's keypair (loaded from SOLANA_DEV_KEYS_DIR) or, when `from` is the
+ * facilitator, by the facilitator key. Gas is SOL (not USDC-as-gas).
+ */
+export async function payOnChain(from: string, to: string, amountUsdc: string) {
+  const t0 = Date.now();
+  const conn = connection();
+  const fac = facilitatorKeypair();
+  const fromKp = from === fac.publicKey.toBase58() ? fac : driverKeypair(from);
+  if (!fromKp) {
+    throw new Error(`no Solana keypair for '${from}' (set SOLANA_DEV_KEYS_DIR or sign client-side)`);
+  }
+  const toPk = new PublicKey(to);
+  const dest = await getOrCreateAssociatedTokenAccount(conn, fromKp, usdcMint(), toPk);
+  const value = units(amountUsdc);
+  const tx = await transfer(
+    conn,
+    fromKp,
+    ata(fromKp.publicKey),
+    dest.address,
+    fromKp,
+    BigInt(value.toString())
+  );
+  return { tx, status: "success" as const, from, to, amountUsdc, ms: Date.now() - t0 };
 }

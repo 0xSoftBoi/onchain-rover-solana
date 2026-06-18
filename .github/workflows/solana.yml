@@ -66,7 +66,7 @@ jobs:
       # Fast, deterministic gate — also runs in dev containers without the
       # Solana toolchain.
       - name: cargo check
-        run: cargo check -p clanker5000
+        run: cargo check --locked -p clanker5000
 
       - name: Install Solana CLI
         run: |
@@ -90,8 +90,10 @@ jobs:
       - name: anchor keys sync
         run: anchor keys sync
 
+      # --locked forces build-sbf to use the committed (pinned, pre-edition2024)
+      # lockfile instead of re-resolving to crates its bundled Rust 1.79 can't parse.
       - name: anchor build
-        run: anchor build
+        run: anchor build -- --locked
 
       - name: anchor test
         run: |

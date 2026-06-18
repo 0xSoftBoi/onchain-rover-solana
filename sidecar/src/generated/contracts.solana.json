@@ -1,0 +1,12 @@
+{
+  "cluster": "devnet",
+  "rpcUrl": "https://api.devnet.solana.com",
+  "programId": "4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD",
+  "usdcMint": "5CqdH2W5BRLPb8y5JS5te8j2VXumeAP4dPbuzudPZ7yc",
+  "facilitator": "EjvUZdSHwWhmf8B1UfEwKjdmQcjY5KsgM3dd2uYzydCY",
+  "treasury": "CpWvxSrVxCaAM8FB4F8FiSDM7EG3JJ8wYKgVykNKiEZV",
+  "defaults": {
+    "stakeUnits": "1000000",
+    "feeUnits": "250000"
+  }
+}

@@ -472,6 +472,22 @@ export async function buildTreasuryWithdraw(recipientTokenAccount: string, amoun
   };
 }
 
+/**
+ * Submit a Ledger-signed Solana transaction (base64 of the fully-signed,
+ * serialized tx) and confirm it. Replaces the EVM `broadcastSigned` r,s,v
+ * re-serialize step: on Solana the wallet returns a complete signed transaction,
+ * so the sidecar only deserializes and forwards it. Pair with
+ * `buildTreasuryWithdraw` (which returns the instruction the Ledger signs).
+ */
+export async function submitSignedSolanaTx(signedTxBase64: string) {
+  const conn = connection();
+  const raw = Buffer.from(signedTxBase64, "base64");
+  const sig = await conn.sendRawTransaction(raw, { skipPreflight: false });
+  const bh = await conn.getLatestBlockhash();
+  await conn.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+  return { tx: sig };
+}
+
 // ---- AttestationConsumer (port of AttestationConsumer.sol, Chainlink CRE) ---
 
 function attestConfigPda(): PublicKey {

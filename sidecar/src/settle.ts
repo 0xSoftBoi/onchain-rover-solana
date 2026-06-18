@@ -30,6 +30,7 @@ import {
   settleMarketOnChain,
   treasuryBalance,
   buildTreasuryWithdraw,
+  submitSignedSolanaTx,
   repSummaryOnChain,
 } from "./solana-chain.js";
 
@@ -95,15 +96,18 @@ export async function buildWithdrawTx(_from: string, to: string, amountUsdc: str
 
 /**
  * EVM had an {r,s,v} re-serialize + sendRawTransaction step. On Solana the
- * Ledger signs the serialized transaction and the sidecar submits it via
- * sendRawTransaction — a distinct flow. The `submitSignedSolanaTx` helper is
- * still TODO (see docs/SOLANA_NATIVE_MIGRATION.md §6).
+ * Ledger returns a fully-signed transaction, so the sidecar just forwards it.
+ * Accepts the base64 signed tx as a string or `{ signedTx }` (the old EVM
+ * `{r,s,v}` second arg is ignored). See docs/SOLANA_NATIVE_MIGRATION.md §6.
  */
-export async function broadcastSigned(_txFields: any, _sig: any): Promise<never> {
-  throw new Error(
-    "broadcastSigned is EVM-only and has been removed; use submitSignedSolanaTx (TODO) " +
-      "to submit a Ledger-signed Solana transaction — see docs/SOLANA_NATIVE_MIGRATION.md §6",
-  );
+export async function broadcastSigned(signed: string | { signedTx?: string }, _sig?: unknown) {
+  const b64 = typeof signed === "string" ? signed : signed?.signedTx;
+  if (!b64) {
+    throw new Error(
+      "broadcastSigned expects a base64 Ledger-signed Solana transaction (string or { signedTx })",
+    );
+  }
+  return submitSignedSolanaTx(b64);
 }
 
 /** Program treasury PDA USDC vault balance. */

@@ -19,17 +19,20 @@ export const ERC8004 = {
     "0xca52e62c367d81bb2e328eb795f7c7ba24afb478408a26c0e201d155c449bc4a",
 } as const;
 
+// Native-Solana fork: `wallet` is the robot's base58 Solana pubkey (was an EVM
+// 0x address in the hybrid repo). `sns` replaces the ENS name (resolved via
+// sns.ts). Set GUARD_WALLET / COURIER_WALLET to the robots' Solana pubkeys.
 export const ROBOTS = {
   guard: {
     url: process.env.GUARD_URL ?? "http://172.16.1.29:8000",
     wallet: process.env.GUARD_WALLET ?? "",
-    ens: "guard.rover.eth",
+    sns: process.env.GUARD_SNS ?? `guard.${process.env.SNS_PARENT ?? "roverfleet"}.sol`,
     agentId: process.env.GUARD_AGENT_ID ?? "0",
   },
   courier: {
     url: process.env.COURIER_URL ?? "http://172.16.0.105:8000",
     wallet: process.env.COURIER_WALLET ?? "",
-    ens: "courier.rover.eth",
+    sns: process.env.COURIER_SNS ?? `courier.${process.env.SNS_PARENT ?? "roverfleet"}.sol`,
     agentId: process.env.COURIER_AGENT_ID ?? "1",
   },
 } as const;

@@ -176,8 +176,9 @@ solana program deploy target/deploy/clanker5000.so \
   --url "$RPC" --use-rpc --max-sign-attempts 5000
 ```
 
-> **Program ID:** `4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD` (declared).
-> Devnet deployment in progress; address confirmed here once finalized.
+> **Program ID:** [`4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD`](https://explorer.solana.com/address/4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD?cluster=devnet)
+> — **LIVE on devnet** (sbpf v3, upgradeable). For mainnet, rebuild `--arch v2`
+> (see docs/MAINNET_READINESS.md).
 
 ### Run the sidecar
 
@@ -202,7 +203,7 @@ server-side only — the key is never exposed to phone/frontend clients.
 | Program (escrow/market/reputation/pass/treasury/attest) | ✅ built + `anchor test` 3/3 |
 | Sidecar client, x402 gate, SNS resolve, reputation, Helius | ✅ implemented, `tsc` clean |
 | Kora gasless · SNS registration · Privy-Solana · Switchboard forwarder · Squads owner | 🟡 code/scaffold landed — need accounts/keys to go live |
-| Devnet deployment | 🟡 in progress (RPC throughput) |
+| **Devnet deployment** | ✅ **LIVE** — `4FLTs…` (sbpf v3, upgradeable). Mainnet build = `--arch v2`. |
 
 See [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) for the
 sourced per-integration recommendations and the remaining cutover steps.

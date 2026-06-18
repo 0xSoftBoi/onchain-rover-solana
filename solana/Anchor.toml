@@ -1,21 +1,20 @@
 [toolchain]
-anchor_version = "0.30.1"
 
 [features]
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-clanker5000 = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-
 [programs.devnet]
-clanker5000 = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+clanker5000 = "4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD"
+
+[programs.localnet]
+clanker5000 = "4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

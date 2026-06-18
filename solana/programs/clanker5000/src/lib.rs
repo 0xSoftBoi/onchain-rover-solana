@@ -18,7 +18,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 // Placeholder program id. Run `anchor keys sync` after the first build to
 // replace this with the keypair-derived id (and update Anchor.toml).
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD");
 
 /// Maximum lanes in a parimutuel market (guard, courier, plus fruit-obstacle
 /// lanes for the show). Mirrors the unbounded EVM mapping with a fixed array

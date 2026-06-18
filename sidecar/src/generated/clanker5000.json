@@ -1,0 +1,3587 @@
+{
+  "address": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+  "metadata": {
+    "name": "clanker5000",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Clanker 5000 — native-Solana race escrow + parimutuel market for The Clanker 500"
+  },
+  "instructions": [
+    {
+      "name": "cancel_race",
+      "docs": [
+        "Refund staked drivers and void the race. `challenger_token`/",
+        "`opponent_token` must be owned by the respective drivers."
+      ],
+      "discriminator": [
+        223,
+        214,
+        232,
+        232,
+        43,
+        15,
+        165,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "facilitator",
+          "signer": true
+        },
+        {
+          "name": "race",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "race_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenger_token",
+          "writable": true
+        },
+        {
+          "name": "opponent_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "_race_id",
+          "type": "u64"
+        },
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "claim",
+      "docs": [
+        "Claim a pro-rata share of the pool: `stake * total_pool / winning_pool`."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "market_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bettor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "bettor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "market_vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bettor_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "_market_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "finish_race",
+      "discriminator": [
+        174,
+        118,
+        135,
+        231,
+        103,
+        31,
+        171,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "facilitator",
+          "signer": true
+        },
+        {
+          "name": "race",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "race_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_race_id",
+          "type": "u64"
+        },
+        {
+          "name": "winner_slot",
+          "type": "u8"
+        },
+        {
+          "name": "proof_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "give_feedback",
+      "docs": [
+        "The requester rates an agent. The signer must not be the agent owner",
+        "(\"self-feedback not allowed\"). Each feedback is stored in its own PDA",
+        "(index = running count), and the agent's running count/sum back the",
+        "leaderboard average. Emits `NewFeedback` for indexers/BigQuery."
+      ],
+      "discriminator": [
+        145,
+        136,
+        123,
+        3,
+        215,
+        165,
+        98,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "agent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "agent_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "client",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "feedback",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  100,
+                  98,
+                  97,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agent"
+              },
+              {
+                "kind": "account",
+                "path": "agent.count",
+                "account": "Agent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_agent_id",
+          "type": "u64"
+        },
+        {
+          "name": "value",
+          "type": "i64"
+        },
+        {
+          "name": "value_decimals",
+          "type": "u8"
+        },
+        {
+          "name": "tag1",
+          "type": "string"
+        },
+        {
+          "name": "tag2",
+          "type": "string"
+        },
+        {
+          "name": "endpoint",
+          "type": "string"
+        },
+        {
+          "name": "feedback_uri",
+          "type": "string"
+        },
+        {
+          "name": "feedback_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_attestation",
+      "docs": [
+        "Init the consensus-verdict gate. `forwarder` is the Chainlink forwarder",
+        "authorized to write reports; `Pubkey::default()` (all zeros) = unrestricted",
+        "(sim/demo), matching the EVM `forwarder == address(0)` escape hatch."
+      ],
+      "discriminator": [
+        59,
+        104,
+        75,
+        18,
+        193,
+        62,
+        163,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "attest_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "forwarder",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "init_event_pass",
+      "docs": [
+        "One-time init. `minter` is the guard robot's wallet (the only key that",
+        "can mint passes)."
+      ],
+      "discriminator": [
+        153,
+        215,
+        202,
+        242,
+        228,
+        251,
+        71,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "pass_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  115,
+                  115,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "minter",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "init_treasury",
+      "docs": [
+        "Init the fleet treasury. `owner` is the Ledger hardware-wallet address;",
+        "the USDC vault is a PDA token account."
+      ],
+      "discriminator": [
+        105,
+        152,
+        173,
+        51,
+        158,
+        151,
+        49,
+        14
+      ],
+      "accounts": [
+        {
+          "name": "treasury_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "owner",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "docs": [
+        "One-time program configuration. `authority` is the operator (the only",
+        "key that can rotate the facilitator), mirroring the EVM `operator`."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "treasury_token"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "facilitator",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "join_race",
+      "docs": [
+        "Join a race in `slot` (0 = challenger, 1 = opponent). The driver signs",
+        "directly and funds the stake from their own ATA; the fee goes to the",
+        "treasury token account."
+      ],
+      "discriminator": [
+        207,
+        91,
+        222,
+        84,
+        249,
+        246,
+        229,
+        54
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "race",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "race_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "driver",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "driver_token",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "treasury_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "_race_id",
+          "type": "u64"
+        },
+        {
+          "name": "slot",
+          "type": "u8"
+        },
+        {
+          "name": "stake_amount",
+          "type": "u64"
+        },
+        {
+          "name": "fee_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "lock_race",
+      "discriminator": [
+        233,
+        66,
+        157,
+        161,
+        246,
+        216,
+        116,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "facilitator",
+          "signer": true
+        },
+        {
+          "name": "race",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "race_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_race_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "mint_pass",
+      "docs": [
+        "Mint an access pass to `to` at the auction-settled `price_usdc6`. The",
+        "pass is a program-native record (PDA per id); `holds(who)` is an",
+        "off-chain getProgramAccounts query filtered by `owner` (the Solana",
+        "idiom in place of an ERC-721 balanceOf). Minter only."
+      ],
+      "discriminator": [
+        142,
+        56,
+        26,
+        197,
+        227,
+        241,
+        84,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "pass_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  115,
+                  115,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "minter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pass",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  115,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "pass_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "pass_id",
+          "type": "u64"
+        },
+        {
+          "name": "to",
+          "type": "pubkey"
+        },
+        {
+          "name": "price_usdc6",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_market",
+      "docs": [
+        "Open a parimutuel market. The signer becomes the judge (the guard",
+        "robot's wallet that attests the finish); `operator` is the Ledger-",
+        "governed key allowed to rotate the judge."
+      ],
+      "discriminator": [
+        116,
+        19,
+        123,
+        75,
+        217,
+        244,
+        69,
+        44
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "market_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "judge",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "market_vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_id",
+          "type": "u64"
+        },
+        {
+          "name": "num_racers",
+          "type": "u8"
+        },
+        {
+          "name": "operator",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "open_race",
+      "docs": [
+        "Open a race for `race_id` (must equal the running counter). Facilitator",
+        "only. Creates the race account and its USDC vault."
+      ],
+      "discriminator": [
+        226,
+        139,
+        191,
+        247,
+        233,
+        199,
+        230,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "facilitator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "race",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "race_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "race"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "race_id",
+          "type": "u64"
+        },
+        {
+          "name": "local_round_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "stake_amount",
+          "type": "u64"
+        },
+        {
+          "name": "fee_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "place_bet",
+      "docs": [
+        "Place a single bet. One bet per bettor (enforced by the `bet` PDA) and",
+        "one bet per human (enforced by the `nullifier` PDA — a reused World ID",
+        "nullifier collides on an already-initialized account and fails)."
+      ],
+      "discriminator": [
+        222,
+        62,
+        67,
+        220,
+        63,
+        166,
+        126,
+        33
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "market_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bettor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "bettor_token",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "bettor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nullifier",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  117,
+                  108,
+                  108,
+                  105,
+                  102,
+                  105,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "arg",
+                "path": "world_nullifier"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_market_id",
+          "type": "u64"
+        },
+        {
+          "name": "racer",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "world_nullifier",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "register_agent",
+      "docs": [
+        "Register who owns `agent_id` (the robot's wallet), so the registry can",
+        "reject self-feedback. Mirrors `setAgentOwner` (first writer wins — here",
+        "the PDA can only be initialized once)."
+      ],
+      "discriminator": [
+        135,
+        157,
+        66,
+        195,
+        2,
+        113,
+        175,
+        30
+      ],
+      "accounts": [
+        {
+          "name": "agent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "agent_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "agent_id",
+          "type": "u64"
+        },
+        {
+          "name": "owner",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_facilitator",
+      "discriminator": [
+        214,
+        70,
+        98,
+        0,
+        7,
+        100,
+        42,
+        242
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "facilitator",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_forwarder",
+      "discriminator": [
+        95,
+        60,
+        153,
+        138,
+        227,
+        50,
+        50,
+        14
+      ],
+      "accounts": [
+        {
+          "name": "attest_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "forwarder",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_judge",
+      "discriminator": [
+        219,
+        203,
+        179,
+        29,
+        79,
+        58,
+        228,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "market_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "_market_id",
+          "type": "u64"
+        },
+        {
+          "name": "new_judge",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_treasury_owner",
+      "discriminator": [
+        156,
+        225,
+        134,
+        57,
+        59,
+        128,
+        212,
+        62
+      ],
+      "accounts": [
+        {
+          "name": "treasury_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_owner",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "settle_market",
+      "docs": [
+        "Judge settles the market with the Gemini-verified finish proof (sha256",
+        "hash + Walrus blob id)."
+      ],
+      "discriminator": [
+        193,
+        153,
+        95,
+        216,
+        166,
+        6,
+        144,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "market_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "judge",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "_market_id",
+          "type": "u64"
+        },
+        {
+          "name": "winner",
+          "type": "u8"
+        },
+        {
+          "name": "proof_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "walrus_blob_id",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "settle_race",
+      "docs": [
+        "Pay the full 2x stake to the winner. `winner_token` must be owned by the",
+        "winning slot's driver."
+      ],
+      "discriminator": [
+        172,
+        32,
+        72,
+        212,
+        155,
+        33,
+        161,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "facilitator",
+          "signer": true
+        },
+        {
+          "name": "race",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "race_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winner_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "_race_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "start_race",
+      "discriminator": [
+        167,
+        209,
+        181,
+        53,
+        90,
+        108,
+        220,
+        120
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "facilitator",
+          "signer": true
+        },
+        {
+          "name": "race",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "race_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_race_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_treasury",
+      "docs": [
+        "Withdraw fleet earnings. Owner-gated (the Ledger-held key) — the",
+        "governance boundary for the demo climax. Kept minimal so a Ledger Solana",
+        "clear-sign renders \"Withdraw <amount> USDC to <recipient>\"."
+      ],
+      "discriminator": [
+        40,
+        63,
+        122,
+        158,
+        144,
+        216,
+        83,
+        96
+      ],
+      "accounts": [
+        {
+          "name": "treasury_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "treasury_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "write_attestation",
+      "docs": [
+        "Land the DON's consensus verdict for a job (keyed by `job_hash` =",
+        "sha256/keccak of the job string, computed client-side). The robot's own",
+        "claim never settles anything — this is the verdict downstream reads via",
+        "`verified`. Reporter must be the configured forwarder (or any, if unset)."
+      ],
+      "discriminator": [
+        64,
+        83,
+        56,
+        129,
+        41,
+        140,
+        217,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "attest_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "reporter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "attestation",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_job_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "type": "string"
+        },
+        {
+          "name": "score",
+          "type": "u64"
+        },
+        {
+          "name": "proof_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Agent",
+      "discriminator": [
+        47,
+        166,
+        112,
+        147,
+        155,
+        197,
+        86,
+        7
+      ]
+    },
+    {
+      "name": "AttestConfig",
+      "discriminator": [
+        10,
+        238,
+        20,
+        16,
+        29,
+        34,
+        149,
+        149
+      ]
+    },
+    {
+      "name": "Attestation",
+      "discriminator": [
+        152,
+        125,
+        183,
+        86,
+        36,
+        146,
+        121,
+        73
+      ]
+    },
+    {
+      "name": "Bet",
+      "discriminator": [
+        147,
+        23,
+        35,
+        59,
+        15,
+        75,
+        155,
+        32
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Feedback",
+      "discriminator": [
+        98,
+        127,
+        169,
+        126,
+        107,
+        43,
+        78,
+        220
+      ]
+    },
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "Nullifier",
+      "discriminator": [
+        18,
+        56,
+        142,
+        165,
+        181,
+        158,
+        187,
+        133
+      ]
+    },
+    {
+      "name": "Pass",
+      "discriminator": [
+        40,
+        247,
+        140,
+        113,
+        56,
+        14,
+        57,
+        44
+      ]
+    },
+    {
+      "name": "PassConfig",
+      "discriminator": [
+        158,
+        22,
+        122,
+        114,
+        244,
+        64,
+        138,
+        202
+      ]
+    },
+    {
+      "name": "Race",
+      "discriminator": [
+        114,
+        93,
+        186,
+        119,
+        99,
+        123,
+        162,
+        192
+      ]
+    },
+    {
+      "name": "TreasuryConfig",
+      "discriminator": [
+        124,
+        54,
+        212,
+        227,
+        213,
+        189,
+        168,
+        41
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AgentRegistered",
+      "discriminator": [
+        191,
+        78,
+        217,
+        54,
+        232,
+        100,
+        189,
+        85
+      ]
+    },
+    {
+      "name": "AttestationVerified",
+      "discriminator": [
+        98,
+        148,
+        167,
+        161,
+        88,
+        59,
+        107,
+        231
+      ]
+    },
+    {
+      "name": "BetPlaced",
+      "discriminator": [
+        88,
+        88,
+        145,
+        226,
+        126,
+        206,
+        32,
+        0
+      ]
+    },
+    {
+      "name": "Claimed",
+      "discriminator": [
+        217,
+        192,
+        123,
+        72,
+        108,
+        150,
+        248,
+        33
+      ]
+    },
+    {
+      "name": "FacilitatorChanged",
+      "discriminator": [
+        108,
+        205,
+        106,
+        198,
+        242,
+        56,
+        147,
+        93
+      ]
+    },
+    {
+      "name": "ForwarderSet",
+      "discriminator": [
+        17,
+        92,
+        253,
+        99,
+        119,
+        195,
+        173,
+        94
+      ]
+    },
+    {
+      "name": "JudgeChanged",
+      "discriminator": [
+        112,
+        22,
+        98,
+        87,
+        84,
+        209,
+        30,
+        204
+      ]
+    },
+    {
+      "name": "MarketOpened",
+      "discriminator": [
+        98,
+        146,
+        98,
+        81,
+        117,
+        211,
+        121,
+        211
+      ]
+    },
+    {
+      "name": "MarketSettled",
+      "discriminator": [
+        237,
+        212,
+        22,
+        175,
+        201,
+        117,
+        215,
+        99
+      ]
+    },
+    {
+      "name": "NewFeedback",
+      "discriminator": [
+        14,
+        162,
+        58,
+        194,
+        131,
+        42,
+        11,
+        149
+      ]
+    },
+    {
+      "name": "PassMinted",
+      "discriminator": [
+        41,
+        18,
+        56,
+        61,
+        177,
+        162,
+        4,
+        13
+      ]
+    },
+    {
+      "name": "RaceCanceled",
+      "discriminator": [
+        127,
+        202,
+        186,
+        239,
+        113,
+        159,
+        126,
+        133
+      ]
+    },
+    {
+      "name": "RaceFinished",
+      "discriminator": [
+        39,
+        45,
+        229,
+        137,
+        128,
+        191,
+        40,
+        31
+      ]
+    },
+    {
+      "name": "RaceJoined",
+      "discriminator": [
+        168,
+        181,
+        101,
+        43,
+        232,
+        13,
+        12,
+        190
+      ]
+    },
+    {
+      "name": "RaceLocked",
+      "discriminator": [
+        140,
+        57,
+        125,
+        83,
+        134,
+        229,
+        132,
+        180
+      ]
+    },
+    {
+      "name": "RaceOpened",
+      "discriminator": [
+        31,
+        133,
+        112,
+        7,
+        214,
+        107,
+        10,
+        56
+      ]
+    },
+    {
+      "name": "RaceSettled",
+      "discriminator": [
+        182,
+        88,
+        145,
+        67,
+        233,
+        56,
+        43,
+        181
+      ]
+    },
+    {
+      "name": "RaceStarted",
+      "discriminator": [
+        217,
+        237,
+        93,
+        167,
+        114,
+        201,
+        150,
+        92
+      ]
+    },
+    {
+      "name": "TreasuryOwnerChanged",
+      "discriminator": [
+        73,
+        228,
+        31,
+        158,
+        93,
+        185,
+        100,
+        67
+      ]
+    },
+    {
+      "name": "TreasuryWithdraw",
+      "discriminator": [
+        164,
+        41,
+        149,
+        134,
+        248,
+        87,
+        41,
+        218
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotFacilitator",
+      "msg": "caller is not the facilitator"
+    },
+    {
+      "code": 6001,
+      "name": "NotOperator",
+      "msg": "caller is not the operator"
+    },
+    {
+      "code": 6002,
+      "name": "NotJudge",
+      "msg": "caller is not the judge"
+    },
+    {
+      "code": 6003,
+      "name": "BadState",
+      "msg": "invalid race state for this action"
+    },
+    {
+      "code": 6004,
+      "name": "BadSlot",
+      "msg": "slot must be 0 or 1"
+    },
+    {
+      "code": 6005,
+      "name": "BadDriver",
+      "msg": "driver invalid for this slot"
+    },
+    {
+      "code": 6006,
+      "name": "BadAmount",
+      "msg": "amount does not match the race terms"
+    },
+    {
+      "code": 6007,
+      "name": "BadRaceId",
+      "msg": "race id does not match the running counter"
+    },
+    {
+      "code": 6008,
+      "name": "AlreadyJoined",
+      "msg": "driver already joined this slot"
+    },
+    {
+      "code": 6009,
+      "name": "BadMint",
+      "msg": "wrong mint"
+    },
+    {
+      "code": 6010,
+      "name": "BadVault",
+      "msg": "wrong vault account"
+    },
+    {
+      "code": 6011,
+      "name": "BadTreasury",
+      "msg": "wrong treasury account"
+    },
+    {
+      "code": 6012,
+      "name": "MarketClosed",
+      "msg": "market is closed"
+    },
+    {
+      "code": 6013,
+      "name": "NotSettled",
+      "msg": "market not settled"
+    },
+    {
+      "code": 6014,
+      "name": "AlreadyClaimed",
+      "msg": "bet already claimed"
+    },
+    {
+      "code": 6015,
+      "name": "Lost",
+      "msg": "bet did not pick the winner"
+    },
+    {
+      "code": 6016,
+      "name": "BadRacer",
+      "msg": "invalid racer index"
+    },
+    {
+      "code": 6017,
+      "name": "BadRacerCount",
+      "msg": "racer count out of range"
+    },
+    {
+      "code": 6018,
+      "name": "Overflow",
+      "msg": "arithmetic overflow"
+    },
+    {
+      "code": 6019,
+      "name": "SelfFeedback",
+      "msg": "self-feedback not allowed"
+    },
+    {
+      "code": 6020,
+      "name": "StringTooLong",
+      "msg": "string field exceeds max length"
+    },
+    {
+      "code": 6021,
+      "name": "NotMinter",
+      "msg": "caller is not the pass minter"
+    },
+    {
+      "code": 6022,
+      "name": "BadPassId",
+      "msg": "pass id does not match the running counter"
+    },
+    {
+      "code": 6023,
+      "name": "NotOwner",
+      "msg": "caller is not the treasury owner (Ledger approval required)"
+    },
+    {
+      "code": 6024,
+      "name": "Unauthorized",
+      "msg": "reporter is not the authorized forwarder"
+    }
+  ],
+  "types": [
+    {
+      "name": "Agent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "count",
+            "type": "u64"
+          },
+          {
+            "name": "sum",
+            "type": "i128"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AgentRegistered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AttestConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "forwarder",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Attestation",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "score",
+            "type": "u64"
+          },
+          {
+            "name": "proof_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "verified",
+            "type": "bool"
+          },
+          {
+            "name": "exists",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AttestationVerified",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job",
+            "type": "string"
+          },
+          {
+            "name": "score",
+            "type": "u64"
+          },
+          {
+            "name": "proof_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verified",
+            "type": "bool"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Bet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "bettor",
+            "type": "pubkey"
+          },
+          {
+            "name": "racer",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BetPlaced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market_id",
+            "type": "u64"
+          },
+          {
+            "name": "bettor",
+            "type": "pubkey"
+          },
+          {
+            "name": "racer",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "world_nullifier",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Claimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market_id",
+            "type": "u64"
+          },
+          {
+            "name": "bettor",
+            "type": "pubkey"
+          },
+          {
+            "name": "payout",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "facilitator",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "next_race_id",
+            "type": "u64"
+          },
+          {
+            "name": "total_fees_collected",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FacilitatorChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "facilitator",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Feedback",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "type": "i64"
+          },
+          {
+            "name": "value_decimals",
+            "type": "u8"
+          },
+          {
+            "name": "tag1",
+            "type": "string"
+          },
+          {
+            "name": "tag2",
+            "type": "string"
+          },
+          {
+            "name": "endpoint",
+            "type": "string"
+          },
+          {
+            "name": "feedback_uri",
+            "type": "string"
+          },
+          {
+            "name": "feedback_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ForwarderSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "forwarder",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JudgeChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market_id",
+            "type": "u64"
+          },
+          {
+            "name": "judge",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Market",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market_id",
+            "type": "u64"
+          },
+          {
+            "name": "judge",
+            "type": "pubkey"
+          },
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "open",
+            "type": "bool"
+          },
+          {
+            "name": "settled",
+            "type": "bool"
+          },
+          {
+            "name": "winner",
+            "type": "u8"
+          },
+          {
+            "name": "num_racers",
+            "type": "u8"
+          },
+          {
+            "name": "pools",
+            "type": {
+              "array": [
+                "u64",
+                8
+              ]
+            }
+          },
+          {
+            "name": "total_pool",
+            "type": "u64"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "winning_proof_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "walrus_blob_id",
+            "type": "string"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market_id",
+            "type": "u64"
+          },
+          {
+            "name": "num_racers",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market_id",
+            "type": "u64"
+          },
+          {
+            "name": "winner",
+            "type": "u8"
+          },
+          {
+            "name": "proof_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "walrus_blob_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NewFeedback",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent_id",
+            "type": "u64"
+          },
+          {
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "name": "feedback_index",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "type": "i64"
+          },
+          {
+            "name": "value_decimals",
+            "type": "u8"
+          },
+          {
+            "name": "tag1",
+            "type": "string"
+          },
+          {
+            "name": "feedback_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Nullifier",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "used",
+            "type": "bool"
+          },
+          {
+            "name": "value",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pass",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "price_usdc6",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PassConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "minter",
+            "type": "pubkey"
+          },
+          {
+            "name": "next_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PassMinted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "price_usdc6",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Race",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "RaceStatus"
+              }
+            }
+          },
+          {
+            "name": "local_round_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "challenger",
+            "type": "pubkey"
+          },
+          {
+            "name": "opponent",
+            "type": "pubkey"
+          },
+          {
+            "name": "challenger_joined",
+            "type": "bool"
+          },
+          {
+            "name": "opponent_joined",
+            "type": "bool"
+          },
+          {
+            "name": "stake_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fee_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fees_collected",
+            "type": "u64"
+          },
+          {
+            "name": "winner_slot",
+            "type": "u8"
+          },
+          {
+            "name": "proof_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "locked_at",
+            "type": "i64"
+          },
+          {
+            "name": "started_at",
+            "type": "i64"
+          },
+          {
+            "name": "finished_at",
+            "type": "i64"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceCanceled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          },
+          {
+            "name": "reason",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceFinished",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          },
+          {
+            "name": "winner_slot",
+            "type": "u8"
+          },
+          {
+            "name": "proof_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceJoined",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          },
+          {
+            "name": "driver",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u8"
+          },
+          {
+            "name": "stake_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fee_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceLocked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          },
+          {
+            "name": "local_round_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "stake_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fee_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "payout",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceStarted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "race_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RaceStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Created"
+          },
+          {
+            "name": "Joined"
+          },
+          {
+            "name": "Locked"
+          },
+          {
+            "name": "Started"
+          },
+          {
+            "name": "Finished"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Canceled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryOwnerChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryWithdraw",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

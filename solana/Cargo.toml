@@ -3,9 +3,12 @@ members = ["programs/*"]
 resolver = "2"
 
 [profile.release]
-overflow-checks = true
+overflow-checks = true   # keep checked math (safety) even when optimizing for size
+opt-level = "z"          # optimize for binary size -> fewer deploy write-txs
 lto = "fat"
 codegen-units = 1
+panic = "abort"          # Solana programs abort anyway; drops unwinding tables
+strip = true             # strip symbols (large .so size win)
 
 [profile.release.build-override]
 opt-level = 3

@@ -27,6 +27,7 @@ import * as fieldPreflight from "./field-preflight.js";
 import * as localDevWallets from "./local-dev-wallets.js";
 import * as raceStore from "./race-store.js";
 import * as robotLink from "./robot-link.js";
+import * as earthRover from "./earth-rover.js";
 import * as rounds from "./rounds.js";
 import * as settle from "./settle.js";
 import * as eip3009 from "./eip3009.js";
@@ -74,6 +75,12 @@ app.use((req, res, next) => {
 
 const server = createServer(app);
 robotLink.installRobotLink(app, server);
+
+// Earth Rovers SDK adapter: a real FrodoBots rover as a fleet robot. Point a
+// robot's URL at this (e.g. GUARD_URL=http://127.0.0.1:4021/earthrover) to
+// drive it through the normal pilot flow; POST /earthrover/command for openClaw
+// natural-language control. See docs/EARTH_ROVERS.md.
+app.use("/earthrover", earthRover.earthRoverRouter());
 
 // Instrumented fetch to a robot: emits a backend event with latency + outcome
 // so every sidecar→rover HTTP call is visible on the wall. Behaviour-identical

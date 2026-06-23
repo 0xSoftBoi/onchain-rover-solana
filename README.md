@@ -148,6 +148,15 @@ flowchart TB
 - **`docs/`** — [`SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md)
   (per-component decision record), [`HELIUS.md`](docs/HELIUS.md),
   [`DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md), [`SOLANA_PORT.md`](docs/SOLANA_PORT.md).
+- **[`TOKENOMICS.md`](TOKENOMICS.md)** — proposed **$CLANK** token design: a
+  Hyperliquid-style revenue→buyback (the *Pit Fund*) over a DePIN
+  proof-of-physical-work core. Usage stays in USDC; the token secures the proof
+  layer, rewards verified robot work, and governs the network. Includes a full
+  tradfi workup (DCF, Monte Carlo fair value, legal ring-fence) and a reproducible
+  model in [`scripts/tokenomics_model.py`](scripts/tokenomics_model.py).
+- **[`docs/TOKEN_PROGRAM_SPEC.md`](docs/TOKEN_PROGRAM_SPEC.md)** — engineering spec:
+  the additive Anchor instructions / PDAs that implement $CLANK on `clanker5000`
+  (mint, staking, the verified-work emissions hook, value-aware buyback).
 
 > Gone with the EVM cutover: `contracts/` (Solidity), `chain/` (Hardhat),
 > `cre-workflow/` (Chainlink CRE), and all viem/ENS/Arc code.

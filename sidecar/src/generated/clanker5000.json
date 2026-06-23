@@ -8,6 +8,536 @@
   },
   "instructions": [
     {
+      "name": "accrue_emissions",
+      "docs": [
+        "Mint work emissions for ONE verified job — the anti-gaming core. Mints",
+        "$CLANK to the operator only when the five on-chain links all hold:",
+        "1. the job's `Attestation` is oracle-`verified` (score ≥ 70),",
+        "2. a REQUESTER wrote `Feedback` for this agent (and it is not",
+        "self-feedback — the program already forbids that in `give_feedback`),",
+        "3. the operator is bonded ≥ the minimum and the agent's reputation is",
+        "not net-negative,",
+        "4. the current epoch's cap (and the 1B bucket) is not exhausted,",
+        "5. this (agent, job) has not already been claimed (the `JobClaim` PDA",
+        "`init`s once; a second attempt collides and fails).",
+        "Facilitator/keeper-gated. v1 simplification: the `Feedback` account is",
+        "validated by its fields (agent + non-self client), not bound to `job_hash`",
+        "— a stricter binding is a follow-up; the one-shot `JobClaim` bounds abuse."
+      ],
+      "discriminator": [
+        233,
+        116,
+        125,
+        148,
+        241,
+        174,
+        224,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "token_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.current_epoch",
+                "account": "TokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "facilitator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "agent",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "agent_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator_bond",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  95,
+                  98,
+                  111,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestation",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "feedback",
+          "docs": [
+            "Any genuine requester `Feedback` PDA for this agent (fields checked in-handler)."
+          ]
+        },
+        {
+          "name": "clank_mint",
+          "writable": true
+        },
+        {
+          "name": "mint_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  110,
+                  107,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator_clank",
+          "writable": true
+        },
+        {
+          "name": "job_claim",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98,
+                  95,
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agent"
+              },
+              {
+                "kind": "arg",
+                "path": "job_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "agent_id",
+          "type": "u64"
+        },
+        {
+          "name": "job_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "bond_operator",
+      "docs": [
+        "Bond $CLANK against an `Agent` identity. Only the agent's owner can bond;",
+        "the bond is slashable and is the skin-in-the-game that gates emissions",
+        "(`bonded >= min_operator_bond`) and weights the reward (`emission_reward`)."
+      ],
+      "discriminator": [
+        63,
+        150,
+        203,
+        115,
+        203,
+        227,
+        96,
+        58
+      ],
+      "accounts": [
+        {
+          "name": "token_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "agent",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "agent_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "owner_clank",
+          "writable": true
+        },
+        {
+          "name": "bond_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  95,
+                  98,
+                  111,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "clank_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_agent_id",
+          "type": "u64"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "bond_verifier",
+      "docs": [
+        "Bond $CLANK to act as a verifier (forwarder/judge). Slashable; this is the",
+        "stake that makes a corrupt verdict cost more than it could steal",
+        "(TOKENOMICS §13.2 security budget)."
+      ],
+      "discriminator": [
+        117,
+        82,
+        127,
+        191,
+        219,
+        227,
+        218,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "slash_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "verifier",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "verifier_clank",
+          "writable": true
+        },
+        {
+          "name": "slash_vault",
+          "writable": true
+        },
+        {
+          "name": "verifier_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  95,
+                  98,
+                  111,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "cancel_race",
       "docs": [
         "Refund staked drivers and void the race. `challenger_token`/",
@@ -238,6 +768,233 @@
       ]
     },
     {
+      "name": "claim_staking_yield",
+      "docs": [
+        "Claim accrued USDC yield (settled pending + freshly accrued) from the",
+        "yield vault (PDA-signed). Real yield — never minted."
+      ],
+      "discriminator": [
+        105,
+        22,
+        90,
+        204,
+        157,
+        145,
+        17,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "stake_pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "staker_usdc",
+          "writable": true
+        },
+        {
+          "name": "yield_vault",
+          "writable": true
+        },
+        {
+          "name": "stake_vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "staker"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "execute_buyback",
+      "docs": [
+        "Execute one buyback as an **atomic OTC fill** against the keeper/MM: the",
+        "program receives `clank_in` $CLANK and pays `usdc_out` USDC in the SAME",
+        "instruction (never releases USDC without receiving tokens). Bounded by:",
+        "* the **value-aware P/F throttle** (`buyback_allowance`) computed from the",
+        "keeper-supplied `clank_price_usdc6` and `fees_annualized_usdc6`",
+        "(production: read a Pyth/Switchboard price + on-chain fees — v1 trusts",
+        "the permissioned keeper, bounded by `max_per_call` + `max_price`),",
+        "* a **slippage** ceiling (`max_price_usdc6`),",
+        "* a per-call cap + min interval (a TWAP/%-ADV proxy, §12.5).",
+        "Then burns `burn_bps` of the acquired $CLANK (the burn-vs-distribute dial)."
+      ],
+      "discriminator": [
+        47,
+        32,
+        19,
+        100,
+        184,
+        96,
+        144,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "pit_fund",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "keeper",
+          "signer": true
+        },
+        {
+          "name": "keeper_clank",
+          "writable": true
+        },
+        {
+          "name": "keeper_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true
+        },
+        {
+          "name": "clank_vault",
+          "writable": true
+        },
+        {
+          "name": "pit_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "clank_mint",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "usdc_out",
+          "type": "u64"
+        },
+        {
+          "name": "clank_in",
+          "type": "u64"
+        },
+        {
+          "name": "clank_price_usdc6",
+          "type": "u64"
+        },
+        {
+          "name": "fees_annualized_usdc6",
+          "type": "u64"
+        },
+        {
+          "name": "max_price_usdc6",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "finish_race",
       "discriminator": [
         174,
@@ -311,6 +1068,134 @@
               32
             ]
           }
+        }
+      ]
+    },
+    {
+      "name": "fund_pit_fund",
+      "docs": [
+        "Route the **60%-of-fees** buyback share (USDC) into the Pit Fund. Permissionless top-up."
+      ],
+      "discriminator": [
+        89,
+        244,
+        157,
+        205,
+        191,
+        102,
+        184,
+        229
+      ],
+      "accounts": [
+        {
+          "name": "pit_fund",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "funder_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "fund_staker_bucket",
+      "docs": [
+        "Route USDC into the staker-yield bucket — the **30%-of-fees** real-yield",
+        "stream (TOKENOMICS §13.1). Distributes pro-rata by bumping",
+        "`acc_usdc_per_share`. Permissionless top-up (more yield only helps)."
+      ],
+      "discriminator": [
+        117,
+        210,
+        46,
+        74,
+        50,
+        33,
+        169,
+        90
+      ],
+      "accounts": [
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "funder_usdc",
+          "writable": true
+        },
+        {
+          "name": "yield_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
         }
       ]
     },
@@ -551,6 +1436,563 @@
         {
           "name": "minter",
           "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "init_pit_fund",
+      "docs": [
+        "One-time Pit Fund init: the USDC intake vault + the CLANK holding vault",
+        "(both under one PDA authority), plus the buyback policy. `keeper` is the",
+        "permissioned market-maker that fills buybacks; the P/F band and per-call",
+        "cap implement the value-aware throttle (§12.2)."
+      ],
+      "discriminator": [
+        162,
+        132,
+        14,
+        17,
+        194,
+        161,
+        205,
+        157
+      ],
+      "accounts": [
+        {
+          "name": "pit_fund",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "clank_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  99,
+                  108,
+                  97,
+                  110,
+                  107,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pit_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "clank_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        },
+        {
+          "name": "pf_cheap_x100",
+          "type": "u64"
+        },
+        {
+          "name": "pf_rich_x100",
+          "type": "u64"
+        },
+        {
+          "name": "max_per_call_usdc",
+          "type": "u64"
+        },
+        {
+          "name": "min_interval_secs",
+          "type": "i64"
+        },
+        {
+          "name": "burn_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "init_slashing",
+      "docs": [
+        "One-time slashing init: the $CLANK slash vault (holds verifier bonds and",
+        "in-flight challenger bonds) + the `SlashConfig` policy. `authority` is the",
+        "dispute resolver (governance/DAO). `slash_bps` is the fraction of a",
+        "verifier's bond burned when a dispute is upheld; `challenger_bond` is the",
+        "$CLANK a challenger must post (returned if upheld, burned if frivolous)."
+      ],
+      "discriminator": [
+        247,
+        47,
+        191,
+        100,
+        39,
+        245,
+        9,
+        148
+      ],
+      "accounts": [
+        {
+          "name": "slash_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "slash_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "slash_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "clank_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "dispute_window_secs",
+          "type": "i64"
+        },
+        {
+          "name": "slash_bps",
+          "type": "u16"
+        },
+        {
+          "name": "challenger_bond",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "init_stake_pool",
+      "docs": [
+        "One-time staking init. Creates the CLANK stake vault and the USDC yield",
+        "vault (both under one PDA authority), plus the global `StakePool`.",
+        "`cooldown_secs` is the unstake delay set on each stake."
+      ],
+      "discriminator": [
+        145,
+        69,
+        167,
+        211,
+        154,
+        130,
+        73,
+        50
+      ],
+      "accounts": [
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "stake_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "yield_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  105,
+                  101,
+                  108,
+                  100,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "clank_mint"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "cooldown_secs",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "init_token",
+      "docs": [
+        "One-time token init. The $CLANK mint must already exist with its mint",
+        "authority set to the program PDA `[CLANK_MINT_AUTH_SEED]` — so after this,",
+        "**only the program can mint, and only via `accrue_emissions` under the",
+        "epoch cap.** Opens emission epoch 0. Genesis/vesting buckets are minted",
+        "separately (audited vesting program) before authority is handed to the PDA."
+      ],
+      "discriminator": [
+        9,
+        187,
+        206,
+        103,
+        139,
+        126,
+        246,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "token_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "clank_mint"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch0_cap",
+          "type": "u64"
+        },
+        {
+          "name": "reward_per_job",
+          "type": "u64"
+        },
+        {
+          "name": "epoch_len",
+          "type": "i64"
+        },
+        {
+          "name": "decay_num",
+          "type": "u64"
+        },
+        {
+          "name": "decay_den",
+          "type": "u64"
+        },
+        {
+          "name": "min_operator_bond",
+          "type": "u64"
         }
       ]
     },
@@ -987,6 +2429,139 @@
         {
           "name": "price_usdc6",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_dispute",
+      "docs": [
+        "Open a dispute against a verifier's verdict for `job_hash`. The challenger",
+        "posts `challenger_bond` $CLANK into the slash vault; the slash amount is",
+        "snapshotted from the verifier's current bond. Starts the resolution window."
+      ],
+      "discriminator": [
+        137,
+        25,
+        99,
+        119,
+        23,
+        223,
+        161,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "slash_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenger",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "challenger_clank",
+          "writable": true
+        },
+        {
+          "name": "slash_vault",
+          "writable": true
+        },
+        {
+          "name": "verifier_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  95,
+                  98,
+                  111,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier_bond.verifier",
+                "account": "VerifierBond"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dispute",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_hash"
+              },
+              {
+                "kind": "account",
+                "path": "verifier_bond.verifier",
+                "account": "VerifierBond"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "job_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -1478,6 +3053,371 @@
       ]
     },
     {
+      "name": "resolve_dispute",
+      "docs": [
+        "Resolve a dispute after its window. Resolver-gated. If **upheld**: burn the",
+        "slash amount from the verifier's bond and return the challenger's bond. If",
+        "**rejected**: burn the challenger's bond (frivolous-dispute cost). Slashed",
+        "$CLANK is always **burned, never paid to the challenger** — so there is no",
+        "incentive to false-accuse (SPEC §6)."
+      ],
+      "discriminator": [
+        231,
+        6,
+        202,
+        6,
+        96,
+        103,
+        12,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "slash_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "dispute",
+          "writable": true
+        },
+        {
+          "name": "verifier_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  95,
+                  98,
+                  111,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dispute.verifier",
+                "account": "Dispute"
+              }
+            ]
+          }
+        },
+        {
+          "name": "slash_vault",
+          "writable": true
+        },
+        {
+          "name": "slash_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "clank_mint",
+          "writable": true
+        },
+        {
+          "name": "challenger_clank",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "upheld",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "roll_epoch",
+      "docs": [
+        "Advance to the next emission epoch once the current one's window has",
+        "elapsed. Permissionless. The new cap and reward/job both decay by",
+        "`decay_num/decay_den` — the published taper (TOKENOMICS §6)."
+      ],
+      "discriminator": [
+        17,
+        54,
+        176,
+        59,
+        34,
+        11,
+        253,
+        90
+      ],
+      "accounts": [
+        {
+          "name": "token_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_epoch",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.current_epoch",
+                "account": "TokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "next_epoch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "next_epoch_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "next_epoch_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_buyback_params",
+      "docs": [
+        "Governance: retune the buyback band, cap, interval, burn split, or keeper."
+      ],
+      "discriminator": [
+        22,
+        87,
+        133,
+        199,
+        156,
+        216,
+        184,
+        71
+      ],
+      "accounts": [
+        {
+          "name": "pit_fund",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  105,
+                  116,
+                  95,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        },
+        {
+          "name": "pf_cheap_x100",
+          "type": "u64"
+        },
+        {
+          "name": "pf_rich_x100",
+          "type": "u64"
+        },
+        {
+          "name": "max_per_call_usdc",
+          "type": "u64"
+        },
+        {
+          "name": "min_interval_secs",
+          "type": "i64"
+        },
+        {
+          "name": "burn_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "set_emission_params",
+      "docs": [
+        "Retune the emission schedule: min operator bond, epoch length, and the",
+        "decay applied to the cap + reward each `roll_epoch`. Governance-gated."
+      ],
+      "discriminator": [
+        189,
+        17,
+        68,
+        225,
+        214,
+        210,
+        172,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "token_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "min_operator_bond",
+          "type": "u64"
+        },
+        {
+          "name": "epoch_len",
+          "type": "i64"
+        },
+        {
+          "name": "decay_num",
+          "type": "u64"
+        },
+        {
+          "name": "decay_den",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "set_facilitator",
       "discriminator": [
         214,
@@ -1620,6 +3560,200 @@
         },
         {
           "name": "new_judge",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_slash_params",
+      "docs": [
+        "Retune slashing policy and/or rotate the dispute resolver. Gated by the",
+        "current resolver (`SlashConfig.authority`)."
+      ],
+      "discriminator": [
+        221,
+        27,
+        35,
+        14,
+        219,
+        42,
+        49,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "slash_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "dispute_window_secs",
+          "type": "i64"
+        },
+        {
+          "name": "slash_bps",
+          "type": "u16"
+        },
+        {
+          "name": "challenger_bond",
+          "type": "u64"
+        },
+        {
+          "name": "new_resolver",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_stake_cooldown",
+      "docs": [
+        "Set the unstake cooldown on the stake pool. Governance-gated via `TokenConfig`."
+      ],
+      "discriminator": [
+        62,
+        72,
+        153,
+        175,
+        6,
+        96,
+        36,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "cooldown_secs",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "set_token_authority",
+      "docs": [
+        "Rotate the governance authority (e.g. hand off to a DAO/Squads multisig)."
+      ],
+      "discriminator": [
+        252,
+        249,
+        189,
+        177,
+        91,
+        10,
+        198,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "token_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
           "type": "pubkey"
         }
       ]
@@ -1849,6 +3983,98 @@
       ]
     },
     {
+      "name": "stake",
+      "docs": [
+        "Stake $CLANK. Settles any pending yield first (so the new, larger balance",
+        "doesn't retroactively earn), pulls CLANK into the stake vault, and resets",
+        "the unstake cooldown."
+      ],
+      "discriminator": [
+        206,
+        176,
+        202,
+        18,
+        200,
+        209,
+        179,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "staker_clank",
+          "writable": true
+        },
+        {
+          "name": "stake_vault",
+          "writable": true
+        },
+        {
+          "name": "stake_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "staker"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "start_race",
       "discriminator": [
         167,
@@ -2007,6 +4233,236 @@
       "args": [
         {
           "name": "_market_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "unbond_verifier",
+      "docs": [
+        "Withdraw verifier bond. Blocked while any dispute against this verifier is",
+        "open (you can't exit ahead of a slash)."
+      ],
+      "discriminator": [
+        41,
+        14,
+        107,
+        50,
+        13,
+        174,
+        80,
+        152
+      ],
+      "accounts": [
+        {
+          "name": "slash_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "verifier",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "verifier_clank",
+          "writable": true
+        },
+        {
+          "name": "slash_vault",
+          "writable": true
+        },
+        {
+          "name": "slash_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  108,
+                  97,
+                  115,
+                  104,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "verifier_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  95,
+                  98,
+                  111,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "unstake",
+      "docs": [
+        "Unstake after the cooldown. Settles pending yield, then returns CLANK from",
+        "the stake vault (PDA-signed)."
+      ],
+      "discriminator": [
+        90,
+        95,
+        107,
+        42,
+        205,
+        124,
+        50,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "staker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "staker_clank",
+          "writable": true
+        },
+        {
+          "name": "stake_vault",
+          "writable": true
+        },
+        {
+          "name": "stake_vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "staker"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
           "type": "u64"
         }
       ]
@@ -2279,6 +4735,32 @@
       ]
     },
     {
+      "name": "Dispute",
+      "discriminator": [
+        36,
+        49,
+        241,
+        67,
+        40,
+        36,
+        241,
+        74
+      ]
+    },
+    {
+      "name": "EmissionEpoch",
+      "discriminator": [
+        102,
+        46,
+        245,
+        51,
+        170,
+        183,
+        175,
+        230
+      ]
+    },
+    {
       "name": "Feedback",
       "discriminator": [
         98,
@@ -2289,6 +4771,19 @@
         43,
         78,
         220
+      ]
+    },
+    {
+      "name": "JobClaim",
+      "discriminator": [
+        76,
+        98,
+        235,
+        223,
+        188,
+        140,
+        109,
+        108
       ]
     },
     {
@@ -2318,6 +4813,19 @@
       ]
     },
     {
+      "name": "OperatorBond",
+      "discriminator": [
+        209,
+        64,
+        254,
+        87,
+        228,
+        244,
+        94,
+        218
+      ]
+    },
+    {
       "name": "Pass",
       "discriminator": [
         40,
@@ -2344,6 +4852,19 @@
       ]
     },
     {
+      "name": "PitFund",
+      "discriminator": [
+        92,
+        110,
+        158,
+        157,
+        96,
+        226,
+        189,
+        13
+      ]
+    },
+    {
       "name": "Race",
       "discriminator": [
         114,
@@ -2357,6 +4878,58 @@
       ]
     },
     {
+      "name": "SlashConfig",
+      "discriminator": [
+        106,
+        254,
+        4,
+        176,
+        188,
+        202,
+        156,
+        154
+      ]
+    },
+    {
+      "name": "StakeAccount",
+      "discriminator": [
+        80,
+        158,
+        67,
+        124,
+        50,
+        189,
+        192,
+        255
+      ]
+    },
+    {
+      "name": "StakePool",
+      "discriminator": [
+        121,
+        34,
+        206,
+        21,
+        79,
+        127,
+        255,
+        28
+      ]
+    },
+    {
+      "name": "TokenConfig",
+      "discriminator": [
+        92,
+        73,
+        255,
+        43,
+        107,
+        51,
+        117,
+        101
+      ]
+    },
+    {
       "name": "TreasuryConfig",
       "discriminator": [
         124,
@@ -2367,6 +4940,19 @@
         189,
         168,
         41
+      ]
+    },
+    {
+      "name": "VerifierBond",
+      "discriminator": [
+        101,
+        42,
+        68,
+        148,
+        240,
+        243,
+        156,
+        58
       ]
     }
   ],
@@ -2411,6 +4997,32 @@
       ]
     },
     {
+      "name": "BuybackExecuted",
+      "discriminator": [
+        150,
+        109,
+        157,
+        10,
+        124,
+        24,
+        38,
+        189
+      ]
+    },
+    {
+      "name": "BuybackParamsSet",
+      "discriminator": [
+        24,
+        105,
+        128,
+        115,
+        96,
+        170,
+        159,
+        115
+      ]
+    },
+    {
       "name": "Claimed",
       "discriminator": [
         217,
@@ -2421,6 +5033,71 @@
         150,
         248,
         33
+      ]
+    },
+    {
+      "name": "DisputeOpened",
+      "discriminator": [
+        239,
+        222,
+        102,
+        235,
+        193,
+        85,
+        1,
+        214
+      ]
+    },
+    {
+      "name": "DisputeResolved",
+      "discriminator": [
+        121,
+        64,
+        249,
+        153,
+        139,
+        128,
+        236,
+        187
+      ]
+    },
+    {
+      "name": "EmissionAccrued",
+      "discriminator": [
+        111,
+        17,
+        208,
+        173,
+        44,
+        166,
+        114,
+        27
+      ]
+    },
+    {
+      "name": "EmissionParamsSet",
+      "discriminator": [
+        47,
+        76,
+        20,
+        242,
+        5,
+        9,
+        220,
+        49
+      ]
+    },
+    {
+      "name": "EpochRolled",
+      "discriminator": [
+        185,
+        99,
+        207,
+        231,
+        204,
+        221,
+        121,
+        223
       ]
     },
     {
@@ -2515,6 +5192,19 @@
       ]
     },
     {
+      "name": "OperatorBonded",
+      "discriminator": [
+        137,
+        40,
+        1,
+        33,
+        133,
+        98,
+        99,
+        69
+      ]
+    },
+    {
       "name": "PassMinted",
       "discriminator": [
         41,
@@ -2525,6 +5215,19 @@
         162,
         4,
         13
+      ]
+    },
+    {
+      "name": "PitFundFunded",
+      "discriminator": [
+        185,
+        146,
+        179,
+        154,
+        35,
+        57,
+        233,
+        217
       ]
     },
     {
@@ -2619,6 +5322,84 @@
       ]
     },
     {
+      "name": "SlashParamsSet",
+      "discriminator": [
+        234,
+        226,
+        218,
+        212,
+        183,
+        17,
+        42,
+        102
+      ]
+    },
+    {
+      "name": "StakeCooldownSet",
+      "discriminator": [
+        66,
+        137,
+        127,
+        25,
+        103,
+        77,
+        137,
+        209
+      ]
+    },
+    {
+      "name": "Staked",
+      "discriminator": [
+        11,
+        146,
+        45,
+        205,
+        230,
+        58,
+        213,
+        240
+      ]
+    },
+    {
+      "name": "StakerBucketFunded",
+      "discriminator": [
+        112,
+        20,
+        136,
+        215,
+        203,
+        154,
+        197,
+        130
+      ]
+    },
+    {
+      "name": "TokenAuthoritySet",
+      "discriminator": [
+        67,
+        164,
+        45,
+        89,
+        69,
+        78,
+        213,
+        216
+      ]
+    },
+    {
+      "name": "TokenInitialized",
+      "discriminator": [
+        77,
+        70,
+        233,
+        124,
+        236,
+        92,
+        204,
+        0
+      ]
+    },
+    {
       "name": "TreasuryOwnerChanged",
       "discriminator": [
         73,
@@ -2642,6 +5423,58 @@
         87,
         41,
         218
+      ]
+    },
+    {
+      "name": "Unstaked",
+      "discriminator": [
+        27,
+        179,
+        156,
+        215,
+        47,
+        71,
+        195,
+        7
+      ]
+    },
+    {
+      "name": "VerifierBonded",
+      "discriminator": [
+        173,
+        230,
+        59,
+        206,
+        96,
+        192,
+        78,
+        92
+      ]
+    },
+    {
+      "name": "VerifierUnbonded",
+      "discriminator": [
+        214,
+        187,
+        116,
+        200,
+        137,
+        218,
+        206,
+        197
+      ]
+    },
+    {
+      "name": "YieldClaimed",
+      "discriminator": [
+        177,
+        201,
+        94,
+        68,
+        19,
+        200,
+        227,
+        27
       ]
     }
   ],
@@ -2780,6 +5613,106 @@
       "code": 6026,
       "name": "MarketNotSettled",
       "msg": "market is not settled"
+    },
+    {
+      "code": 6027,
+      "name": "BadEmissionParams",
+      "msg": "invalid emission parameters"
+    },
+    {
+      "code": 6028,
+      "name": "BadMintAuthority",
+      "msg": "$CLANK mint authority must be the program PDA"
+    },
+    {
+      "code": 6029,
+      "name": "NotAgentOwner",
+      "msg": "caller does not own this agent"
+    },
+    {
+      "code": 6030,
+      "name": "NotVerified",
+      "msg": "job is not oracle-verified"
+    },
+    {
+      "code": 6031,
+      "name": "FeedbackMismatch",
+      "msg": "feedback does not match this agent"
+    },
+    {
+      "code": 6032,
+      "name": "BondMismatch",
+      "msg": "operator bond does not match this agent"
+    },
+    {
+      "code": 6033,
+      "name": "Unbonded",
+      "msg": "operator bond below the minimum"
+    },
+    {
+      "code": 6034,
+      "name": "BadReputation",
+      "msg": "agent reputation is net-negative"
+    },
+    {
+      "code": 6035,
+      "name": "WrongEpoch",
+      "msg": "wrong or stale emission epoch"
+    },
+    {
+      "code": 6036,
+      "name": "EpochCapReached",
+      "msg": "emission epoch cap reached"
+    },
+    {
+      "code": 6037,
+      "name": "BucketExhausted",
+      "msg": "emission bucket exhausted"
+    },
+    {
+      "code": 6038,
+      "name": "EpochNotOver",
+      "msg": "emission epoch window not over"
+    },
+    {
+      "code": 6039,
+      "name": "NoStakers",
+      "msg": "no stakers to distribute to"
+    },
+    {
+      "code": 6040,
+      "name": "CooldownActive",
+      "msg": "unstake cooldown still active"
+    },
+    {
+      "code": 6041,
+      "name": "NothingToClaim",
+      "msg": "nothing to claim"
+    },
+    {
+      "code": 6042,
+      "name": "BuybackThrottled",
+      "msg": "buyback throttled by the value-aware band or per-call cap"
+    },
+    {
+      "code": 6043,
+      "name": "BuybackSlippage",
+      "msg": "buyback price exceeds the slippage ceiling"
+    },
+    {
+      "code": 6044,
+      "name": "HasOpenDisputes",
+      "msg": "verifier has open disputes; cannot unbond"
+    },
+    {
+      "code": 6045,
+      "name": "DisputeWindowActive",
+      "msg": "dispute resolution window still active"
+    },
+    {
+      "code": 6046,
+      "name": "DisputeResolved",
+      "msg": "dispute already resolved"
     }
   ],
   "types": [
@@ -2983,6 +5916,54 @@
       }
     },
     {
+      "name": "BuybackExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "usdc_out",
+            "type": "u64"
+          },
+          {
+            "name": "clank_in",
+            "type": "u64"
+          },
+          {
+            "name": "burned",
+            "type": "u64"
+          },
+          {
+            "name": "pf_x100",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BuybackParamsSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          },
+          {
+            "name": "pf_cheap_x100",
+            "type": "u64"
+          },
+          {
+            "name": "pf_rich_x100",
+            "type": "u64"
+          },
+          {
+            "name": "burn_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
       "name": "Claimed",
       "type": {
         "kind": "struct",
@@ -3034,6 +6015,214 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Dispute",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "challenger",
+            "type": "pubkey"
+          },
+          {
+            "name": "challenger_bond",
+            "type": "u64"
+          },
+          {
+            "name": "slash_amount",
+            "type": "u64"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "resolved",
+            "type": "bool"
+          },
+          {
+            "name": "upheld",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "challenger",
+            "type": "pubkey"
+          },
+          {
+            "name": "slash_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeResolved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "upheld",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmissionAccrued",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent_id",
+            "type": "u64"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "reward",
+            "type": "u64"
+          },
+          {
+            "name": "job_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmissionEpoch",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          },
+          {
+            "name": "minted",
+            "type": "u64"
+          },
+          {
+            "name": "reward_per_job",
+            "type": "u64"
+          },
+          {
+            "name": "start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmissionParamsSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "min_operator_bond",
+            "type": "u64"
+          },
+          {
+            "name": "epoch_len",
+            "type": "i64"
+          },
+          {
+            "name": "decay_num",
+            "type": "u64"
+          },
+          {
+            "name": "decay_den",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochRolled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          },
+          {
+            "name": "reward_per_job",
+            "type": "u64"
           }
         ]
       }
@@ -3119,6 +6308,35 @@
           {
             "name": "forwarder",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobClaim",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "job_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "reward",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
@@ -3341,6 +6559,54 @@
       }
     },
     {
+      "name": "OperatorBond",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonded",
+            "type": "u64"
+          },
+          {
+            "name": "slashed",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OperatorBonded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonded",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "Pass",
       "type": {
         "kind": "struct",
@@ -3399,6 +6665,94 @@
           },
           {
             "name": "price_usdc6",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PitFund",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "clank_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "clank_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_intake",
+            "type": "u64"
+          },
+          {
+            "name": "clank_bought",
+            "type": "u64"
+          },
+          {
+            "name": "clank_burned",
+            "type": "u64"
+          },
+          {
+            "name": "pf_cheap_x100",
+            "type": "u64"
+          },
+          {
+            "name": "pf_rich_x100",
+            "type": "u64"
+          },
+          {
+            "name": "max_per_call_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "min_interval_secs",
+            "type": "i64"
+          },
+          {
+            "name": "burn_bps",
+            "type": "u16"
+          },
+          {
+            "name": "last_buyback_ts",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PitFundFunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "usdc_intake",
             "type": "u64"
           }
         ]
@@ -3670,6 +7024,266 @@
       }
     },
     {
+      "name": "SlashConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "clank_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "slash_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "dispute_window_secs",
+            "type": "i64"
+          },
+          {
+            "name": "slash_bps",
+            "type": "u16"
+          },
+          {
+            "name": "challenger_bond",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SlashParamsSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dispute_window_secs",
+            "type": "i64"
+          },
+          {
+            "name": "slash_bps",
+            "type": "u16"
+          },
+          {
+            "name": "challenger_bond",
+            "type": "u64"
+          },
+          {
+            "name": "new_resolver",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakeAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "reward_debt",
+            "type": "u128"
+          },
+          {
+            "name": "pending_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "unstake_ready_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakeCooldownSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "cooldown_secs",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakePool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "clank_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "stake_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "yield_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_staked",
+            "type": "u64"
+          },
+          {
+            "name": "acc_usdc_per_share",
+            "type": "u128"
+          },
+          {
+            "name": "cooldown_secs",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Staked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakerBucketFunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "acc_usdc_per_share",
+            "type": "u128"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenAuthoritySet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "clank_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint_auth_bump",
+            "type": "u8"
+          },
+          {
+            "name": "min_operator_bond",
+            "type": "u64"
+          },
+          {
+            "name": "epoch_len",
+            "type": "i64"
+          },
+          {
+            "name": "decay_num",
+            "type": "u64"
+          },
+          {
+            "name": "decay_den",
+            "type": "u64"
+          },
+          {
+            "name": "current_epoch",
+            "type": "u64"
+          },
+          {
+            "name": "cumulative_minted",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "clank_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch0_cap",
+            "type": "u64"
+          },
+          {
+            "name": "reward_per_job",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "TreasuryConfig",
       "type": {
         "kind": "struct",
@@ -3712,6 +7326,102 @@
         "fields": [
           {
             "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Unstaked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "remaining",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerifierBond",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonded",
+            "type": "u64"
+          },
+          {
+            "name": "slashed",
+            "type": "u64"
+          },
+          {
+            "name": "open_disputes",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerifierBonded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonded",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerifierUnbonded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "remaining",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "YieldClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
             "type": "pubkey"
           },
           {

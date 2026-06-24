@@ -21,18 +21,24 @@ export default function Leaderboard() {
 
   return (
     <section className="card">
-      <h2>Fleet reputation</h2>
+      <h2>World Standings · ERC-8004</h2>
       <p className="muted">
         Ranked on-chain from the program's ERC-8004-style reputation accounts
-        (jobs, then average score). No indexer — read directly via getProgramAccounts.
+        (jobs completed, then average score) · No indexer — read directly via getProgramAccounts.
       </p>
-      {err && <p className="status">read failed: {err} (is the program deployed on this cluster?)</p>}
-      {!rows && !err && <p className="muted">loading…</p>}
-      {rows && rows.length === 0 && <p className="muted">no agents registered yet.</p>}
+      {err && <p className="status status-err">⚠ read failed: {err} (is the program deployed on this cluster?)</p>}
+      {!rows && !err && <p className="muted" style={{ marginTop: 14 }}>Querying the grid…</p>}
+      {rows && rows.length === 0 && <p className="muted" style={{ marginTop: 14 }}>No drivers registered yet. Green flag pending.</p>}
       {rows && rows.length > 0 && (
         <table className="table">
           <thead>
-            <tr><th>#</th><th>agent</th><th>owner</th><th>jobs</th><th>avg</th></tr>
+            <tr>
+              <th>#</th>
+              <th>Driver</th>
+              <th>Owner</th>
+              <th>Jobs</th>
+              <th>Avg Score</th>
+            </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (

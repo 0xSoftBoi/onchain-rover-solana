@@ -8,21 +8,29 @@ import Leaderboard from "./components/Leaderboard";
 const TABS = ["Hire", "Race", "Leaderboard"] as const;
 type Tab = (typeof TABS)[number];
 
+const TAB_LABELS: Record<Tab, string> = {
+  Hire: "PIT LANE",
+  Race: "THE MAIN EVENT",
+  Leaderboard: "WORLD STANDINGS",
+};
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("Hire");
   return (
     <div className="app">
+      <div className="checker-strip" />
       <header className="topbar">
         <div className="brand">
           🏁 Clanker&nbsp;5000 <span className="net">{CLUSTER}</span>
         </div>
         <WalletMultiButton />
       </header>
+      <div className="startline-strip" />
 
       <nav className="tabs">
         {TABS.map((t) => (
           <button key={t} className={t === tab ? "tab active" : "tab"} onClick={() => setTab(t)}>
-            {t}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </nav>
@@ -34,9 +42,9 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <span>program <code>{PROGRAM_ID.toBase58().slice(0, 8)}…</code></span>
-        <span>sidecar <code>{SIDECAR_URL}</code></span>
-        <span>settled natively on Solana</span>
+        <span>⬡ program <code>{PROGRAM_ID.toBase58().slice(0, 8)}…</code></span>
+        <span>⬡ sidecar <code>{SIDECAR_URL}</code></span>
+        <span>⬡ settled natively on Solana</span>
       </footer>
     </div>
   );

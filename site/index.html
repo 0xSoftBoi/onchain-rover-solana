@@ -20,15 +20,35 @@
     -webkit-font-smoothing:antialiased;}
   body{overflow:hidden;}
 
+  /* ── scrollbar ── */
+  ::-webkit-scrollbar{width:5px;height:5px;}
+  ::-webkit-scrollbar-track{background:rgba(255,212,0,.04);}
+  ::-webkit-scrollbar-thumb{background:var(--red);border-radius:3px;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--amber);}
+
   /* atmosphere — asphalt + speed */
-  #scan{position:fixed; inset:0; z-index:90; pointer-events:none; opacity:.5;
+  #scan{position:fixed; inset:0; z-index:90; pointer-events:none; opacity:.45;
     background:repeating-linear-gradient(90deg, transparent 0 60px, rgba(255,255,255,.012) 60px 62px);}
   #vig{position:fixed; inset:0; z-index:91; pointer-events:none;
-    background:radial-gradient(ellipse 130% 100% at 50% 40%, transparent 48%, rgba(0,0,0,.6) 92%);}
+    background:radial-gradient(ellipse 130% 100% at 50% 40%, transparent 48%, rgba(0,0,0,.65) 92%);}
   body::before{content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
     background:radial-gradient(70% 60% at 82% -5%, rgba(225,6,0,.10), transparent 65%),
               radial-gradient(70% 60% at 0% 105%, rgba(0,208,97,.06), transparent 65%),
               repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.25) 3px 4px);}
+
+  /* speed-streak accent behind header */
+  #streaks{position:fixed; top:0; left:0; right:0; height:90px; z-index:1; pointer-events:none; overflow:hidden;}
+  #streaks::before,#streaks::after{
+    content:""; position:absolute; top:0; left:-20%; width:140%; height:100%;
+    background:repeating-linear-gradient(92deg,
+      transparent 0, transparent 38px,
+      rgba(255,212,0,.022) 38px, rgba(255,212,0,.022) 40px,
+      transparent 40px, transparent 78px,
+      rgba(225,6,0,.015) 78px, rgba(225,6,0,.015) 80px);
+    animation:streakdrift 6s linear infinite;}
+  #streaks::after{animation-duration:9s; animation-direction:reverse; opacity:.6;}
+  @keyframes streakdrift{from{transform:translateX(-4%)} to{transform:translateX(4%)}}
+
   /* checkered flag strip used as header/footer accent */
   .checker{height:10px; background:
     repeating-conic-gradient(#0a0a0c 0% 25%, #f6f4ee 0% 50%) 0 0 / 20px 20px;
@@ -37,7 +57,7 @@
 
   /* shell — pit-wall header */
   .top{position:relative; z-index:5; display:flex; align-items:center; gap:18px;
-    padding:8px clamp(12px,1.4vw,24px); background:linear-gradient(180deg,rgba(225,6,0,.10),transparent);
+    padding:8px clamp(12px,1.4vw,24px); background:linear-gradient(180deg,rgba(225,6,0,.12),transparent);
     border-bottom:2px solid var(--red);}
   .top .num{font-family:Impact,"Arial Narrow",sans-serif; font-size:clamp(30px,4vw,62px); font-style:italic;
     font-weight:900; color:var(--amber); line-height:.8; text-shadow:2px 2px 0 var(--red), 0 0 30px var(--glow);
@@ -51,19 +71,54 @@
   .top .hero .n{font-family:Impact,"Arial Narrow",sans-serif; font-style:italic; font-size:clamp(22px,2.6vw,46px);
     font-weight:900; color:var(--amber); text-shadow:0 0 26px var(--glow);}
   .top .hero .lbl{font-size:clamp(7px,.66vw,10px); color:var(--dim); letter-spacing:.2em; text-transform:uppercase; margin-top:4px;}
+
+  /* livedot — snappier pulse */
   .livedot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--red);
-    box-shadow:0 0 10px var(--red); animation:pulse 1.2s infinite; margin-right:6px;}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+    box-shadow:0 0 10px var(--red); animation:pulse 1.4s ease-in-out infinite; margin-right:6px;}
+  @keyframes pulse{
+    0%,100%{opacity:1; box-shadow:0 0 8px var(--red);}
+    50%{opacity:.2; box-shadow:0 0 2px var(--red);}
+  }
+
+  /* green-flag shimmer that sweeps across the hero number */
+  @keyframes greenFlag{
+    0%{background-position:-200% center;}
+    100%{background-position:300% center;}
+  }
+  .top .hero .n{
+    background:linear-gradient(100deg, var(--amber) 40%, #fff 50%, var(--amber) 60%);
+    background-size:200% auto;
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text;
+    animation:greenFlag 4s ease-in-out infinite;
+  }
 
   /* the wall — the timing-screen grid */
   .wall{position:relative; z-index:5; height:calc(100vh - 118px); display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(248px, 1fr));
+    grid-template-columns:repeat(auto-fill, minmax(min(248px, calc(50vw - 20px)), 1fr));
     grid-auto-rows:1fr; gap:8px; padding:8px clamp(12px,1.4vw,24px); overflow:auto;}
 
-  /* pit-board tile */
+  /* pit-board tile — with entrance animation */
   .t{position:relative; background:var(--panel); border:1px solid var(--line); border-radius:4px;
     display:flex; flex-direction:column; min-height:0; overflow:hidden;
-    box-shadow:inset 0 0 50px rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.4); backdrop-filter:blur(2px);}
+    box-shadow:inset 0 0 50px rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.4); backdrop-filter:blur(2px);
+    animation:tileIn .5s ease both;
+    transition:border-color .3s, box-shadow .3s;}
+  .t:hover{border-color:rgba(255,212,0,.38); box-shadow:inset 0 0 50px rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.4), 0 0 18px rgba(255,212,0,.08);}
+
+  /* staggered entrance for each tile */
+  .t:nth-child(1){animation-delay:.05s} .t:nth-child(2){animation-delay:.10s} .t:nth-child(3){animation-delay:.14s}
+  .t:nth-child(4){animation-delay:.18s} .t:nth-child(5){animation-delay:.22s} .t:nth-child(6){animation-delay:.26s}
+  .t:nth-child(7){animation-delay:.30s} .t:nth-child(8){animation-delay:.34s} .t:nth-child(9){animation-delay:.38s}
+  .t:nth-child(10){animation-delay:.42s} .t:nth-child(11){animation-delay:.46s} .t:nth-child(12){animation-delay:.50s}
+  .t:nth-child(13){animation-delay:.54s} .t:nth-child(14){animation-delay:.58s} .t:nth-child(15){animation-delay:.62s}
+  .t:nth-child(n+16){animation-delay:.66s}
+
+  @keyframes tileIn{
+    from{opacity:0; transform:translateY(12px);}
+    to{opacity:1; transform:translateY(0);}
+  }
+
   /* checkered top-corner tab */
   .t::before{content:""; position:absolute; top:0; right:0; width:26px; height:8px; z-index:2; opacity:.7;
     background:repeating-conic-gradient(#0a0a0c 0% 25%, var(--amber) 0% 50%) 0 0 / 8px 8px;}
@@ -71,9 +126,20 @@
     font-family:"Arial Narrow",Impact,sans-serif; font-weight:700;
     font-size:clamp(9px,.75vw,11px); letter-spacing:.14em; text-transform:uppercase; color:var(--amber);
     white-space:nowrap; background:linear-gradient(180deg,rgba(225,6,0,.14),rgba(0,0,0,.3)); flex:none;}
-  .th .led{width:6px; height:6px; border-radius:50%; background:var(--amber-dim); box-shadow:0 0 6px transparent; flex:none;}
-  .th .led.on{background:var(--teal); box-shadow:0 0 7px var(--teal);}
-  .th .led.warn{background:var(--red); box-shadow:0 0 7px var(--red);}
+
+  /* LED — smoother glow pulse when on */
+  .th .led{width:6px; height:6px; border-radius:50%; background:var(--amber-dim); box-shadow:0 0 6px transparent; flex:none; transition:background .4s, box-shadow .4s;}
+  .th .led.on{background:var(--teal); animation:ledGlow 2s ease-in-out infinite;}
+  .th .led.warn{background:var(--red); animation:ledWarn 0.8s ease-in-out infinite;}
+  @keyframes ledGlow{
+    0%,100%{box-shadow:0 0 5px var(--teal), 0 0 10px rgba(0,208,97,.4);}
+    50%{box-shadow:0 0 3px var(--teal), 0 0 5px rgba(0,208,97,.2);}
+  }
+  @keyframes ledWarn{
+    0%,100%{box-shadow:0 0 7px var(--red), 0 0 14px rgba(225,6,0,.5);}
+    50%{box-shadow:0 0 3px var(--red), 0 0 6px rgba(225,6,0,.2);}
+  }
+
   .th .id{margin-left:auto; color:var(--dim); letter-spacing:.12em; font-size:9px;}
   .act{margin-left:auto; font-size:8px; letter-spacing:.16em; padding:1px 6px; border-radius:2px;
     border:1px solid currentColor; color:var(--amber-d);}
@@ -81,6 +147,8 @@
   .th .id+.act{margin-left:8px;}
   .bd{flex:1; min-height:0; overflow:hidden; padding:8px 9px; font-size:11px; line-height:1.5;}
   .t.wide{grid-column:span 2;} .t.tall{grid-row:span 2;}
+
+  /* empty states — pit-lane voice */
   .empty{color:var(--dim); font-size:10px; letter-spacing:.18em; text-transform:uppercase; padding:14px 2px; text-align:center;}
   .scrollcol{display:flex; flex-direction:column-reverse; gap:2px; height:100%; overflow:hidden;}
 
@@ -89,7 +157,7 @@
   .cam img{width:100%; height:100%; object-fit:cover; display:block; filter:contrast(1.08) saturate(.85);}
   .cam .ovl{position:absolute; left:7px; top:6px; font-size:9px; letter-spacing:.2em; color:var(--amber); text-shadow:0 0 8px #000;}
   .cam .stat{position:absolute; right:7px; bottom:6px; font-size:9px; letter-spacing:.12em; color:var(--teal); text-shadow:0 0 8px #000;}
-  .cam .sl{position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--amber),transparent); opacity:.6; animation:vscan 3.4s linear infinite;}
+  .cam .sl{position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,var(--amber),transparent); opacity:.5; animation:vscan 3.4s linear infinite;}
   @keyframes vscan{0%{top:0}100%{top:100%}}
   .cam.off img{display:none;}
   .cam.off::after{content:"◢ SIGNAL LOST"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -102,7 +170,8 @@
   .kv .v.tl{color:var(--teal);} .kv .v.am{color:var(--amber);}
   .big{font-size:clamp(20px,2.2vw,30px); font-weight:200; color:var(--amber); letter-spacing:.02em; text-shadow:0 0 22px var(--glow);}
   .sub{font-size:9px; color:var(--dim); letter-spacing:.2em; text-transform:uppercase; margin-top:2px;}
-  a{color:var(--teal); text-decoration:none;}
+  a{color:var(--teal); text-decoration:none; transition:color .2s;}
+  a:hover{color:var(--amber);}
 
   /* cognition */
   .th2{font-size:11px; line-height:1.45; padding:5px 0 5px 9px; border-left:2px solid var(--amber-dim); animation:sl .3s ease;}
@@ -138,36 +207,79 @@
   .pend .el{color:var(--dim); font-size:8px;}
 
   /* gauges */
-  .gauge{height:7px; background:rgba(232,164,76,.12); border-radius:4px; overflow:hidden; margin:5px 0;}
+  .gauge{height:6px; background:rgba(232,164,76,.10); border-radius:4px; overflow:hidden; margin:5px 0;}
   .gauge>div{height:100%; transition:width .8s ease;}
   .bars{display:flex; align-items:flex-end; gap:2px; height:34px; margin-top:4px;}
   .bars i{flex:1; background:linear-gradient(180deg,var(--teal),transparent); opacity:.5; border-radius:1px; animation:eq 1.4s ease-in-out infinite;}
   @keyframes eq{0%,100%{height:18%}50%{height:90%}}
 
-  /* stack rail tile */
+  /* sponsor grid chips — upgraded hover + lit state */
   .chips{display:flex; flex-wrap:wrap; gap:5px; align-content:flex-start; height:100%; overflow:hidden;}
   .chip{font-size:8px; letter-spacing:.12em; text-transform:uppercase; padding:4px 7px; border:1px solid var(--amber-dim);
-    border-radius:2px; color:var(--amber-dim); opacity:.45; transition:.6s;}
-  .chip.lit{opacity:1; color:var(--amber); border-color:var(--amber); box-shadow:0 0 10px var(--glow);}
+    border-radius:2px; color:var(--amber-dim); opacity:.4; transition:opacity .5s, color .5s, border-color .5s, box-shadow .5s;}
+  .chip:hover{opacity:.7; color:var(--txt); border-color:var(--dim);}
+  .chip.lit{opacity:1; color:var(--amber); border-color:var(--amber); box-shadow:0 0 12px rgba(255,212,0,.3), inset 0 0 6px rgba(255,212,0,.08);}
+  .chip.lit:hover{box-shadow:0 0 18px rgba(255,212,0,.45), inset 0 0 8px rgba(255,212,0,.14);}
 
   .proofimg{width:100%; aspect-ratio:16/10; object-fit:cover; border:1px solid var(--line); border-radius:2px; background:#000;}
   .hash{font-size:9px; color:var(--teal); letter-spacing:.06em; word-break:break-all; margin-top:5px;}
   .hash b{color:var(--amber);}
 
+  /* boot screen */
   #boot{position:fixed; inset:0; z-index:200; background:var(--void); display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:14px; letter-spacing:.3em; transition:opacity .8s;}
+    align-items:center; justify-content:center; gap:14px; letter-spacing:.3em; transition:opacity .9s ease;}
   #boot.gone{opacity:0; pointer-events:none;}
   #boot .big{font-family:Impact,"Arial Narrow",sans-serif; font-style:italic; font-weight:900;
-    font-size:clamp(30px,6vw,90px); letter-spacing:.02em; color:var(--amber); text-shadow:3px 3px 0 var(--red), 0 0 40px var(--glow);}
-  #boot .bl{color:var(--txt); font-size:12px; min-height:16px; letter-spacing:.3em;}
-  #boot .flag{width:min(70vw,520px); height:18px; background:repeating-conic-gradient(#0a0a0c 0% 25%, #f6f4ee 0% 50%) 0 0 / 26px 26px;}
-  ::-webkit-scrollbar{width:7px;height:7px;} ::-webkit-scrollbar-thumb{background:var(--red);border-radius:3px;}
+    font-size:clamp(30px,6vw,90px); letter-spacing:.02em; color:var(--amber);
+    text-shadow:3px 3px 0 var(--red), 0 0 60px var(--glow), 0 0 120px rgba(255,212,0,.15);
+    animation:bootPulse 1.8s ease-in-out infinite;}
+  @keyframes bootPulse{
+    0%,100%{text-shadow:3px 3px 0 var(--red), 0 0 40px var(--glow);}
+    50%{text-shadow:3px 3px 0 var(--red), 0 0 80px var(--glow), 0 0 120px rgba(255,212,0,.22);}
+  }
+  #boot .bl{color:var(--txt); font-size:12px; min-height:16px; letter-spacing:.3em; transition:opacity .25s;}
+  #boot .flag{width:min(70vw,520px); height:18px; background:repeating-conic-gradient(#0a0a0c 0% 25%, #f6f4ee 0% 50%) 0 0 / 26px 26px;
+    animation:flagShimmer 2s ease-in-out infinite;}
+  @keyframes flagShimmer{
+    0%,100%{opacity:.9} 50%{opacity:.6}
+  }
+  #boot .progress{width:min(70vw,520px); height:2px; background:rgba(255,212,0,.15); border-radius:1px; overflow:hidden;}
+  #boot .progress-bar{height:100%; background:linear-gradient(90deg, var(--red), var(--amber)); border-radius:1px;
+    width:0%; transition:width .44s ease;}
+
+  /* ── prefers-reduced-motion: calm everything down ── */
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
+  }
+
+  /* ── narrow screens: keep kiosk feel, prevent unusable clipping ── */
+  @media (max-width: 640px){
+    body{overflow:auto;}
+    .wall{height:auto; min-height:calc(100vh - 118px); grid-template-columns:1fr; grid-auto-rows:auto;}
+    .t.wide{grid-column:span 1;}
+    .t.tall{grid-row:span 1; min-height:220px;}
+    #streaks{display:none;}
+  }
+  @media (max-width:900px) and (min-width:641px){
+    .wall{grid-template-columns:repeat(auto-fill, minmax(220px,1fr));}
+    .t.wide{grid-column:span 2;}
+  }
 </style>
 </head>
 <body>
 <div id="scan"></div><div id="vig"></div>
+<div id="streaks"></div>
 <script src="./clanker-mock.js"></script>
-<div id="boot"><div class="flag"></div><div class="big">CLANKER&nbsp;500</div><div class="bl" id="bootline">WARMING THE GRID…</div></div>
+<div id="boot">
+  <div class="flag"></div>
+  <div class="big">CLANKER&nbsp;500</div>
+  <div class="bl" id="bootline">WARMING THE GRID…</div>
+  <div class="progress"><div class="progress-bar" id="boot-bar"></div></div>
+</div>
 
 <div class="checker"></div>
 <div class="top">
@@ -193,7 +305,7 @@
 
   <!-- COGNITION -->
   <div class="t wide tall"><div class="th"><span class="led" id="led-gemma"></span>DRIVER ECU · GEMMA3<span class="id">0 CLOUD CALLS</span><span class="act a1">ACT 1</span></div>
-    <div class="bd"><div class="scrollcol" id="mind"><div class="empty">awaiting reasoning…</div></div></div></div>
+    <div class="bd"><div class="scrollcol" id="mind"><div class="empty">radio silence · awaiting driver comms</div></div></div></div>
 
   <!-- SYSTEM BUS (live SSE: every layer) -->
   <div class="t wide tall"><div class="th"><span class="led" id="led-bus"></span>🏁 RACE CONTROL · LIVE<span class="id" id="bus-rate">0/s</span></div>
@@ -213,7 +325,7 @@
 
   <!-- SETTLEMENT LEDGER -->
   <div class="t tall"><div class="th"><span class="led" id="led-arc"></span>PIT WALL LEDGER · ARC<span class="id">5042002</span><span class="act a1">ACT 1</span></div>
-    <div class="bd"><div class="scrollcol" id="ledger"><div class="empty">awaiting settlement…</div></div></div></div>
+    <div class="bd"><div class="scrollcol" id="ledger"><div class="empty">no laps settled yet · standing by</div></div></div></div>
 
   <!-- MARKET DEMAND -->
   <div class="t"><div class="th"><span class="led"></span>GRID DEMAND · DUTCH AUCTION<span class="act a1">ACT 1</span></div>
@@ -253,14 +365,14 @@
       <div class="kv"><span class="k">finish</span><span class="v" id="pilot-finish">—</span></div></div></div>
 
   <!-- TREASURY -->
-  <div class="t"><div class="th"><span class="led" id="led-ledger"></span>WINNER’S PURSE · LEDGER<span class="act cx">CLIMAX</span></div>
+  <div class="t"><div class="th"><span class="led" id="led-ledger"></span>WINNER'S PURSE · LEDGER<span class="act cx">CLIMAX</span></div>
     <div class="bd"><div class="big" id="treas-bal">—</div><div class="sub">race winnings · USDC</div>
       <div class="kv"><span class="k">owner</span><span class="v" id="treas-owner">—</span></div>
       <div class="kv"><span class="k">custody</span><span class="v tl">human · hardware</span></div></div></div>
 
   <!-- PROOF -->
   <div class="t tall"><div class="th"><span class="led" id="led-walrus"></span>PHOTO FINISH · WALRUS<span class="id" id="proof-id">—</span><span class="act a1">ACT 1</span></div>
-    <div class="bd"><div id="proof"><div class="empty">no proof recorded</div></div></div></div>
+    <div class="bd"><div id="proof"><div class="empty">no photo finish on record</div></div></div></div>
 
   <!-- CRE -->
   <div class="t"><div class="th"><span class="led" id="led-cre"></span>RACE STEWARD · CHAINLINK CRE</div>
@@ -272,7 +384,7 @@
 
   <!-- NETWORK LEADERBOARD -->
   <div class="t wide"><div class="th"><span class="led" id="led-bq"></span>WORLD STANDINGS · BIGQUERY</div>
-    <div class="bd"><div class="scrollcol" id="bq"><div class="empty">querying network…</div></div></div></div>
+    <div class="bd"><div class="scrollcol" id="bq"><div class="empty">pinging the tower · querying network</div></div></div></div>
 
   <!-- STACK -->
   <div class="t wide"><div class="th"><span class="led"></span>SPONSOR GRID</div>
@@ -475,9 +587,16 @@ function connectBus(){
 connectBus();
 setInterval(()=>{ renderPending(); if(busLog.length) renderBus(); }, 2000); // refresh "Ns ago"
 
+// boot sequence with progress bar
 const boots=["WARMING THE GRID…","FORMATION LAP · *.rover.eth","ARC CIRCUIT GREEN · 5042002","ENGINES HOT · GEMMA3 ECU","🏁 GENTLEMEN, START YOUR CLANKERS"];
-let bi=0; const bt=setInterval(()=>{ bi++; if(bi<boots.length) $("bootline").textContent=boots[bi];
-  else { clearInterval(bt); $("boot").classList.add("gone"); } }, 480);
+let bi=0;
+const bootBar=$("boot-bar");
+const bt=setInterval(()=>{
+  bi++;
+  bootBar.style.width=Math.min(100, (bi/boots.length)*100)+"%";
+  if(bi<boots.length){ $("bootline").textContent=boots[bi]; }
+  else { clearInterval(bt); $("boot").classList.add("gone"); }
+}, 480);
 tick(); setInterval(tick, 1800);
 </script>
 </body>

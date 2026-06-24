@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🏁 CLANKER 500 · LIVE BROADCAST</title>
+<!-- Local QR generator (Kazuhiko Arase, MIT) — no CDN, stream-safe offline -->
+<script src="./qrcode.js"></script>
+<!-- Live data layer: patches fetch + EventSource with the full mock stack.
+     Point at a real sidecar with ?api=https://host  -->
+<script src="./clanker-mock.js"></script>
+<style>
+  :root{
+    --void:#0a0a0c; --panel:rgba(14,15,19,.78); --asphalt:#15161a;
+    --amber:#ffd400; --amber-d:#e0a800; --amber-dim:#7a6400;
+    --teal:#14f195;            /* Solana green */
+    --green:#00d061; --red:#e10600; --violet:#9945ff; /* Solana purple */
+    --txt:#f6f4ee; --dim:#8b8a82;
+    --line:rgba(255,212,0,.22); --glow:rgba(255,212,0,.4); --chrome:#cfd2d6;
+    --disp:Impact,"Arial Narrow Bold","Arial Narrow",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box; margin:0;}
+  html,body{height:100%; background:var(--void); color:var(--txt); font-family:var(--mono);
+    letter-spacing:.02em; -webkit-font-smoothing:antialiased; overflow:hidden;}
+
+  /* ── stage scaled to a 16:9 broadcast canvas; fills any capture size ── */
+  #frame{position:fixed; inset:0; overflow:hidden;
+    background:
+      radial-gradient(70% 60% at 84% -8%, rgba(225,6,0,.16), transparent 60%),
+      radial-gradient(70% 60% at 0% 108%, rgba(20,241,149,.10), transparent 62%),
+      radial-gradient(120% 90% at 50% 50%, transparent 55%, rgba(0,0,0,.5) 100%),
+      var(--void);}
+  #scan{position:fixed; inset:0; z-index:80; pointer-events:none; opacity:.4;
+    background:repeating-linear-gradient(0deg,transparent 0 3px, rgba(0,0,0,.22) 3px 4px);}
+  /* drifting speed streaks behind everything */
+  #streaks{position:fixed; inset:-20% -10%; z-index:0; pointer-events:none; opacity:.5;
+    background:repeating-linear-gradient(74deg, transparent 0 46px, rgba(255,212,0,.05) 46px 48px,
+      transparent 48px 92px, rgba(225,6,0,.045) 92px 94px);
+    animation:drift 9s linear infinite;}
+  @keyframes drift{to{transform:translateX(-94px);}}
+
+  /* ── top rails (always on) ── */
+  .checker{height:.9vh; min-height:7px; flex:none; position:relative; z-index:30;
+    background:repeating-conic-gradient(#0a0a0c 0 25%, #f6f4ee 0 50%) 0 0 / 2.2vh 2.2vh; opacity:.9;}
+  #brandbug{position:fixed; top:2.4vh; left:2.6vw; z-index:40; display:flex; align-items:center; gap:1.1vw;}
+  #brandbug .num{font-family:var(--disp); font-style:italic; font-weight:900; font-size:5.4vh; line-height:.8;
+    color:var(--amber); text-shadow:.2vh .2vh 0 var(--red), 0 0 3vh var(--glow);}
+  #brandbug .stk{line-height:1;}
+  #brandbug .stk .t1{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.5vh; text-transform:uppercase;
+    letter-spacing:.04em;} #brandbug .stk .t1 b{color:var(--amber);}
+  #brandbug .stk .t2{font-size:1.25vh; letter-spacing:.34em; color:var(--dim); text-transform:uppercase; margin-top:.5vh;}
+  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red); font-weight:700;}
+  .live i{width:1.1vh; height:1.1vh; border-radius:50%; background:var(--red); box-shadow:0 0 1.4vh var(--red);
+    animation:blink 1.1s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+  #topright{position:fixed; top:2.6vh; right:2.6vw; z-index:40; text-align:right; line-height:1;}
+  #topright .clock{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.4vh; color:var(--txt);
+    letter-spacing:.02em; font-variant-numeric:tabular-nums;}
+  #topright .phase{margin-top:.7vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase;}
+  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
+
+  /* ── center stage ── */
+  #stage{position:absolute; left:0; right:0; top:8.8vh; bottom:18vh; z-index:10;}
+  .scene{position:absolute; inset:0; padding:2.2vh 3.2vw; opacity:0; transform:scale(.985);
+    transition:opacity .55s ease, transform .55s ease; pointer-events:none; display:flex; flex-direction:column;}
+  .scene.on{opacity:1; transform:none;}
+  .scene-title{font-family:var(--disp); font-style:italic; font-weight:900; text-transform:uppercase;
+    font-size:3.4vh; letter-spacing:.03em; color:var(--txt); margin-bottom:1.6vh; flex:none;}
+  .scene-title b{color:var(--amber); text-shadow:0 0 2.6vh var(--glow);}
+  .scene-title .tag{font-family:var(--mono); font-style:normal; font-weight:400; font-size:1.4vh;
+    letter-spacing:.3em; color:var(--dim); margin-left:1vw; text-transform:uppercase;}
+
+  /* GRID scene — twin onboard cams */
+  .cams{flex:1; display:grid; grid-template-columns:1fr 1fr; gap:2.4vw; min-height:0;}
+  .cam{position:relative; background:#000; border:1px solid var(--line); border-radius:1vh; overflow:hidden;
+    box-shadow:inset 0 0 8vh rgba(0,0,0,.6);}
+  .cam::after{content:""; position:absolute; top:0; right:0; width:5vh; height:1.4vh; opacity:.7;
+    background:repeating-conic-gradient(#0a0a0c 0 25%, var(--amber) 0 50%) 0 0 / 1.4vh 1.4vh;}
+  .cam img{width:100%; height:100%; object-fit:cover; display:block; filter:contrast(1.08) saturate(.9);}
+  .cam .ph{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--dim);
+    font-size:1.6vh; letter-spacing:.3em;}
+  .cam .ovl{position:absolute; left:1.4vw; top:1.6vh; font-family:var(--disp); font-style:italic; font-weight:900;
+    font-size:2.6vh; color:var(--amber); text-shadow:0 0 1.4vh #000, .15vh .15vh 0 var(--red); letter-spacing:.02em;}
+  .cam .sub{position:absolute; left:1.4vw; top:5vh; font-size:1.3vh; letter-spacing:.2em; color:var(--chrome); text-shadow:0 0 1vh #000;}
+  .cam .stat{position:absolute; right:1.4vw; bottom:1.6vh; font-size:1.5vh; letter-spacing:.12em; color:var(--green);
+    text-shadow:0 0 1vh #000; font-variant-numeric:tabular-nums;}
+  .cam .sl{position:absolute; left:0; right:0; height:.25vh; background:linear-gradient(90deg,transparent,var(--amber),transparent);
+    opacity:.55; animation:vscan 3.6s linear infinite;}
+  @keyframes vscan{0%{top:0}100%{top:100%}}
+  .cam .lead{position:absolute; right:1.4vw; top:1.6vh; font-size:1.3vh; letter-spacing:.18em; padding:.5vh 1vw; border-radius:.5vh;
+    text-transform:uppercase; font-weight:700; opacity:0; transition:.4s;}
+  .cam.leading .lead{opacity:1; color:#0a0a0c; background:var(--amber); box-shadow:0 0 2vh var(--glow);}
+
+  /* CTA scene — bet / drive QR (the hero) */
+  .cta{flex:1; display:grid; grid-template-columns:1fr 1fr; gap:2.6vw; min-height:0;}
+  .panel{position:relative; background:var(--panel); border:1px solid var(--line); border-top:.4vh solid var(--red);
+    border-radius:1.2vh; padding:2.6vh 2vw; display:flex; flex-direction:column; align-items:center; text-align:center;
+    backdrop-filter:blur(3px); box-shadow:inset 0 0 9vh rgba(0,0,0,.55), 0 1vh 4vh rgba(0,0,0,.4);}
+  .panel.bet{border-top-color:var(--amber);} .panel.drive{border-top-color:var(--violet);}
+  .panel .kicker{font-size:1.4vh; letter-spacing:.32em; text-transform:uppercase; color:var(--dim);}
+  .panel h2{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.6vh; text-transform:uppercase;
+    line-height:.95; margin:.4vh 0 .2vh;}
+  .panel.bet h2{color:var(--amber); text-shadow:.2vh .2vh 0 var(--red), 0 0 2.6vh var(--glow);}
+  .panel.drive h2{color:var(--violet); text-shadow:.2vh .2vh 0 #000, 0 0 2.6vh rgba(153,69,255,.5);}
+  .panel .desc{font-size:1.6vh; color:var(--chrome); letter-spacing:.04em; margin-bottom:1.4vh; min-height:2vh;}
+  .qrwrap{background:#fff; padding:1.4vh; border-radius:1vh; box-shadow:0 0 4vh rgba(255,212,0,.18);
+    width:24vh; height:24vh; display:flex; align-items:center; justify-content:center; position:relative;}
+  .qrwrap svg{width:100%; height:100%; display:block; shape-rendering:crispEdges;}
+  .qrwrap::after{content:"SCAN"; position:absolute; bottom:-2.8vh; left:0; right:0; text-align:center;
+    font-size:1.2vh; letter-spacing:.4em; color:var(--dim);}
+  .scanline-qr{position:absolute; left:1.4vh; right:1.4vh; height:.3vh; background:var(--red); opacity:.5; border-radius:2px;
+    animation:qscan 2.4s ease-in-out infinite;}
+  @keyframes qscan{0%,100%{top:1.4vh}50%{top:calc(100% - 1.7vh)}}
+  .panel .meta{margin-top:3.4vh; width:100%;}
+  .odds{display:flex; gap:1vw; justify-content:center; margin-top:.4vh;}
+  .odds .o{flex:1; max-width:13vw; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:.8vh; padding:1vh .6vw;}
+  .odds .o .n{font-size:1.3vh; letter-spacing:.18em; text-transform:uppercase; color:var(--dim);}
+  .odds .o .x{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3vh; color:var(--amber); font-variant-numeric:tabular-nums;}
+  .odds .o.guard .x{color:var(--teal);} .odds .o.courier .x{color:var(--amber);}
+  .badge{display:inline-block; font-size:1.25vh; letter-spacing:.18em; text-transform:uppercase; padding:.5vh 1vw;
+    border:1px solid currentColor; border-radius:.5vh; margin-top:.4vh;}
+  .badge.world{color:var(--teal);} .badge.x402{color:var(--violet);}
+  .drivekv{display:flex; justify-content:space-between; gap:1vw; font-size:1.5vh; padding:.7vh 0; border-bottom:1px solid rgba(255,212,0,.1);}
+  .drivekv .k{color:var(--dim); letter-spacing:.1em; text-transform:uppercase; font-size:1.3vh;}
+  .drivekv .v{color:var(--txt);} .drivekv .v.g{color:var(--green);}
+
+  /* STANDINGS scene */
+  .standings{flex:1; display:grid; grid-template-columns:1.3fr 1fr; gap:2.6vw; min-height:0;}
+  .board{background:var(--panel); border:1px solid var(--line); border-top:.4vh solid var(--red); border-radius:1.2vh;
+    padding:2vh 1.8vw; backdrop-filter:blur(3px); overflow:hidden; display:flex; flex-direction:column;}
+  .board h3{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.4vh; text-transform:uppercase;
+    color:var(--amber); margin-bottom:1.4vh; letter-spacing:.03em; flex:none;}
+  .row{display:grid; grid-template-columns:auto 1fr auto; gap:1vw; align-items:center; padding:1.1vh .4vw;
+    border-bottom:1px solid rgba(255,212,0,.09); font-size:1.9vh;}
+  .row .pos{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; color:var(--amber); width:2.4vw; text-align:center;}
+  .row.p1 .pos{color:var(--amber); text-shadow:0 0 1.6vh var(--glow);} .row.p2 .pos{color:var(--chrome);} .row.p3 .pos{color:#c87f3a;}
+  .row .who{color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .row .sc{color:var(--green); font-variant-numeric:tabular-nums; letter-spacing:.06em;}
+  .repbig{display:flex; gap:2vw; margin-top:1vh;}
+  .repcard{flex:1; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:1vh; padding:1.6vh 1vw; text-align:center;}
+  .repcard .nm{font-size:1.4vh; letter-spacing:.16em; text-transform:uppercase; color:var(--dim);}
+  .repcard .vv{font-family:var(--disp); font-style:italic; font-weight:900; font-size:5vh; color:var(--green); margin:.4vh 0;}
+  .repcard .lb{font-size:1.2vh; letter-spacing:.2em; color:var(--dim); text-transform:uppercase;}
+  .nextrace{margin-top:auto; text-align:center; padding-top:1.6vh;}
+  .nextrace .lab{font-size:1.4vh; letter-spacing:.3em; color:var(--dim); text-transform:uppercase;}
+  .nextrace .big{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.2vh; color:var(--amber);}
+
+  /* ── pit reporter ticker (above the scorebug) ── */
+  #ticker{position:fixed; left:0; right:0; bottom:12vh; z-index:34; height:5.4vh; display:flex; align-items:stretch;
+    background:linear-gradient(180deg, rgba(10,10,12,.55), rgba(10,10,12,.92)); border-top:1px solid var(--line);}
+  #ticker .tk-badge{flex:none; display:flex; align-items:center; gap:.5vw; padding:0 1.4vw; font-family:var(--disp);
+    font-style:italic; font-weight:900; font-size:2vh; letter-spacing:.05em; text-transform:uppercase; color:#0a0a0c;
+    background:linear-gradient(90deg, var(--amber), var(--amber-d)); white-space:nowrap;}
+  #ticker .tk-view{flex:1; overflow:hidden; position:relative; display:flex; align-items:center;}
+  #ticker .tk-track{display:inline-flex; white-space:nowrap; will-change:transform;}
+  #ticker .tk-seg{padding-left:3vw; font-size:1.95vh; letter-spacing:.02em; color:var(--chrome);}
+  #ticker .tk-seg .sp{font-weight:700; letter-spacing:.08em;}
+  #ticker .tk-seg .sp.guard{color:var(--teal);} #ticker .tk-seg .sp.courier{color:var(--amber);}
+  #ticker .tk-seg .di{color:var(--red); margin:0 1.2vw;}
+  @keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  /* betting countdown on the bet panel */
+  .betclock{display:flex; flex-direction:column; align-items:center; margin:.2vh 0 1.2vh;}
+  .betclock .bc-lab{font-size:1.2vh; letter-spacing:.3em; text-transform:uppercase; color:var(--dim);}
+  .betclock .bc-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--amber);
+    font-variant-numeric:tabular-nums; line-height:1; text-shadow:0 0 2vh var(--glow);}
+  .betclock.closing .bc-val{color:var(--red); animation:blink .6s infinite;}
+
+  /* ── scorebug (always on) ── */
+  #scorebug{position:fixed; left:0; right:0; bottom:0; z-index:35; height:12vh;
+    display:grid; grid-template-columns:auto 1fr auto auto; align-items:stretch; gap:0;
+    background:linear-gradient(180deg, rgba(10,10,12,.2), rgba(10,10,12,.96) 40%);
+    border-top:.35vh solid var(--red);}
+  #scorebug>div{display:flex; flex-direction:column; justify-content:center; padding:0 1.8vw;}
+  .sb-status{align-items:flex-start; border-right:1px solid var(--line); min-width:15vw;}
+  .sb-status .s-lab{font-size:1.2vh; letter-spacing:.28em; color:var(--dim); text-transform:uppercase;}
+  .sb-status .s-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.4vh; line-height:1; margin-top:.4vh;}
+  .sb-grid{flex-direction:row !important; align-items:center; gap:1.6vw; justify-content:center;}
+  .runner{display:flex; align-items:center; gap:.8vw; padding:.8vh 1vw; border-radius:.8vh; background:rgba(0,0,0,.3); border:1px solid var(--line);}
+  .runner .car{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; width:3vw; text-align:center;}
+  .runner.guard .car{color:var(--teal);} .runner.courier .car{color:var(--amber);}
+  .runner .nm{font-size:1.5vh; letter-spacing:.06em;}
+  .runner .od{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; color:var(--txt); font-variant-numeric:tabular-nums;}
+  .runner .od small{font-size:1.3vh; color:var(--dim);}
+  .runner.lead{border-color:var(--amber); box-shadow:0 0 2.4vh rgba(255,212,0,.25);}
+  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red); font-size:2.4vh;}
+  .sb-purse{align-items:flex-end; border-left:1px solid var(--line);}
+  .sb-purse .p-lab{font-size:1.2vh; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;}
+  .sb-purse .p-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.4vh; color:var(--amber);
+    text-shadow:0 0 2.4vh var(--glow); line-height:1; font-variant-numeric:tabular-nums;}
+  .sb-purse .p-sub{font-size:1.2vh; letter-spacing:.16em; color:var(--green); text-transform:uppercase;}
+  .sb-bets{align-items:flex-end; border-left:1px solid var(--line); min-width:9vw;}
+  .sb-bets .b-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.4vh; color:var(--teal); line-height:1;}
+  .sb-bets .b-lab{font-size:1.15vh; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; text-align:right;}
+  .flash{animation:flash .7s ease;}
+  @keyframes flash{0%{filter:brightness(2.6)}100%{filter:brightness(1)}}
+
+  /* ── money-moment takeover ── */
+  #moment{position:fixed; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:1.4vh; opacity:0; pointer-events:none; transition:opacity .35s ease;
+    background:radial-gradient(60% 60% at 50% 45%, rgba(20,241,149,.14), transparent 70%), rgba(6,7,9,.7); backdrop-filter:blur(4px);}
+  #moment.on{opacity:1;}
+  #confetti{position:absolute; inset:0; pointer-events:none;}
+  #moment .mkick{font-size:2vh; letter-spacing:.4em; text-transform:uppercase; color:var(--green); z-index:2;}
+  #moment .mbig{font-family:var(--disp); font-style:italic; font-weight:900; font-size:15vh; line-height:.85; color:var(--amber);
+    text-shadow:.4vh .4vh 0 var(--red), 0 0 6vh var(--glow); z-index:2; font-variant-numeric:tabular-nums;}
+  #moment .msub{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4vh; text-transform:uppercase; color:var(--txt); z-index:2;}
+  #moment .mdet{font-size:1.7vh; letter-spacing:.16em; color:var(--chrome); z-index:2;}
+  #moment .mtx{font-size:1.4vh; letter-spacing:.1em; color:var(--green); z-index:2; opacity:.85;}
+  .solpill{display:inline-flex; align-items:center; gap:.6vw; padding:.7vh 1.4vw; border-radius:99px; z-index:2;
+    background:linear-gradient(90deg, var(--violet), var(--teal)); color:#06121a; font-weight:800; letter-spacing:.12em;
+    font-size:1.7vh; text-transform:uppercase;}
+
+  /* boot */
+  #boot{position:fixed; inset:0; z-index:120; background:var(--void); display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:2vh; transition:opacity .8s; letter-spacing:.3em;}
+  #boot.gone{opacity:0; pointer-events:none;}
+  #boot .flag{width:min(60vw,640px); height:2.4vh; background:repeating-conic-gradient(#0a0a0c 0 25%, #f6f4ee 0 50%) 0 0 / 3vh 3vh;}
+  #boot .big{font-family:var(--disp); font-style:italic; font-weight:900; font-size:11vh; color:var(--amber);
+    text-shadow:.5vh .5vh 0 var(--red), 0 0 6vh var(--glow);}
+  #boot .bl{font-size:1.7vh; color:var(--txt); min-height:2.4vh;}
+
+  ::-webkit-scrollbar{width:0;height:0;}
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important;} }
+</style>
+</head>
+<body>
+<div id="frame"></div>
+<div id="streaks"></div>
+<div id="scan"></div>
+
+<div class="checker" style="position:fixed;top:0;left:0;right:0;z-index:30;"></div>
+
+<div id="brandbug">
+  <div class="num">500</div>
+  <div class="stk">
+    <div class="t1"><b>CLANKER 500</b> · ROVER GP</div>
+    <div class="t2"><span class="live"><i></i>LIVE</span> &nbsp;·&nbsp; SETTLED ON SOLANA</div>
+  </div>
+</div>
+<div id="topright">
+  <div class="clock" id="clock">--:--:--</div>
+  <div class="phase ph-betting" id="phase">FORMATION LAP</div>
+</div>
+
+<div id="stage">
+  <!-- GRID / RACE -->
+  <section class="scene scene-grid" id="sc-grid">
+    <div class="scene-title">ONBOARD · <b>THE GRID</b><span class="tag">live telemetry</span></div>
+    <div class="cams">
+      <div class="cam" id="cam-guard">
+        <img id="feed-guard" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
+        <div class="ph" style="display:none">CAR 00 · SIGNAL WARMING</div>
+        <span class="ovl">CAR 00 · GUARD</span><span class="sub" id="sub-guard">guard.roverfleet.sol</span>
+        <span class="lead">▲ LEADER</span><span class="stat" id="stat-guard">—</span><span class="sl"></span>
+      </div>
+      <div class="cam" id="cam-courier">
+        <img id="feed-courier" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
+        <div class="ph" style="display:none">CAR 01 · SIGNAL WARMING</div>
+        <span class="ovl">CAR 01 · COURIER</span><span class="sub" id="sub-courier">courier.roverfleet.sol</span>
+        <span class="lead">▲ LEADER</span><span class="stat" id="stat-courier">—</span><span class="sl"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- BET / DRIVE QR -->
+  <section class="scene scene-cta" id="sc-cta">
+    <div class="scene-title">GET IN THE RACE · <b>BET OR DRIVE</b><span class="tag">scan from your seat</span></div>
+    <div class="cta">
+      <div class="panel bet">
+        <div class="kicker">Parimutuel · winner takes the purse</div>
+        <h2>Place Your Bet</h2>
+        <div class="desc" id="bet-desc">betting open — back a rover</div>
+        <div class="betclock" id="betclock"><span class="bc-lab">Betting closes in</span><span class="bc-val" id="bc-val">0:00</span></div>
+        <div class="qrwrap"><div id="qr-bet"></div><span class="scanline-qr"></span></div>
+        <div class="meta">
+          <div class="odds">
+            <div class="o guard"><div class="n">◎ Guard</div><div class="x" id="cta-odds-guard">—</div></div>
+            <div class="o courier"><div class="n">◎ Courier</div><div class="x" id="cta-odds-courier">—</div></div>
+          </div>
+          <div class="badge world">World ID · one human · one bet</div>
+        </div>
+      </div>
+      <div class="panel drive">
+        <div class="kicker">x402 · pay-per-second piloting</div>
+        <h2>Take the Wheel</h2>
+        <div class="desc">drive a real rover for 120 seconds</div>
+        <div class="qrwrap"><div id="qr-drive"></div><span class="scanline-qr"></span></div>
+        <div class="meta">
+          <div class="drivekv"><span class="k">price</span><span class="v">$1.00 → 120s · SPL-USDC</span></div>
+          <div class="drivekv"><span class="k">video</span><span class="v">250ms onboard feed</span></div>
+          <div class="drivekv"><span class="k">safety</span><span class="v g">deadman · speed clamp</span></div>
+          <div style="margin-top:.6vh"><span class="badge x402">x402 · 402 Payment Required → drive</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STANDINGS / INTERMISSION -->
+  <section class="scene scene-standings" id="sc-standings">
+    <div class="scene-title">WORLD <b>STANDINGS</b><span class="tag">ERC-8004-style reputation</span></div>
+    <div class="standings">
+      <div class="board">
+        <h3>🏆 Network Leaderboard</h3>
+        <div id="lb-rows"></div>
+      </div>
+      <div class="board">
+        <h3>🤖 Fleet Rating</h3>
+        <div class="repbig">
+          <div class="repcard"><div class="nm">◎ Guard</div><div class="vv" id="rep-guard">—</div><div class="lb">avg score</div></div>
+          <div class="repcard"><div class="nm">◎ Courier</div><div class="vv" id="rep-courier">—</div><div class="lb">avg score</div></div>
+        </div>
+        <div class="nextrace">
+          <div class="lab">racing resumes in</div>
+          <div class="big" id="next-race">GREEN FLAG SOON</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- pit reporter ticker -->
+<div id="ticker">
+  <div class="tk-badge">🎙️ Pit Reporter</div>
+  <div class="tk-view"><div class="tk-track" id="tk-track"><span class="tk-seg" id="tk-a"></span><span class="tk-seg" id="tk-b"></span></div></div>
+</div>
+
+<!-- scorebug -->
+<div id="scorebug">
+  <div class="sb-status"><span class="s-lab">Race Control</span><span class="s-val" id="sb-status">STANDBY</span></div>
+  <div class="sb-grid">
+    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span></div>
+    <span class="vs">VS</span>
+    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span></div>
+  </div>
+  <div class="sb-bets"><span class="b-val" id="sb-bets">0</span><span class="b-lab">verified<br>bets</span></div>
+  <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
+</div>
+
+<!-- money moment -->
+<div id="moment">
+  <canvas id="confetti"></canvas>
+  <div class="mkick" id="m-kick">SETTLEMENT</div>
+  <div class="mbig" id="m-big">$0.00</div>
+  <div class="solpill">◎ Settled on Solana</div>
+  <div class="msub" id="m-sub"></div>
+  <div class="mdet" id="m-det"></div>
+  <div class="mtx" id="m-tx"></div>
+</div>
+
+<!-- boot -->
+<div id="boot"><div class="flag"></div><div class="big">CLANKER&nbsp;500</div><div class="bl" id="bootline">WARMING THE GRID…</div></div>
+
+<script>
+"use strict";
+const $ = (id)=>document.getElementById(id);
+
+/* ─── CONFIG: swap these bases for your real bet / pilot endpoints ────────── */
+const BET_BASE   = "https://clanker500.xyz/bet";    // deep-link: ?race=&action=&app=
+const DRIVE_BASE = "https://clanker500.xyz/drive";  // deep-link: ?rover=&price=
+const BET_WINDOW = 18000;                            // synthesized betting window (ms)
+
+/* ─── QR codes (regenerated only when the encoded link changes) ───────────── */
+const _qrCache = {};
+function makeQR(el, text){
+  if(!el || _qrCache[el.id] === text) return;        // skip if unchanged
+  _qrCache[el.id] = text;
+  try{
+    const qr = qrcode(0, "M");                         // auto version, EC level M
+    qr.addData(text); qr.make();
+    el.innerHTML = qr.createSvgTag({ scalable:true, margin:0 });
+  }catch(e){ el.textContent = "QR?"; }
+}
+makeQR($("qr-drive"), DRIVE_BASE + "?rover=courier&price=1.00");
+
+/* ─── helpers ─────────────────────────────────────────────────────────────── */
+const j = async (u)=>{ try{ return await (await fetch(u)).json(); }catch{ return null; } };
+const sol = (s)=> (s||"").replace(/\.eth\b/g,".sol");
+let lastCount = 0, lastPurse = 0;
+let curStatus = "betting", prevStatus = "", bettingDeadline = 0;
+const fmtClock = (ms)=>{ const s = Math.ceil(ms/1000); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
+
+/* clock */
+function clk(){ $("clock").textContent = new Date().toTimeString().slice(0,8); }
+clk(); setInterval(clk, 1000);
+
+/* ─── poll loop: bind scorebug + scenes to live (mock) data ───────────────── */
+async function poll(){
+  const st = await j("/race/state");
+  const od = await j("/race/odds");
+  const fe = await j("/onchain/feed");
+  const status = (st && st.status) || "betting";
+
+  // betting-window countdown: (re)arm when we enter the betting phase
+  if(status === "betting"){ if(prevStatus !== "betting") bettingDeadline = Date.now() + BET_WINDOW; }
+  else { bettingDeadline = 0; }
+  prevStatus = status; curStatus = status;
+
+  // dynamic bet deep-link → QR (race id + World ID action/app), cached
+  const wid = await j("/worldid/config");
+  const raceId = (st && st.id) || "clanker-500";
+  const action = (wid && wid.action) || "rover-gp-bet";
+  const app = (wid && wid.appId) ? "&app=" + encodeURIComponent(wid.appId) : "";
+  makeQR($("qr-bet"), `${BET_BASE}?race=${encodeURIComponent(raceId)}&action=${encodeURIComponent(action)}${app}`);
+
+  // phase chip + scorebug status
+  const phaseEl = $("phase"), sbStatus = $("sb-status");
+  phaseEl.className = "phase ph-" + status;
+  if(status === "betting"){ phaseEl.textContent = "🟡 BETTING OPEN"; sbStatus.textContent="BETTING OPEN"; sbStatus.style.color="var(--amber)"; $("bet-desc").textContent="betting open — back a rover now"; }
+  else if(status === "racing"){ phaseEl.textContent = "🟢 GREEN FLAG"; sbStatus.textContent="RACING"; sbStatus.style.color="var(--green)"; $("bet-desc").textContent="🔒 betting closed — cars are on track"; }
+  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = (st&&st.winner? sol(st.winner).toUpperCase()+" WINS":"FINISHED"); sbStatus.style.color="var(--violet)"; $("bet-desc").textContent="results in — next grid forming"; }
+
+  // odds → scorebug + CTA
+  if(od && od.odds){
+    const g = od.odds.guard, c = od.odds.courier;
+    $("sb-odds-guard").innerHTML   = (g??"—")+"<small>x</small>";
+    $("sb-odds-courier").innerHTML = (c??"—")+"<small>x</small>";
+    $("cta-odds-guard").textContent   = (g??"—")+"x";
+    $("cta-odds-courier").textContent = (c??"—")+"x";
+    // favourite (lower odds) gets the lead highlight
+    const gFav = (g!=null && c!=null) ? g < c : false;
+    $("run-guard").classList.toggle("lead", gFav);
+    $("run-courier").classList.toggle("lead", !gFav && c!=null);
+    $("cam-guard").classList.toggle("leading", gFav && status!=="finished");
+    $("cam-courier").classList.toggle("leading", !gFav && status!=="finished");
+  }
+  if(od && typeof od.count === "number") $("sb-bets").textContent = od.count;
+
+  // purse / laps
+  if(fe){
+    if(typeof fe.settledUsdc === "number"){
+      $("sb-purse").textContent = "$" + fe.settledUsdc.toFixed(2);
+      if(fe.settledUsdc > lastPurse){ $("sb-purse").classList.remove("flash"); void $("sb-purse").offsetWidth; $("sb-purse").classList.add("flash"); }
+      lastPurse = fe.settledUsdc;
+    }
+    if(typeof fe.count === "number"){ $("sb-laps").textContent = fe.count + " laps · USDC"; lastCount = fe.count; }
+  }
+
+  // cams
+  const status2 = await j("/status");
+  if(status2 && status2.robots){
+    for(const n of ["guard","courier"]){
+      const r = status2.robots[n], img = $("feed-"+n);
+      if(r){
+        if(r.ens) $("sub-"+n).textContent = sol(r.ens);
+        const src = r.feed || (r.url && r.url!=="#" ? r.url+"/stream" : null);
+        if(src && img && !img.src.endsWith(src)){ img.src = src; img.style.display="block"; if(img.nextElementSibling) img.nextElementSibling.style.display="none"; }
+        $("stat-"+n).textContent = r.ok ? ((r.battery_v||0).toFixed(2)+"V · ONLINE") : "OFFLINE";
+      }
+    }
+  }
+}
+poll(); setInterval(poll, 1100);
+
+/* ─── betting countdown display (smooth, 250ms) ───────────────────────────── */
+function tickBetClock(){
+  const wrap = $("betclock"), val = $("bc-val");
+  if(curStatus === "betting" && bettingDeadline){
+    const rem = Math.max(0, bettingDeadline - Date.now());
+    val.textContent = rem > 0 ? fmtClock(rem) : "LOCKING…";
+    wrap.classList.toggle("closing", rem < 6000);
+    wrap.style.visibility = "visible";
+  } else {
+    val.textContent = "CLOSED"; wrap.classList.remove("closing");
+  }
+}
+setInterval(tickBetClock, 250);
+
+/* ─── pit reporter ticker (rover reasoning feed → scrolling commentary) ────── */
+let tkLastT = 0;
+async function pollTicker(){
+  const rz = await j("/reason/feed");
+  if(!rz || !rz.events || !rz.events.length) return;
+  if(rz.events[0].t === tkLastT) return;                 // nothing new
+  tkLastT = rz.events[0].t;
+  const seg = rz.events.slice(0, 7).map(e=>{
+    const who = (e.robot || "").toUpperCase();
+    const txt = (e.text || "").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    return `<span class="sp ${e.robot||''}">${who}</span> ${txt}`;
+  }).join('<span class="di">◆</span>') + '<span class="di">◆</span>';
+  $("tk-a").innerHTML = seg; $("tk-b").innerHTML = seg;
+  const track = $("tk-track");
+  const dur = Math.max(16, (track.scrollWidth / 2) / 90);  // ~90px/s
+  track.style.animation = "none"; void track.offsetWidth;  // restart cleanly
+  track.style.animation = `marq ${dur.toFixed(1)}s linear infinite`;
+}
+pollTicker(); setInterval(pollTicker, 3000);
+
+/* standings (slower) */
+async function pollStandings(){
+  const lb = await j("/leaderboard/network");
+  if(lb && lb.rows){
+    $("lb-rows").innerHTML = lb.rows.slice(0,5).map((r,i)=>
+      `<div class="row p${i+1}"><span class="pos">${i+1}</span><span class="who">${sol(r.agent)}</span><span class="sc">${r.feedback} rev</span></div>`).join("");
+  }
+  const rep = await j("/reputation");
+  if(rep){
+    if(rep.guard)   $("rep-guard").textContent   = Math.round(rep.guard.avg) + "/100";
+    if(rep.courier) $("rep-courier").textContent = Math.round(rep.courier.avg) + "/100";
+  }
+}
+pollStandings(); setInterval(pollStandings, 4000);
+
+/* ─── scene auto-cycle ─────────────────────────────────────────────────────── */
+const SCENES = [
+  { id:"sc-grid",      ms:16000 },
+  { id:"sc-cta",       ms:15000 },   // the hero: shown long & often
+  { id:"sc-grid",      ms:12000 },
+  { id:"sc-standings", ms:11000 },
+];
+let si = -1, cycleTimer = null, momentActive = false;
+function showScene(id){
+  document.querySelectorAll(".scene").forEach(s=> s.classList.toggle("on", s.id===id));
+}
+function nextScene(){
+  if(momentActive){ cycleTimer = setTimeout(nextScene, 1500); return; }
+  si = (si + 1) % SCENES.length;
+  const sc = SCENES[si];
+  showScene(sc.id);
+  // a finished race forces the standings/celebration beat
+  cycleTimer = setTimeout(nextScene, sc.ms);
+}
+
+/* ─── money-moment takeover (driven by the live bus) ──────────────────────── */
+const cv = $("confetti"), cx = cv.getContext("2d");
+function sizeCanvas(){ cv.width = innerWidth; cv.height = innerHeight; }
+sizeCanvas(); addEventListener("resize", sizeCanvas);
+let parts = [], confettiRAF = null;
+const COLORS = ["#ffd400","#14f195","#e10600","#9945ff","#f6f4ee"];
+function burst(){
+  parts = [];
+  for(let i=0;i<160;i++){
+    parts.push({ x:innerWidth/2 + (Math.random()-.5)*innerWidth*.5, y:innerHeight*.5,
+      vx:(Math.random()-.5)*16, vy:-8-Math.random()*16, g:.45+Math.random()*.3,
+      s:6+Math.random()*9, rot:Math.random()*6.28, vr:(Math.random()-.5)*.4,
+      c:COLORS[(Math.random()*COLORS.length)|0], life:1 });
+  }
+  if(!confettiRAF) confettiRAF = requestAnimationFrame(drawConfetti);
+}
+function drawConfetti(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  let alive = 0;
+  for(const p of parts){
+    p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= .009;
+    if(p.life>0 && p.y < cv.height+40){
+      alive++;
+      cx.save(); cx.translate(p.x,p.y); cx.rotate(p.rot); cx.globalAlpha=Math.max(0,p.life);
+      cx.fillStyle=p.c; cx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6); cx.restore();
+    }
+  }
+  if(alive>0){ confettiRAF = requestAnimationFrame(drawConfetti); }
+  else { cx.clearRect(0,0,cv.width,cv.height); confettiRAF=null; }
+}
+
+let momentTimer = null;
+function fireMoment(kind, big, sub, det, tx){
+  momentActive = true;
+  $("m-kick").textContent = kind;
+  $("m-big").textContent = big;
+  $("m-sub").textContent = sub || "";
+  $("m-det").textContent = det || "";
+  $("m-tx").textContent  = tx ? ("◎ " + tx) : "";
+  $("moment").classList.add("on");
+  burst();
+  clearTimeout(momentTimer);
+  momentTimer = setTimeout(()=>{ $("moment").classList.remove("on"); momentActive = false; }, 4200);
+}
+
+/* throttle so moments feel like events, not a strobe */
+let lastMoment = 0;
+function maybeMoment(e){
+  const now = Date.now();
+  // race win = the big one
+  if(e.kind === "RACE SETTLE"){
+    fireMoment("PHOTO FINISH", "🏁 COURIER", "takes the checkered flag", "verdict on-chain · proof on Walrus", null);
+    lastMoment = now; return;
+  }
+  if(now - lastMoment < 7000) return;                  // cooldown
+  if(e.layer === "chain" && e.severity === "ok" && typeof e.usdc === "number" && e.usdc > 0){
+    const label = e.kind === "BET" ? "BET PLACED" : "PAYMENT SETTLED";
+    const sub   = e.kind === "BET" ? "World-verified human" : "robot-to-robot · USDC";
+    fireMoment(label, "$" + e.usdc.toFixed(2), sub, sol(e.detail||""), (e.tx||"").slice(0,10)+"…");
+    lastMoment = now;
+  }
+}
+try{
+  const es = new EventSource("/events/stream");
+  es.onmessage = (m)=>{ try{ maybeMoment(JSON.parse(m.data)); }catch{} };
+}catch{}
+
+/* ─── boot sequence ───────────────────────────────────────────────────────── */
+const boots = ["WARMING THE GRID…","FORMATION LAP · *.roverfleet.sol","SOLANA · GREEN FLAG","DRIVER ECU HOT · gemma3","🏁 LIGHTS OUT — AND AWAY WE GO"];
+let bi = 0;
+const bt = setInterval(()=>{
+  bi++;
+  if(bi < boots.length) $("bootline").textContent = boots[bi];
+  else { clearInterval(bt); $("boot").classList.add("gone"); nextScene(); }
+}, 620);
+</script>
+</body>
+</html>

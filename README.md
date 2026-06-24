@@ -1,30 +1,55 @@
-# 🏁 Clanker 5000 — a robot race & labor market, settled natively on Solana
+<div align="center">
 
-### Two physical rovers. Real USDC on the line. Every lap settled by one Anchor program.
+# 🏁 CLANKER 5000
 
-*Native-Solana rebuild of The Clanker 500 / "Onchain Rover." **All EVM code is
-removed** — one Solana program is the sole settlement backend. The EVM/Arc demo
-lives in a separate repo.*
+### A robot race & labor market, settled natively on Solana
 
+*Two physical rovers. Real USDC on the line. Every lap settled by one Anchor program.*
+
+[![Solana](https://img.shields.io/badge/Solana-native-14F195?logo=solana&logoColor=white)](https://solana.com)
+[![Anchor](https://img.shields.io/badge/Anchor-0.31-FFD400?logo=rust&logoColor=black)](https://www.anchor-lang.com)
+[![Tests](https://img.shields.io/badge/tests-3%2F3%20passing-00D061?logo=checkmarx&logoColor=white)](#build-test-deploy)
+[![x402](https://img.shields.io/badge/x402-SPL--USDC-E10600?logoColor=white)](https://x402.org)
+[![World ID](https://img.shields.io/badge/World%20ID-sybil--proof-FFD400?logoColor=black)](https://worldcoin.org/world-id)
+[![Devnet](https://img.shields.io/badge/devnet-LIVE-14F195?logo=solana&logoColor=white)](https://explorer.solana.com/address/4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD?cluster=devnet)
+
+</div>
+
+---
+
+> [!NOTE]
+> **Native-Solana rebuild of The Clanker 500 / "Onchain Rover."** All EVM code is removed — one Solana program is the sole settlement backend. The EVM/Arc demo lives in a separate repo.
+
+> [!IMPORTANT]
 > **Status — verified end-to-end:**
 > `anchor build` ✅ (BPF + IDL, **Anchor 0.31 / Agave 4.0.3**) ·
 > `anchor test` ✅ **3/3** on a local validator (race payout 2× · parimutuel
 > bet→settle→claim · World-ID nullifier reject) ·
 > sidecar `tsc --noEmit` ✅ 0 errors · `sidecar/src` is **100% EVM-free**.
+>
 > Decision record: [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) ·
 > RPC/fees/DAS: [`docs/HELIUS.md`](docs/HELIUS.md) ·
-> deploy: [`docs/DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md).
+> Deploy: [`docs/DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md)
 
-Every other agent at a hackathon is stuck behind a screen. We put two on the
-track: a fleet of **Waveshare UGV rovers (Jetson Orin NX)** you **hire over
-HTTP**, that earn an **on-chain reputation**, race for **USDC stakes**, and whose
-**winnings only a human can unlock with a Ledger**. Identity, payments,
-reputation, a betting market, and human governance — all native Solana, with a
-robot on the table the whole time.
+Every other agent at a hackathon is stuck behind a screen. We put two on the track: a fleet of **Waveshare UGV rovers (Jetson Orin NX)** you **hire over HTTP**, that earn an **on-chain reputation**, race for **USDC stakes**, and whose **winnings only a human can unlock with a Ledger**. Identity, payments, reputation, a betting market, and human governance — all native Solana, with a robot on the table the whole time.
 
 ---
 
-## The stack
+## 📋 Contents
+
+| Section | |
+|---|---|
+| [🏎️ The Stack](#-the-stack) | Full tech capabilities table |
+| [🤖 The On-Chain Program](#-the-on-chain-program-clanker5000) | 24 instructions, one program |
+| [🏆 The Show](#-the-show-three-acts) | Qualifying · Race Day · Parc Fermé |
+| [🔧 Architecture](#-architecture) | System diagram |
+| [📦 Repo Layout](#-repo-layout) | Directory guide |
+| [🚀 Build, Test, Deploy](#-build-test-deploy) | Quick-start commands |
+| [📊 Integration Status](#-integration-status) | What's live vs. in-progress |
+
+---
+
+## 🏎️ The Stack
 
 | Capability | Native-Solana tech | Where |
 |---|---|---|
@@ -43,16 +68,13 @@ robot on the table the whole time.
 | **Robots** | **Jetson Orin NX** rovers, **Rust harness** (speed caps, e-stop, telemetry, camera/lidar) | `robot-harness/` |
 | **Off-chain server** | **Node 22 + TS** sidecar (:4021): rounds, x402, WebRTC pilot bridge, settlement | `sidecar/` |
 
-**Toolchain:** Anchor **0.31.0**, Agave (Solana CLI) **4.0.3** / platform-tools
-v1.53, `@coral-xyz/anchor` (TS) ^0.31.1, SPL-Token (classic) for USDC,
-`@solana/web3.js` v1.
+**Toolchain:** Anchor **0.31.0**, Agave (Solana CLI) **4.0.3** / platform-tools v1.53, `@coral-xyz/anchor` (TS) ^0.31.1, SPL-Token (classic) for USDC, `@solana/web3.js` v1.
 
 ---
 
-## The on-chain program (`clanker5000`)
+## 🤖 The On-Chain Program (`clanker5000`)
 
-One Anchor program replaces what used to be six Solidity contracts. 24
-instructions, grouped:
+One Anchor program replaces what used to be six Solidity contracts. 24 instructions, grouped:
 
 - **Race escrow** — `initialize` · `open_race` · `join_race` · `lock_race` ·
   `start_race` · `finish_race` · `settle_race` (winner gets 2× stake) ·
@@ -74,30 +96,29 @@ instructions, grouped:
   `write_attestation` (per-job PDA, threshold 70, forwarder-gated). The robot's
   own claim never settles anything — downstream reads `verified`.
 
-`settle_race` / `settle_market` attach **Helius-priced ComputeBudget
-instructions** so payouts land under congestion.
+`settle_race` / `settle_market` attach **Helius-priced ComputeBudget instructions** so payouts land under congestion.
 
 ---
 
-## The show (three acts)
+## 🏆 The Show (three acts)
 
-- **Qualifying — the checkpoint.** A courier rover is hired (x402, SPL-USDC),
+- **🔵 Qualifying — the checkpoint.** A courier rover is hired (x402, SPL-USDC),
   drives to the guard rover, they greet in speech then switch to **GibberLink**
   (data-over-sound). The guard verifies it on-chain (signed challenge + SNS
   identity + reputation + EventPass), runs a Dutch auction for the pass price,
   pays + mints on Solana, and anchors the proof to Walrus.
-- **Race day — Clanker 5000.** Spectators **pay to pilot** the rovers ($1 x402
+- **🟡 Race day — Clanker 5000.** Spectators **pay to pilot** the rovers ($1 x402
   sessions, WebRTC joystick + deadman). The Rust harness enforces speed caps,
   e-stop, and telemetry while drivers **bet USDC** on a fruit-obstacle drag race
   (parimutuel, **one bet per human via World ID**), settled on-chain from the
   guard's Walrus-anchored finish photo, verdict landed by a Switchboard DON.
-- **Parc fermé — the climax.** Withdrawing the fleet's earnings **blocks** until
+- **🔴 Parc fermé — the climax.** Withdrawing the fleet's earnings **blocks** until
   a human clear-signs on a **Ledger** (the treasury owner): "Withdraw N USDC →
   recipient."
 
 ---
 
-## Architecture
+## 🔧 Architecture
 
 ```mermaid
 flowchart TB
@@ -132,7 +153,10 @@ flowchart TB
 
 ---
 
-## Repo layout
+## 📦 Repo Layout
+
+<details>
+<summary>Expand directory guide</summary>
 
 - **`solana/`** — the `clanker5000` Anchor program (`programs/clanker5000/src/lib.rs`),
   `tests/clanker5000.ts` (integration suite), `Anchor.toml`, IDL/types.
@@ -161,23 +185,35 @@ flowchart TB
 > Gone with the EVM cutover: `contracts/` (Solidity), `chain/` (Hardhat),
 > `cre-workflow/` (Chainlink CRE), and all viem/ENS/Arc code.
 
+</details>
+
 ---
 
-## Build, test, deploy
+## 🚀 Build, Test, Deploy
+
+### Step 1 — Install toolchain
+
+> [!TIP]
+> See [`docs/DEPLOY_SOLANA.md`](docs/DEPLOY_SOLANA.md) for version pins that matter.
 
 ```bash
-# toolchain (see docs/DEPLOY_SOLANA.md for the version pins that matter)
 sh -c "$(curl -sSfL https://release.anza.xyz/v4.0.3/install)"
 npm i -g @coral-xyz/anchor-cli@0.31.0
+```
 
+### Step 2 — Build & test the program
+
+```bash
 cd solana
 anchor build                 # BPF + IDL + types
 cp target/idl/clanker5000.json ../sidecar/src/generated/clanker5000.json
 anchor test                  # local validator → 3/3
 ```
 
-Deploy to a cluster (RPC throughput matters — use a keyed Helius/QuickNode URL;
-free public RPCs rate-limit the ~640-write upload):
+### Step 3 — Deploy to cluster
+
+> [!WARNING]
+> RPC throughput matters — use a keyed Helius/QuickNode URL. Free public RPCs rate-limit the ~640-write upload.
 
 ```bash
 solana program deploy target/deploy/clanker5000.so \
@@ -185,11 +221,12 @@ solana program deploy target/deploy/clanker5000.so \
   --url "$RPC" --use-rpc --max-sign-attempts 5000
 ```
 
+> [!NOTE]
 > **Program ID:** [`4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD`](https://explorer.solana.com/address/4FLTsBUD6iCQo5VBzdCSv8imoCnhttnQ1GQFEHL5iEDD?cluster=devnet)
 > — **LIVE on devnet** (sbpf v3, upgradeable). For mainnet, rebuild `--arch v2`
 > (see docs/MAINNET_READINESS.md).
 
-### Run the sidecar
+### Step 4 — Run the sidecar
 
 ```bash
 cd sidecar && npm install
@@ -198,14 +235,15 @@ cd sidecar && npm install
 npm start
 ```
 
-The Solana backend needs the deploy artifacts: `anchor build` IDL copied into
-`sidecar/src/generated/clanker5000.json`, plus a deployed program id + USDC mint
-+ facilitator key in `contracts.solana.json` / env. `HELIUS_API_KEY` is used
-server-side only — the key is never exposed to phone/frontend clients.
+> [!NOTE]
+> The Solana backend needs the deploy artifacts: `anchor build` IDL copied into
+> `sidecar/src/generated/clanker5000.json`, plus a deployed program id + USDC mint
+> + facilitator key in `contracts.solana.json` / env. `HELIUS_API_KEY` is used
+> server-side only — the key is never exposed to phone/frontend clients.
 
 ---
 
-## Status of the external integrations
+## 📊 Integration Status
 
 | Integration | State |
 |---|---|
@@ -214,5 +252,14 @@ server-side only — the key is never exposed to phone/frontend clients.
 | Kora gasless · SNS registration · Privy-Solana · Switchboard forwarder · Squads owner | 🟡 code/scaffold landed — need accounts/keys to go live |
 | **Devnet deployment** | ✅ **LIVE** — `4FLTs…` (sbpf v3, upgradeable). Mainnet build = `--arch v2`. |
 
-See [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) for the
-sourced per-integration recommendations and the remaining cutover steps.
+See [`docs/SOLANA_NATIVE_MIGRATION.md`](docs/SOLANA_NATIVE_MIGRATION.md) for the sourced per-integration recommendations and the remaining cutover steps.
+
+---
+
+<div align="center">
+
+🏁 &nbsp;🏎️&nbsp; 🏁
+
+*Built for the track. Settled on-chain. Governed by Ledger.*
+
+</div>

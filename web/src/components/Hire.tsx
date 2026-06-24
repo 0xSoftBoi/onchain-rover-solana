@@ -55,16 +55,16 @@ export default function Hire() {
 
   return (
     <section className="card">
-      <h2>Hire a rover</h2>
+      <h2>Hire a Driver</h2>
       <p className="muted">
-        Pay over HTTP. The x402 gate quotes a price; your wallet sends SPL-USDC to
-        the fleet treasury and the rover takes the job.
+        Pay over HTTP · x402 gate quotes the price · your wallet fires SPL-USDC to
+        the fleet treasury · driver takes the job. One call, no bridges.
       </p>
       <label>
-        Rover
+        Driver
         <select value={robot} onChange={(e) => setRobot(e.target.value)}>
-          <option value="guard">guard</option>
-          <option value="courier">courier</option>
+          <option value="guard">Car 00 · Guard</option>
+          <option value="courier">Car 01 · Courier</option>
         </select>
       </label>
       <label>
@@ -72,12 +72,15 @@ export default function Hire() {
         <input value={instruction} onChange={(e) => setInstruction(e.target.value)} />
       </label>
       <button className="primary" disabled={busy || !publicKey} onClick={hire}>
-        {busy ? "Working…" : "Hire (pay USDC)"}
+        {busy ? "Warming Up…" : "Green Flag · Pay USDC"}
       </button>
       {status && <p className="status">{status}</p>}
       {sig && (
-        <p className="muted">
-          payment: <a href={EXPLORER(sig)} target="_blank" rel="noreferrer">{sig.slice(0, 16)}…</a>
+        <p className="muted" style={{ marginTop: 8 }}>
+          payment tx:{" "}
+          <a href={EXPLORER(sig)} target="_blank" rel="noreferrer">
+            {sig.slice(0, 16)}…
+          </a>
         </p>
       )}
       {result != null && <pre className="result">{JSON.stringify(result, null, 2)}</pre>}

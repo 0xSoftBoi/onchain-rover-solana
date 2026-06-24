@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CLANKER 500 · OBS OVERLAY</title>
+<!--
+  TRANSPARENT broadcast overlay for OBS / Streamlabs.
+  Add as a Browser Source over your live camera:
+    URL    http://localhost:8080/overlay.html
+    Size   1920 × 1080 (match your canvas), FPS 30
+    Leave "custom CSS" default — the page background is already transparent.
+  Live data: append ?api=https://your-sidecar  (CORS).  Default = mock.
+  Query toggles:  ?bar=top  ?bug=0  ?clock=0   ?demo=1 (fire test moments)
+-->
+<script src="./clanker-mock.js"></script>
+<style>
+  :root{
+    --amber:#ffd400; --amber-d:#e0a800; --teal:#14f195; --green:#00d061;
+    --red:#e10600; --violet:#9945ff; --txt:#f6f4ee; --dim:#9b9a92; --chrome:#cfd2d6;
+    --line:rgba(255,212,0,.28); --glow:rgba(255,212,0,.42);
+    --disp:Impact,"Arial Narrow Bold","Arial Narrow",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sh:0 .2vh .6vh rgba(0,0,0,.9), 0 0 1.2vh rgba(0,0,0,.7); /* legibility over video */
+  }
+  *{box-sizing:border-box; margin:0;}
+  html,body{height:100%; background:transparent !important; color:var(--txt); font-family:var(--mono);
+    letter-spacing:.02em; -webkit-font-smoothing:antialiased; overflow:hidden;}
+
+  /* ── brand / LIVE bug (top-left) ── */
+  #bug{position:fixed; top:3vh; left:3vw; z-index:40; display:flex; align-items:center; gap:1vw;
+    filter:drop-shadow(0 .3vh .7vh rgba(0,0,0,.85));}
+  #bug .num{font-family:var(--disp); font-style:italic; font-weight:900; font-size:6vh; line-height:.8;
+    color:var(--amber); text-shadow:.2vh .2vh 0 var(--red), 0 0 3vh var(--glow);}
+  #bug .stk{line-height:1;}
+  #bug .t1{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; text-transform:uppercase;
+    letter-spacing:.04em; text-shadow:var(--sh);} #bug .t1 b{color:var(--amber);}
+  #bug .t2{font-size:1.3vh; letter-spacing:.3em; color:var(--chrome); text-transform:uppercase; margin-top:.6vh; text-shadow:var(--sh);}
+  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red); font-weight:800;}
+  .live i{width:1.1vh; height:1.1vh; border-radius:50%; background:var(--red); box-shadow:0 0 1.4vh var(--red);
+    animation:blink 1.1s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+  /* clock (top-right) */
+  #clk{position:fixed; top:3.2vh; right:3vw; z-index:40; text-align:right; line-height:1;
+    filter:drop-shadow(0 .3vh .7vh rgba(0,0,0,.85));}
+  #clk .c{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.6vh; color:var(--txt);
+    font-variant-numeric:tabular-nums; text-shadow:var(--sh);}
+  #clk .p{margin-top:.6vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase; text-shadow:var(--sh);}
+  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
+
+  /* ── scorebug (lower-third, semi-opaque only on the bar itself) ── */
+  #scorebug{position:fixed; left:0; right:0; bottom:0; z-index:35; height:12.5vh;
+    display:grid; grid-template-columns:auto 1fr auto auto; align-items:stretch;
+    background:linear-gradient(180deg, rgba(10,10,12,0) 0%, rgba(10,10,12,.55) 35%, rgba(10,10,12,.92) 100%);
+    border-bottom:.9vh solid transparent;
+    border-image:repeating-linear-gradient(90deg, var(--amber) 0 3vh, #0a0a0c 3vh 6vh) 1;}
+  #scorebug::before{content:""; position:absolute; left:0; right:0; top:0; height:.4vh; background:var(--red); box-shadow:0 0 1.4vh var(--red);}
+  #scorebug>div{display:flex; flex-direction:column; justify-content:center; padding:0 1.8vw;}
+  .sb-status{align-items:flex-start; min-width:15vw;}
+  .sb-status .s-lab{font-size:1.25vh; letter-spacing:.28em; color:var(--dim); text-transform:uppercase; text-shadow:var(--sh);}
+  .sb-status .s-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; line-height:1; margin-top:.4vh; text-shadow:var(--sh);}
+  .sb-grid{flex-direction:row !important; align-items:center; gap:1.4vw; justify-content:center;}
+  .runner{display:flex; align-items:center; gap:.7vw; padding:.8vh 1vw; border-radius:.9vh;
+    background:rgba(0,0,0,.42); border:1px solid var(--line); transition:.3s;}
+  .runner .car{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.8vh; width:2.8vw; text-align:center;}
+  .runner.guard .car{color:var(--teal);} .runner.courier .car{color:var(--amber);}
+  .runner .nm{font-size:1.6vh; letter-spacing:.06em;}
+  .runner .od{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.8vh; color:var(--txt); font-variant-numeric:tabular-nums;}
+  .runner .od small{font-size:1.3vh; color:var(--dim);}
+  .runner.lead{border-color:var(--amber); box-shadow:0 0 2.4vh rgba(255,212,0,.3); background:rgba(40,32,0,.5);}
+  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red); font-size:2.6vh; text-shadow:var(--sh);}
+  .sb-bets{align-items:flex-end; min-width:8vw;}
+  .sb-bets .b-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--teal); line-height:1; text-shadow:var(--sh);}
+  .sb-bets .b-lab{font-size:1.2vh; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; text-align:right; text-shadow:var(--sh);}
+  .sb-purse{align-items:flex-end;}
+  .sb-purse .p-lab{font-size:1.25vh; letter-spacing:.22em; color:var(--dim); text-transform:uppercase; text-shadow:var(--sh);}
+  .sb-purse .p-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.8vh; color:var(--amber);
+    text-shadow:.1vh .1vh 0 #000, 0 0 2.6vh var(--glow); line-height:1; font-variant-numeric:tabular-nums;}
+  .sb-purse .p-sub{font-size:1.25vh; letter-spacing:.16em; color:var(--green); text-transform:uppercase; text-shadow:var(--sh);}
+  .flash{animation:flash .7s ease;}
+  @keyframes flash{0%{filter:brightness(2.6)}100%{filter:brightness(1)}}
+
+  /* ── pit reporter ticker (above the scorebug) ── */
+  #ticker{position:fixed; left:0; right:0; bottom:12.5vh; z-index:34; height:5vh; display:flex; align-items:stretch;
+    background:linear-gradient(180deg, rgba(10,10,12,0), rgba(10,10,12,.82)); border-top:1px solid var(--line);
+    filter:drop-shadow(0 .2vh .6vh rgba(0,0,0,.7));}
+  #ticker .tk-badge{flex:none; display:flex; align-items:center; gap:.5vw; padding:0 1.4vw; font-family:var(--disp);
+    font-style:italic; font-weight:900; font-size:1.95vh; letter-spacing:.05em; text-transform:uppercase; color:#0a0a0c;
+    background:linear-gradient(90deg, var(--amber), var(--amber-d)); white-space:nowrap;}
+  #ticker .tk-view{flex:1; overflow:hidden; position:relative; display:flex; align-items:center;}
+  #ticker .tk-track{display:inline-flex; white-space:nowrap; will-change:transform;}
+  #ticker .tk-seg{padding-left:3vw; font-size:1.9vh; letter-spacing:.02em; color:var(--chrome); text-shadow:var(--sh);}
+  #ticker .tk-seg .sp{font-weight:800; letter-spacing:.08em;}
+  #ticker .tk-seg .sp.guard{color:var(--teal);} #ticker .tk-seg .sp.courier{color:var(--amber);}
+  #ticker .tk-seg .di{color:var(--red); margin:0 1.2vw;}
+  @keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  body.bartop #ticker{top:12.5vh; bottom:auto; border-top:none; border-bottom:1px solid var(--line);
+    background:linear-gradient(0deg, rgba(10,10,12,0), rgba(10,10,12,.82));}
+
+  /* top-bar variant */
+  body.bartop #scorebug{top:0; bottom:auto;
+    background:linear-gradient(0deg, rgba(10,10,12,0) 0%, rgba(10,10,12,.55) 35%, rgba(10,10,12,.92) 100%);}
+  body.bartop #scorebug::before{top:auto; bottom:0;}
+  body.bartop #bug, body.bartop #clk{top:auto; bottom:3vh;}
+
+  /* ── money-moment takeover (scrim is mostly transparent → camera shows through) ── */
+  #moment{position:fixed; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:1.2vh; opacity:0; pointer-events:none; transition:opacity .3s ease;
+    background:radial-gradient(58% 48% at 50% 48%, rgba(6,7,9,.62), rgba(6,7,9,.22) 62%, transparent 78%);}
+  #moment.on{opacity:1;}
+  #confetti{position:fixed; inset:0; z-index:55; pointer-events:none;}
+  #moment .mkick{font-size:2vh; letter-spacing:.4em; text-transform:uppercase; color:var(--green); z-index:2; text-shadow:var(--sh);}
+  #moment .mbig{font-family:var(--disp); font-style:italic; font-weight:900; font-size:16vh; line-height:.85; color:var(--amber);
+    text-shadow:.4vh .4vh 0 var(--red), 0 0 7vh var(--glow); z-index:2; font-variant-numeric:tabular-nums;}
+  #moment .msub{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.2vh; text-transform:uppercase; color:var(--txt); z-index:2; text-shadow:var(--sh);}
+  #moment .mdet{font-size:1.8vh; letter-spacing:.14em; color:var(--chrome); z-index:2; text-shadow:var(--sh);}
+  .solpill{display:inline-flex; align-items:center; gap:.6vw; padding:.8vh 1.6vw; border-radius:99px; z-index:2;
+    background:linear-gradient(90deg, var(--violet), var(--teal)); color:#06121a; font-weight:900; letter-spacing:.12em;
+    font-size:1.8vh; text-transform:uppercase; box-shadow:0 .4vh 2vh rgba(0,0,0,.6);}
+
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important;} #confetti{display:none;} }
+</style>
+</head>
+<body>
+
+<div id="bug">
+  <div class="num">500</div>
+  <div class="stk">
+    <div class="t1"><b>CLANKER 500</b> · ROVER GP</div>
+    <div class="t2"><span class="live"><i></i>LIVE</span> &nbsp;·&nbsp; SETTLED ON SOLANA</div>
+  </div>
+</div>
+
+<div id="clk">
+  <div class="c" id="clock">--:--:--</div>
+  <div class="p ph-betting" id="phase">FORMATION LAP</div>
+</div>
+
+<div id="scorebug">
+  <div class="sb-status"><span class="s-lab">Race Control</span><span class="s-val" id="sb-status">STANDBY</span></div>
+  <div class="sb-grid">
+    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span></div>
+    <span class="vs">VS</span>
+    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span></div>
+  </div>
+  <div class="sb-bets"><span class="b-val" id="sb-bets">0</span><span class="b-lab">verified<br>bets</span></div>
+  <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
+</div>
+
+<div id="ticker">
+  <div class="tk-badge">🎙️ Pit Reporter</div>
+  <div class="tk-view"><div class="tk-track" id="tk-track"><span class="tk-seg" id="tk-a"></span><span class="tk-seg" id="tk-b"></span></div></div>
+</div>
+
+<canvas id="confetti"></canvas>
+<div id="moment">
+  <div class="mkick" id="m-kick">SETTLEMENT</div>
+  <div class="mbig" id="m-big">$0.00</div>
+  <div class="solpill">◎ Settled on Solana</div>
+  <div class="msub" id="m-sub"></div>
+  <div class="mdet" id="m-det"></div>
+</div>
+
+<script>
+"use strict";
+const $ = (id)=>document.getElementById(id);
+const Q = new URLSearchParams(location.search);
+
+/* ── query toggles ── */
+if(Q.get("bar") === "top") document.body.classList.add("bartop");
+if(Q.get("bug") === "0")  $("bug").style.display = "none";
+if(Q.get("clock") === "0") $("clk").style.display = "none";
+
+const sol = (s)=>(s||"").replace(/\.eth\b/g,".sol");
+
+/* clock */
+function clk(){ $("clock").textContent = new Date().toTimeString().slice(0,8); }
+clk(); setInterval(clk, 1000);
+
+/* ── poll: bind the scorebug to live (mock or ?api) data ── */
+let lastPurse = 0, prevStatus = "", bettingDeadline = 0;
+const BET_WINDOW = 18000;
+const fmtClock = (ms)=>{ const s = Math.ceil(ms/1000); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
+async function j(u){ try{ return await (await fetch(u)).json(); }catch{ return null; } }
+async function poll(){
+  const st = await j("/race/state"), od = await j("/race/odds"), fe = await j("/onchain/feed");
+  const status = (st && st.status) || "betting";
+
+  // betting-window countdown: (re)arm on entry to the betting phase
+  if(status === "betting"){ if(prevStatus !== "betting") bettingDeadline = Date.now() + BET_WINDOW; }
+  else { bettingDeadline = 0; }
+  prevStatus = status;
+  const rem = bettingDeadline ? Math.max(0, bettingDeadline - Date.now()) : 0;
+
+  const phaseEl = $("phase"), sbStatus = $("sb-status");
+  phaseEl.className = "p ph-" + status;
+  if(status === "betting"){ phaseEl.textContent = rem > 0 ? ("🟡 BETTING · " + fmtClock(rem)) : "🟡 LOCKING…"; sbStatus.textContent = "BETTING OPEN"; sbStatus.style.color = "var(--amber)"; }
+  else if(status === "racing"){ phaseEl.textContent = "🟢 GREEN FLAG"; sbStatus.textContent = "RACING"; sbStatus.style.color = "var(--green)"; }
+  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = st&&st.winner ? sol(st.winner).toUpperCase()+" WINS" : "FINISHED"; sbStatus.style.color = "var(--violet)"; }
+
+  if(od && od.odds){
+    const g = od.odds.guard, c = od.odds.courier;
+    $("sb-odds-guard").innerHTML   = (g??"—")+"<small>x</small>";
+    $("sb-odds-courier").innerHTML = (c??"—")+"<small>x</small>";
+    const gFav = (g!=null && c!=null) ? g < c : false;
+    $("run-guard").classList.toggle("lead", gFav);
+    $("run-courier").classList.toggle("lead", !gFav && c!=null);
+  }
+  if(od && typeof od.count === "number") $("sb-bets").textContent = od.count;
+
+  if(fe){
+    if(typeof fe.settledUsdc === "number"){
+      $("sb-purse").textContent = "$" + fe.settledUsdc.toFixed(2);
+      if(fe.settledUsdc > lastPurse){ const el=$("sb-purse"); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      lastPurse = fe.settledUsdc;
+    }
+    if(typeof fe.count === "number") $("sb-laps").textContent = fe.count + " laps · USDC";
+  }
+}
+poll(); setInterval(poll, 1100);
+
+/* ── pit reporter ticker (rover reasoning feed → scrolling commentary) ── */
+let tkLastT = 0;
+async function pollTicker(){
+  const rz = await j("/reason/feed");
+  if(!rz || !rz.events || !rz.events.length) return;
+  if(rz.events[0].t === tkLastT) return;
+  tkLastT = rz.events[0].t;
+  const seg = rz.events.slice(0, 7).map(e=>{
+    const who = (e.robot || "").toUpperCase();
+    const txt = (e.text || "").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    return `<span class="sp ${e.robot||''}">${who}</span> ${txt}`;
+  }).join('<span class="di">◆</span>') + '<span class="di">◆</span>';
+  $("tk-a").innerHTML = seg; $("tk-b").innerHTML = seg;
+  const track = $("tk-track");
+  const dur = Math.max(16, (track.scrollWidth / 2) / 90);
+  track.style.animation = "none"; void track.offsetWidth;
+  track.style.animation = `marq ${dur.toFixed(1)}s linear infinite`;
+}
+pollTicker(); setInterval(pollTicker, 3000);
+
+/* ── confetti (transparent canvas) ── */
+const cv = $("confetti"), cx = cv.getContext("2d");
+function sizeCanvas(){ cv.width = innerWidth; cv.height = innerHeight; }
+sizeCanvas(); addEventListener("resize", sizeCanvas);
+let parts = [], raf = null;
+const COLORS = ["#ffd400","#14f195","#e10600","#9945ff","#f6f4ee"];
+function burst(){
+  parts = [];
+  for(let i=0;i<170;i++){
+    parts.push({ x:innerWidth/2 + (Math.random()-.5)*innerWidth*.5, y:innerHeight*.5,
+      vx:(Math.random()-.5)*16, vy:-8-Math.random()*16, g:.45+Math.random()*.3,
+      s:6+Math.random()*9, rot:Math.random()*6.28, vr:(Math.random()-.5)*.4,
+      c:COLORS[(Math.random()*COLORS.length)|0], life:1 });
+  }
+  if(!raf) raf = requestAnimationFrame(draw);
+}
+function draw(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  let alive = 0;
+  for(const p of parts){
+    p.vy+=p.g; p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr; p.life-=.009;
+    if(p.life>0 && p.y < cv.height+40){
+      alive++;
+      cx.save(); cx.translate(p.x,p.y); cx.rotate(p.rot); cx.globalAlpha=Math.max(0,p.life);
+      cx.fillStyle=p.c; cx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6); cx.restore();
+    }
+  }
+  raf = alive>0 ? requestAnimationFrame(draw) : (cx.clearRect(0,0,cv.width,cv.height), null);
+}
+
+/* ── money-moment takeover ── */
+let momentActive = false, momentTimer = null;
+function fireMoment(kind, big, sub, det){
+  momentActive = true;
+  $("m-kick").textContent = kind; $("m-big").textContent = big;
+  $("m-sub").textContent = sub || ""; $("m-det").textContent = det || "";
+  $("moment").classList.add("on"); burst();
+  clearTimeout(momentTimer);
+  momentTimer = setTimeout(()=>{ $("moment").classList.remove("on"); momentActive = false; }, 4000);
+}
+let lastMoment = 0;
+function maybeMoment(e){
+  const now = Date.now();
+  if(e.kind === "RACE SETTLE"){ fireMoment("PHOTO FINISH", "🏁 COURIER", "takes the checkered flag", "verdict on-chain · proof on Walrus"); lastMoment = now; return; }
+  if(now - lastMoment < 7000) return;
+  if(e.layer === "chain" && e.severity === "ok" && typeof e.usdc === "number" && e.usdc > 0){
+    const label = e.kind === "BET" ? "BET PLACED" : "PAYMENT SETTLED";
+    const sub   = e.kind === "BET" ? "World-verified human" : "robot-to-robot · USDC";
+    fireMoment(label, "$" + e.usdc.toFixed(2), sub, sol(e.detail||""));
+    lastMoment = now;
+  }
+}
+try{
+  const es = new EventSource("/events/stream");
+  es.onmessage = (m)=>{ try{ maybeMoment(JSON.parse(m.data)); }catch{} };
+}catch{}
+
+/* ?demo=1 — fire a test moment every 12s so you can frame the graphic in OBS */
+if(Q.get("demo") === "1"){
+  const demo = [
+    ()=>fireMoment("PAYMENT SETTLED","$1.25","robot-to-robot · USDC","courier → guard"),
+    ()=>fireMoment("BET PLACED","$2.00","World-verified human","$2 on courier"),
+    ()=>fireMoment("PHOTO FINISH","🏁 COURIER","takes the checkered flag","verdict on-chain · proof on Walrus"),
+  ];
+  let di = 0; setTimeout(function loop(){ demo[di++ % demo.length](); setTimeout(loop, 12000); }, 2500);
+}
+</script>
+</body>
+</html>

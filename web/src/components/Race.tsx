@@ -34,20 +34,19 @@ export default function Race() {
 
   return (
     <section className="card">
-      <h2>Race</h2>
+      <h2>The Main Event</h2>
       <p className="muted">
-        Live state from the sidecar. Settlement (open → join → start → finish →
-        settle) runs through the clanker5000 program; parimutuel bets are
-        one-human-one-bet via a World ID nullifier.
+        Live telemetry from the sidecar · settlement phases: open → join → start → finish →
+        settle · runs through the clanker5000 program · parimutuel bets gated by World ID nullifier (one human, one bet).
       </p>
-      {err && <p className="status">sidecar offline: {err}</p>}
+      {err && <p className="status status-err">⚠ pit radio offline: {err}</p>}
       <div className="grid2">
         <div>
-          <h3>State</h3>
+          <h3>Race State</h3>
           <pre className="result">{state ? JSON.stringify(state, null, 2) : "…"}</pre>
         </div>
         <div>
-          <h3>Odds</h3>
+          <h3>Parimutuel Odds</h3>
           <pre className="result">{odds ? JSON.stringify(odds, null, 2) : "—"}</pre>
         </div>
       </div>

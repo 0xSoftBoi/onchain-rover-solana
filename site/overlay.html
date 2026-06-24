@@ -78,6 +78,8 @@
   .sb-purse .p-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.8vh; color:var(--amber);
     text-shadow:.1vh .1vh 0 #000, 0 0 2.6vh var(--glow); line-height:1; font-variant-numeric:tabular-nums;}
   .sb-purse .p-sub{font-size:1.25vh; letter-spacing:.16em; color:var(--green); text-transform:uppercase; text-shadow:var(--sh);}
+  .sb-purse .spark{width:11vw; height:2.2vh; margin:.3vh 0; overflow:visible;}
+  .sb-purse .spark polyline{fill:none; stroke:var(--amber); stroke-width:1.6; stroke-linejoin:round; stroke-linecap:round; filter:drop-shadow(0 0 .6vh #000);}
   .flash{animation:flash .7s ease;}
   @keyframes flash{0%{filter:brightness(2.6)}100%{filter:brightness(1)}}
 
@@ -144,6 +146,16 @@
   #pilot .pl-track{width:6vw; height:.6vh; background:rgba(255,255,255,.18); border-radius:2px; margin-top:.6vh; overflow:hidden;}
   #pilot .pl-bar{height:100%; width:100%; background:var(--teal); transition:width 1s linear;}
 
+  /* sponsor-rotation bug (opt-in: ?sponsors=1) */
+  #sponsors{position:fixed; top:3.2vh; left:50%; transform:translateX(-50%); z-index:40; display:none; align-items:center; gap:.9vw;
+    padding:.6vh 1.4vw; background:rgba(10,10,12,.6); border:1px solid var(--line); border-radius:99px;
+    filter:drop-shadow(0 .3vh .7vh rgba(0,0,0,.85));}
+  #sponsors.show{display:flex;}
+  #sponsors .sp-lab{font-size:1.2vh; letter-spacing:.26em; text-transform:uppercase; color:var(--dim);}
+  #sponsors .sp-name{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.1vh; color:var(--amber);
+    transition:opacity .4s; min-width:10vw; text-align:left; text-shadow:0 0 1.6vh var(--glow), var(--sh);}
+  body.bartop #sponsors{top:auto; bottom:3.2vh;}
+
   /* mute toggle (faint; click also unlocks audio in a browser tab) */
   #snd{position:fixed; z-index:70; top:11vh; left:3vw; width:4.6vh; height:4.6vh; border-radius:50%;
     border:1px solid var(--line); background:rgba(10,10,12,.55); color:var(--amber); font-size:2.1vh; cursor:pointer;
@@ -178,9 +190,10 @@
     <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span></div>
   </div>
   <div class="sb-bets"><span class="b-val" id="sb-bets">0</span><span class="b-lab">verified<br>bets</span></div>
-  <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
+  <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><svg class="spark" id="purse-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="purse-line" points=""/></svg><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
 </div>
 
+<div id="sponsors"><span class="sp-lab">Powered by</span><span class="sp-name" id="sp-name">◎ Solana</span></div>
 <div id="floats"></div>
 <button id="snd" title="toggle sound">🔊</button>
 
@@ -278,6 +291,15 @@ clk(); setInterval(clk, 1000);
 let lastPurse = 0, prevStatus = "", bettingDeadline = 0;
 const BET_WINDOW = 18000;
 const fmtClock = (ms)=>{ const s = Math.ceil(ms/1000); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
+let purseHist = [];
+function drawSpark(arr, lineEl){
+  if(!lineEl || arr.length < 2) return;
+  const n = arr.length, max = Math.max(...arr), min = Math.min(...arr), rng = (max - min) || 1;
+  lineEl.setAttribute("points", arr.map((v,i)=>{
+    const x = (i/(n-1))*100, y = 23 - ((v-min)/rng)*21;
+    return x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" "));
+}
 async function j(u){ try{ return await (await fetch(u)).json(); }catch{ return null; } }
 async function poll(){
   const st = await j("/race/state"), od = await j("/race/odds"), fe = await j("/onchain/feed");
@@ -310,6 +332,7 @@ async function poll(){
       $("sb-purse").textContent = "$" + fe.settledUsdc.toFixed(2);
       if(fe.settledUsdc > lastPurse){ const el=$("sb-purse"); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
       lastPurse = fe.settledUsdc;
+      purseHist.push(fe.settledUsdc); if(purseHist.length > 40) purseHist.shift(); drawSpark(purseHist, $("purse-line"));
     }
     if(typeof fe.count === "number") $("sb-laps").textContent = fe.count + " laps · USDC";
   }
@@ -445,6 +468,14 @@ try{
   es.onmessage = (m)=>{ try{ const e = JSON.parse(m.data); maybeMoment(e); maybePilot(e); maybeFloat(e); }catch{} };
 }catch{}
 if(Q.get("demo") === "1"){ setTimeout(()=> showPilot("courier", pickHandle()), 4000); setInterval(()=> spawnBetFloat(2, Math.random()<0.5?"guard":"courier"), 5000); }
+
+/* sponsor-rotation bug (opt-in: ?sponsors=1) */
+if(Q.get("sponsors") === "1"){
+  $("sponsors").classList.add("show");
+  const SPONSORS = ["◎ Solana","x402 · USDC","World ID","Walrus","Switchboard","SNS · .sol","Helius","Kora relayer","ERC-8004","Ledger","Privy TEE"];
+  let spi = 0;
+  setInterval(()=>{ const el = $("sp-name"); el.style.opacity = 0; setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400); }, 2600);
+}
 
 /* ?demo=1 — fire a test moment every 12s so you can frame the graphic in OBS */
 if(Q.get("demo") === "1"){

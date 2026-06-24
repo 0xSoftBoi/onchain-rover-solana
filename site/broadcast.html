@@ -209,6 +209,8 @@
   .sb-purse .p-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.4vh; color:var(--amber);
     text-shadow:0 0 2.4vh var(--glow); line-height:1; font-variant-numeric:tabular-nums;}
   .sb-purse .p-sub{font-size:1.2vh; letter-spacing:.16em; color:var(--green); text-transform:uppercase;}
+  .sb-purse .spark{width:11vw; height:2.2vh; margin:.3vh 0; overflow:visible;}
+  .sb-purse .spark polyline{fill:none; stroke:var(--amber); stroke-width:1.6; stroke-linejoin:round; stroke-linecap:round; filter:drop-shadow(0 0 .6vh var(--glow));}
   .sb-bets{align-items:flex-end; border-left:1px solid var(--line); min-width:9vw;}
   .sb-bets .b-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.4vh; color:var(--teal); line-height:1;}
   .sb-bets .b-lab{font-size:1.15vh; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; text-align:right;}
@@ -261,6 +263,20 @@
   .season-bar .dash{color:var(--red); font-weight:900;}
   .season-bar .meta{margin-left:auto; color:var(--dim); font-size:1.25vh; letter-spacing:.08em;}
 
+  /* ── sponsor-rotation bug (top center) ── */
+  #sponsors{position:fixed; top:3vh; left:50%; transform:translateX(-50%); z-index:40; display:flex; align-items:center; gap:.9vw;
+    padding:.7vh 1.5vw; background:rgba(10,10,12,.6); border:1px solid var(--line); border-radius:99px;
+    filter:drop-shadow(0 .3vh .7vh rgba(0,0,0,.8));}
+  #sponsors .sp-lab{font-size:1.2vh; letter-spacing:.26em; text-transform:uppercase; color:var(--dim);}
+  #sponsors .sp-name{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.2vh; color:var(--amber);
+    transition:opacity .4s; min-width:10vw; text-align:left; text-shadow:0 0 1.6vh var(--glow);}
+
+  /* champion-crown variant of the takeover */
+  #moment.champ{background:radial-gradient(58% 58% at 50% 45%, rgba(255,212,0,.22), transparent 72%), rgba(6,7,9,.82);}
+  #moment.champ .mkick{color:var(--amber);}
+  #moment.champ .mbig{color:var(--amber); font-size:17vh; text-shadow:.4vh .4vh 0 var(--amber-d), 0 0 9vh var(--glow);}
+  #moment.champ .solpill{background:linear-gradient(90deg, var(--amber), var(--amber-d)); color:#0a0a0c;}
+
   /* ── money-moment takeover ── */
   #moment{position:fixed; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:1.4vh; opacity:0; pointer-events:none; transition:opacity .35s ease;
@@ -308,6 +324,8 @@
   <div class="clock" id="clock">--:--:--</div>
   <div class="phase ph-betting" id="phase">FORMATION LAP</div>
 </div>
+
+<div id="sponsors"><span class="sp-lab">Powered by</span><span class="sp-name" id="sp-name">◎ Solana</span></div>
 
 <div id="stage">
   <!-- GRID / RACE -->
@@ -416,7 +434,7 @@
     <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span></div>
   </div>
   <div class="sb-bets"><span class="b-val" id="sb-bets">0</span><span class="b-lab">verified<br>bets</span></div>
-  <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
+  <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><svg class="spark" id="purse-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="purse-line" points=""/></svg><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
 </div>
 
 <!-- money moment -->
@@ -515,6 +533,15 @@ const sol = (s)=> (s||"").replace(/\.eth\b/g,".sol");
 let lastCount = 0, lastPurse = 0;
 let curStatus = "betting", prevStatus = "", bettingDeadline = 0;
 const fmtClock = (ms)=>{ const s = Math.ceil(ms/1000); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
+let purseHist = [];
+function drawSpark(arr, lineEl){
+  if(!lineEl || arr.length < 2) return;
+  const n = arr.length, max = Math.max(...arr), min = Math.min(...arr), rng = (max - min) || 1;
+  lineEl.setAttribute("points", arr.map((v,i)=>{
+    const x = (i/(n-1))*100, y = 23 - ((v-min)/rng)*21;
+    return x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" "));
+}
 
 /* clock */
 function clk(){ $("clock").textContent = new Date().toTimeString().slice(0,8); }
@@ -572,6 +599,7 @@ async function poll(){
       $("sb-purse").textContent = "$" + fe.settledUsdc.toFixed(2);
       if(fe.settledUsdc > lastPurse){ $("sb-purse").classList.remove("flash"); void $("sb-purse").offsetWidth; $("sb-purse").classList.add("flash"); }
       lastPurse = fe.settledUsdc;
+      purseHist.push(fe.settledUsdc); if(purseHist.length > 40) purseHist.shift(); drawSpark(purseHist, $("purse-line"));
     }
     if(typeof fe.count === "number"){ $("sb-laps").textContent = fe.count + " laps · USDC"; lastCount = fe.count; }
   }
@@ -693,20 +721,23 @@ function drawConfetti(){
 }
 
 let momentTimer = null;
-function fireMoment(kind, big, sub, det, tx){
+function fireMoment(kind, big, sub, det, tx, opts){
+  opts = opts || {};
   momentActive = true;
-  if(/PHOTO|FINISH/.test(kind)) SOUND.cheer();
+  if(opts.sound === "cheer" || /PHOTO|FINISH|CHAMP/.test(kind)) SOUND.cheer();
   else if(/BET/.test(kind)) SOUND.blip();
   else SOUND.kaching();
+  const m = $("moment");
+  m.classList.toggle("champ", opts.cls === "champ");
   $("m-kick").textContent = kind;
   $("m-big").textContent = big;
   $("m-sub").textContent = sub || "";
   $("m-det").textContent = det || "";
   $("m-tx").textContent  = tx ? ("◎ " + tx) : "";
-  $("moment").classList.add("on");
+  m.classList.add("on");
   burst();
   clearTimeout(momentTimer);
-  momentTimer = setTimeout(()=>{ $("moment").classList.remove("on"); momentActive = false; }, 4200);
+  momentTimer = setTimeout(()=>{ m.classList.remove("on"); momentActive = false; }, opts.ms || 4200);
 }
 
 /* throttle so moments feel like events, not a strobe */
@@ -771,15 +802,31 @@ function renderCard(){
   }).join("");
 }
 function advanceCard(winner){
+  const wasFinal = heatIdx >= CARD.length - 1;
   cardWinners[heatIdx] = winner;
-  if(heatIdx >= CARD.length - 1){ setTimeout(()=>{ nightNum++; cardWinners.length = 0; heatIdx = 0; renderCard(); }, 6000); }
-  else heatIdx++;
   renderCard();
+  if(wasFinal){
+    // crown the night champion (the FINAL decides it) — after the photo-finish beat
+    setTimeout(()=> fireMoment(`NIGHT ${nightNum} CHAMPION`, "🏆 " + winner.toUpperCase(),
+      `${season.pts[winner]||0} season points`, "race night complete · new card forming", null,
+      { sound:"cheer", cls:"champ", ms:5500 }), 4700);
+    setTimeout(()=>{ nightNum++; cardWinners.length = 0; heatIdx = 0; renderCard(); renderSeason(); }, 11000);
+  } else heatIdx++;
 }
 renderCard();
 
+/* sponsor-rotation bug — cycles the native-Solana stack */
+const SPONSORS = ["◎ Solana","x402 · USDC","World ID","Walrus","Switchboard","SNS · .sol","Helius","Kora relayer","ERC-8004","Ledger","Privy TEE"];
+let spi = 0;
+setInterval(()=>{
+  const el = $("sp-name"); if(!el) return;
+  el.style.opacity = 0;
+  setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400);
+}, 2600);
+
 /* ─── season standings — championship points that carry across nights ─────── */
 const SEASON_KEY = "clanker500.season.v1";
+if(new URLSearchParams(location.search).get("season") === "reset"){ try{ localStorage.removeItem(SEASON_KEY); }catch{} }
 let season = { races:0, wins:{guard:0,courier:0}, pts:{guard:0,courier:0} };
 try{ const s = JSON.parse(localStorage.getItem(SEASON_KEY)); if(s && s.wins && s.pts) season = s; }catch{}
 const saveSeason = ()=>{ try{ localStorage.setItem(SEASON_KEY, JSON.stringify(season)); }catch{} };

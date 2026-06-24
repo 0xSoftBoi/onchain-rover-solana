@@ -245,6 +245,33 @@
   .cr-w{font-weight:700; color:var(--amber); white-space:nowrap;}
   .cr.live .cr-w{color:var(--green); animation:blink 1.2s infinite;}
 
+  /* ── prediction alert (right rail) ── */
+  #predict{position:fixed; right:2.6vw; top:14vh; width:22vw; z-index:55; padding:1.6vh 1.2vw;
+    background:linear-gradient(180deg, rgba(20,20,26,.95), rgba(10,10,12,.95)); border:1px solid var(--line);
+    border-top:.4vh solid var(--amber); border-radius:1.2vh; box-shadow:0 1vh 5vh rgba(0,0,0,.55); backdrop-filter:blur(3px);
+    transform:translateX(125%); transition:transform .5s cubic-bezier(.2,.8,.2,1); will-change:transform;}
+  #predict.on{transform:none;}
+  #predict.locked{border-top-color:var(--red);}
+  .pr-head{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.4vh; text-transform:uppercase;
+    color:var(--amber); letter-spacing:.03em; text-shadow:0 0 1.6vh var(--glow);}
+  #predict.locked .pr-head{color:var(--red); text-shadow:0 0 1.6vh rgba(225,6,0,.5);}
+  .pr-clock{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--txt);
+    font-variant-numeric:tabular-nums; line-height:1; margin:.3vh 0 .5vh;}
+  .pr-clock.closing{color:var(--red); animation:blink .6s infinite;}
+  .pr-pool-row{font-size:1.4vh; color:var(--dim); margin-bottom:1.1vh;}
+  .pr-pool-row span{color:var(--amber); font-weight:700;}
+  .pr-sides{display:flex; gap:1vw;}
+  .pr-side{flex:1; display:flex; flex-direction:column; gap:.7vh; align-items:center;}
+  .pr-s-h{display:flex; justify-content:space-between; width:100%; font-family:var(--disp); font-style:italic; font-weight:900; font-size:1.9vh;}
+  .pr-side.guard .pr-s-h{color:var(--teal);} .pr-side.courier .pr-s-h{color:var(--amber);}
+  .pr-s-h .pr-odds{color:var(--txt); font-variant-numeric:tabular-nums;}
+  .pr-bar-track{width:100%; height:.7vh; background:rgba(255,255,255,.1); border-radius:2px; overflow:hidden;}
+  .pr-bar{height:100%; transition:width .6s ease;}
+  .pr-bar.guard{background:var(--teal);} .pr-bar.courier{background:var(--amber);}
+  #predict .qrwrap.sm{width:8vw; height:8vw; padding:.7vh; box-shadow:none;}
+  #predict.locked .qrwrap{opacity:.25; filter:grayscale(1); transition:.3s;}
+  .pr-foot{margin-top:1.1vh; font-size:1.15vh; letter-spacing:.1em; text-transform:uppercase; color:var(--teal); text-align:center;}
+
   /* ── floating bet reactions ── */
   #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
   .float{position:absolute; bottom:13vh; font-weight:800; font-size:2.3vh; white-space:nowrap;
@@ -262,6 +289,7 @@
   .season-bar .pt .u{font-size:1.2vh; color:var(--dim); font-family:var(--mono); font-style:normal; font-weight:400; letter-spacing:.08em;}
   .season-bar .dash{color:var(--red); font-weight:900;}
   .season-bar .meta{margin-left:auto; color:var(--dim); font-size:1.25vh; letter-spacing:.08em;}
+  .backers-h{margin-top:1.4vh; font-size:1.4vh; letter-spacing:.18em; text-transform:uppercase; color:var(--teal); font-weight:700;}
 
   /* ── sponsor-rotation bug (top center) ── */
   #sponsors{position:fixed; top:3vh; left:50%; transform:translateX(-50%); z-index:40; display:flex; align-items:center; gap:.9vw;
@@ -303,6 +331,19 @@
   #boot .bl{font-size:1.7vh; color:var(--txt); min-height:2.4vh;}
 
   ::-webkit-scrollbar{width:0;height:0;}
+
+  /* OBS perf: pause decorative animation when the source is hidden (best-effort) */
+  body.hidden-src #streaks, body.hidden-src .live i, body.hidden-src .cam .sl,
+  body.hidden-src .scanline-qr, body.hidden-src .cr.live .cr-w{ animation-play-state:paused; }
+  /* ?lite=1 — strip purely decorative animation for weak encoders (dependable, visibility-independent) */
+  body.lite #streaks{ animation:none; }
+  body.lite .cam .sl, body.lite .scanline-qr{ display:none; }
+  body.lite .live i{ animation:none; opacity:1; }
+  /* ?clean=1 — minimal mode: strip heavy livery, let the image breathe */
+  body.clean #streaks, body.clean #scan, body.clean .checker, body.clean #sponsors{ display:none; }
+  body.clean #scorebug, body.clean #ticker{ transition:opacity .4s ease; }
+  body.clean.sb-hide #scorebug, body.clean.sb-hide #ticker{ opacity:0; pointer-events:none; }
+
   @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important;} }
 </style>
 </head>
@@ -393,6 +434,8 @@
         <h3>🏆 Network Leaderboard</h3>
         <div class="season-bar" id="season-bar"></div>
         <div id="lb-rows"></div>
+        <div class="backers-h">🎟️ Verified Backers Tonight</div>
+        <div id="backers-rows"></div>
       </div>
       <div class="board">
         <h3>🤖 Fleet Rating</h3>
@@ -418,6 +461,26 @@
   <div class="pl-body"><div class="pl-lab">Now driving · <b id="pl-car">CAR 01 · COURIER</b></div><div class="pl-who" id="pl-who">@viewer</div></div>
   <div class="pl-timer"><div class="pl-time" id="pl-time">2:00</div><div class="pl-track"><div class="pl-bar" id="pl-bar"></div></div></div>
 </div>
+
+<!-- prediction alert (right rail) -->
+<aside id="predict">
+  <div class="pr-head" id="pr-head">🟡 PREDICTION OPEN</div>
+  <div class="pr-clock" id="pr-clock">0:00</div>
+  <div class="pr-pool-row"><span id="pr-pool">$0.00</span> pool · <span id="pr-bets">0 bets</span></div>
+  <div class="pr-sides">
+    <div class="pr-side guard">
+      <div class="pr-s-h"><span>GUARD</span><span class="pr-odds" id="pr-odds-guard">—x</span></div>
+      <div class="pr-bar-track"><div class="pr-bar guard" id="pr-bar-guard"></div></div>
+      <div class="qrwrap sm"><div id="qr-pred-guard"></div></div>
+    </div>
+    <div class="pr-side courier">
+      <div class="pr-s-h"><span>COURIER</span><span class="pr-odds" id="pr-odds-courier">—x</span></div>
+      <div class="pr-bar-track"><div class="pr-bar courier" id="pr-bar-courier"></div></div>
+      <div class="qrwrap sm"><div id="qr-pred-courier"></div></div>
+    </div>
+  </div>
+  <div class="pr-foot">📲 scan · World ID · one human, one bet</div>
+</aside>
 
 <!-- pit reporter ticker -->
 <div id="ticker">
@@ -497,6 +560,7 @@ const SOUND = (function(){
       [784,988,1175].forEach((f,i)=>tone(f,0.10+i*0.12,0.34,"triangle",0.11)); // fanfare
     },
     blip(){ if(!on) return; tone(660,0,0.07,"square",0.09); tone(990,0.06,0.10,"square",0.09); },
+    lock(){ if(!on) return; tone(440,0,0.09,"sawtooth",0.13); tone(220,0.08,0.20,"sawtooth",0.12); },
   };
   ["pointerdown","keydown","touchstart"].forEach(ev => addEventListener(ev, ()=>api.unlock(), { once:true }));
   return api;
@@ -543,30 +607,56 @@ function drawSpark(arr, lineEl){
   }).join(" "));
 }
 
+/* ─── timer registry + visibility/perf controller (OBS-friendly) ──────────── */
+const _q = new URLSearchParams(location.search);
+const VIS = _q.get("freeze") !== "0";
+if(_q.get("lite") === "1") document.body.classList.add("lite");
+if(_q.get("clean") === "1") document.body.classList.add("clean");
+const TIMERS = [];
+function every(fn, ms){ const t = { fn, ms, id:null }; t.id = setInterval(fn, ms); TIMERS.push(t); return t; }
+function stopTimers(){ TIMERS.forEach(t=>{ if(t.id != null){ clearInterval(t.id); t.id = null; } }); }
+function startTimers(){ TIMERS.forEach(t=>{ if(t.id == null){ try{ t.fn(); }catch{} t.id = setInterval(t.fn, t.ms); } }); }
+function onVis(){
+  if(!VIS) return;
+  const tk = $("tk-track");
+  if(document.hidden){ stopTimers(); document.body.classList.add("hidden-src"); if(tk) tk.style.animationPlayState = "paused"; }
+  else { document.body.classList.remove("hidden-src"); if(tk) tk.style.animationPlayState = "running"; startTimers(); }
+}
+document.addEventListener("visibilitychange", onVis);
+
 /* clock */
 function clk(){ $("clock").textContent = new Date().toTimeString().slice(0,8); }
 clk(); setInterval(clk, 1000);
 
 /* ─── poll loop: bind scorebug + scenes to live (mock) data ───────────────── */
+let widCfg = null;
+async function loadWid(){ widCfg = await j("/worldid/config"); }   // invariant — fetched rarely, not every tick
 async function poll(){
+  if(document.hidden) return;
   const st = await j("/race/state");
   const od = await j("/race/odds");
   const fe = await j("/onchain/feed");
   const status = (st && st.status) || "betting";
+  const prev = prevStatus;   // capture before reassignment, for prediction-alert transitions
 
   // betting-window countdown: (re)arm when we enter the betting phase
   if(status === "betting"){ if(prevStatus !== "betting") bettingDeadline = Date.now() + BET_WINDOW; }
   else { bettingDeadline = 0; }
   prevStatus = status; curStatus = status;
 
+  // clean mode: let the image breathe — hide furniture only during the settle/celebration beat
+  document.body.classList.toggle("sb-hide", document.body.classList.contains("clean") && status === "finished");
+
   // dynamic per-side bet deep-links → QR (race id + World ID action/app + side), cached
-  const wid = await j("/worldid/config");
+  const wid = widCfg;   // cached invariant (see loadWid)
   const raceId = (st && st.id) || "clanker-500";
   const action = (wid && wid.action) || "rover-gp-bet";
   const app = (wid && wid.appId) ? "&app=" + encodeURIComponent(wid.appId) : "";
   const betBase = `${BET_BASE}?race=${encodeURIComponent(raceId)}&action=${encodeURIComponent(action)}${app}`;
   makeQR($("qr-bet-guard"),   betBase + "&side=guard");
   makeQR($("qr-bet-courier"), betBase + "&side=courier");
+  makeQR($("qr-pred-guard"),   betBase + "&side=guard");
+  makeQR($("qr-pred-courier"), betBase + "&side=courier");
 
   // phase chip + scorebug status
   const phaseEl = $("phase"), sbStatus = $("sb-status");
@@ -604,7 +694,12 @@ async function poll(){
     if(typeof fe.count === "number"){ $("sb-laps").textContent = fe.count + " laps · USDC"; lastCount = fe.count; }
   }
 
-  // cams
+  handlePredict(prev, status, od, fe);
+}
+
+/* cams change rarely — poll on a slower cadence than the scorebug */
+async function pollCams(){
+  if(document.hidden) return;
   const status2 = await j("/status");
   if(status2 && status2.robots){
     for(const n of ["guard","courier"]){
@@ -618,7 +713,46 @@ async function poll(){
     }
   }
 }
-poll(); setInterval(poll, 1100);
+/* ─── prediction alert (Twitch-Predictions-style) — driven by status transitions ─ */
+let predHideTimer = null;
+function setPredContent(od){
+  if(!od) return;
+  const g = od.odds ? od.odds.guard : null, c = od.odds ? od.odds.courier : null;
+  $("pr-odds-guard").textContent   = (g??"—") + "x";
+  $("pr-odds-courier").textContent = (c??"—") + "x";
+  const pg = od.pool ? od.pool.guard : 0, pc = od.pool ? od.pool.courier : 0, tot = (pg + pc) || 1;
+  const gp = Math.round(pg / tot * 100);
+  $("pr-bar-guard").style.width   = gp + "%";
+  $("pr-bar-courier").style.width = (100 - gp) + "%";
+  $("pr-pool").textContent = "$" + (od.total != null ? od.total.toFixed(2) : (pg + pc).toFixed(2));
+  $("pr-bets").textContent = (od.count != null ? od.count : 0) + " bets";
+}
+function handlePredict(from, to, od){
+  const el = $("predict"); if(!el) return;
+  if(to === "betting"){
+    setPredContent(od);
+    if(from !== "betting"){                       // OPEN transition (incl. cold load)
+      clearTimeout(predHideTimer);
+      el.classList.remove("locked"); el.classList.add("on");
+      $("pr-head").textContent = "🟡 PREDICTION OPEN";
+      SOUND.blip();
+    }
+  } else if(to === "racing"){
+    if(from === "betting"){                        // LOCK transition
+      el.classList.add("on", "locked");
+      $("pr-head").textContent = "🔒 BETS LOCKED";
+      SOUND.lock();
+      clearTimeout(predHideTimer);
+      predHideTimer = setTimeout(()=> el.classList.remove("on"), 2600);
+    }
+  } else {                                          // finished — clear the rail for the takeover
+    clearTimeout(predHideTimer);
+    el.classList.remove("on", "locked");
+  }
+}
+
+loadWid().then(()=>{ poll(); every(poll, 1100); });
+pollCams(); every(pollCams, 2500);
 
 /* ─── betting countdown display (smooth, 250ms) ───────────────────────────── */
 function tickBetClock(){
@@ -628,6 +762,7 @@ function tickBetClock(){
     val.textContent = rem > 0 ? fmtClock(rem) : "LOCKING…";
     wrap.classList.toggle("closing", rem < 6000);
     wrap.style.visibility = "visible";
+    const pc = $("pr-clock"); if(pc){ pc.textContent = rem > 0 ? fmtClock(rem) : "LOCKING…"; pc.classList.toggle("closing", rem < 6000); }
   } else {
     val.textContent = "CLOSED"; wrap.classList.remove("closing");
   }
@@ -637,6 +772,7 @@ setInterval(tickBetClock, 250);
 /* ─── pit reporter ticker (rover reasoning feed → scrolling commentary) ────── */
 let tkLastT = 0;
 async function pollTicker(){
+  if(document.hidden) return;
   const rz = await j("/reason/feed");
   if(!rz || !rz.events || !rz.events.length) return;
   if(rz.events[0].t === tkLastT) return;                 // nothing new
@@ -652,10 +788,12 @@ async function pollTicker(){
   track.style.animation = "none"; void track.offsetWidth;  // restart cleanly
   track.style.animation = `marq ${dur.toFixed(1)}s linear infinite`;
 }
-pollTicker(); setInterval(pollTicker, 3000);
+pollTicker(); every(pollTicker, 3000);
 
 /* standings (slower) */
 async function pollStandings(){
+  if(document.hidden) return;
+  if(!widCfg) loadWid();   // pick up a late ?api sidecar config
   const lb = await j("/leaderboard/network");
   if(lb && lb.rows){
     $("lb-rows").innerHTML = lb.rows.slice(0,5).map((r,i)=>
@@ -667,7 +805,7 @@ async function pollStandings(){
     if(rep.courier) $("rep-courier").textContent = Math.round(rep.courier.avg) + "/100";
   }
 }
-pollStandings(); setInterval(pollStandings, 4000);
+pollStandings(); every(pollStandings, 4000);
 
 /* ─── scene auto-cycle ─────────────────────────────────────────────────────── */
 const SCENES = [
@@ -696,6 +834,7 @@ sizeCanvas(); addEventListener("resize", sizeCanvas);
 let parts = [], confettiRAF = null;
 const COLORS = ["#ffd400","#14f195","#e10600","#9945ff","#f6f4ee"];
 function burst(){
+  if(document.hidden) return;
   parts = [];
   for(let i=0;i<160;i++){
     parts.push({ x:innerWidth/2 + (Math.random()-.5)*innerWidth*.5, y:innerHeight*.5,
@@ -706,6 +845,7 @@ function burst(){
   if(!confettiRAF) confettiRAF = requestAnimationFrame(drawConfetti);
 }
 function drawConfetti(){
+  if(document.hidden){ cx.clearRect(0,0,cv.width,cv.height); confettiRAF = null; return; }
   cx.clearRect(0,0,cv.width,cv.height);
   let alive = 0;
   for(const p of parts){
@@ -818,7 +958,7 @@ renderCard();
 /* sponsor-rotation bug — cycles the native-Solana stack */
 const SPONSORS = ["◎ Solana","x402 · USDC","World ID","Walrus","Switchboard","SNS · .sol","Helius","Kora relayer","ERC-8004","Ledger","Privy TEE"];
 let spi = 0;
-setInterval(()=>{
+every(()=>{
   const el = $("sp-name"); if(!el) return;
   el.style.opacity = 0;
   setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400);
@@ -870,10 +1010,33 @@ function maybeFloat(e){
   }
 }
 
-/* the bus feeds moments, the pilot credit, the bracket, and bet reactions */
+/* ─── verified backers tonight — loyalty wall (carries across the night) ──── */
+const BACKERS_KEY = "clanker500.backers.v1";
+if(new URLSearchParams(location.search).get("backers") === "reset"){ try{ localStorage.removeItem(BACKERS_KEY); }catch{} }
+let backers = {};
+try{ const b = JSON.parse(localStorage.getItem(BACKERS_KEY)); if(b && typeof b === "object") backers = b; }catch{}
+const saveBackers = ()=>{ try{ localStorage.setItem(BACKERS_KEY, JSON.stringify(backers)); }catch{} };
+let backerTurn = 0;
+function renderBackers(){
+  const el = $("backers-rows"); if(!el) return;
+  const rows = Object.keys(backers).map(h=>({ h, ...backers[h] })).sort((a,b)=> b.usdc - a.usdc).slice(0,5);
+  el.innerHTML = rows.length
+    ? rows.map((r,i)=> `<div class="row p${i+1}"><span class="pos">${i+1}</span><span class="who">${r.h}</span><span class="sc">$${r.usdc.toFixed(2)} · ${r.bets}🎟️</span></div>`).join("")
+    : `<div class="row"><span class="pos">—</span><span class="who" style="color:var(--dim)">no bets yet · be the first on the wall</span><span class="sc"></span></div>`;
+}
+function tallyBacker(e){
+  if(!(e.layer === "chain" && e.kind === "BET" && e.severity === "ok" && typeof e.usdc === "number")) return;
+  const h = HANDLES[(backerTurn++) % HANDLES.length];          // synthesized "verified backer" (no real handle on BET events)
+  const cur = backers[h] || { usdc:0, bets:0 };
+  cur.usdc += e.usdc; cur.bets += 1;
+  backers[h] = cur; saveBackers(); renderBackers();
+}
+renderBackers();
+
+/* the bus feeds moments, the pilot credit, the bracket, bet reactions, and the backers wall */
 try{
   const es = new EventSource("/events/stream");
-  es.onmessage = (m)=>{ try{ const e = JSON.parse(m.data); maybeMoment(e); maybePilot(e); maybeFloat(e); }catch{} };
+  es.onmessage = (m)=>{ try{ const e = JSON.parse(m.data); maybeMoment(e); maybePilot(e); maybeFloat(e); tallyBacker(e); }catch{} };
 }catch{}
 
 /* ─── boot sequence ───────────────────────────────────────────────────────── */

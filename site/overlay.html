@@ -164,6 +164,9 @@
   #snd:hover{opacity:1;} #snd.off{color:var(--dim);}
   body.bartop #snd{top:auto; bottom:11vh;}
 
+  /* OBS perf: pause decorative animation when source hidden; ?lite=1 strips it entirely */
+  body.hidden-src .live i{ animation-play-state:paused; }
+  body.lite .live i{ animation:none; opacity:1; }
   @media (prefers-reduced-motion:reduce){ *{animation:none !important;} #confetti{display:none;} }
 </style>
 </head>
@@ -283,6 +286,21 @@ const SOUND = (function(){
 
 const sol = (s)=>(s||"").replace(/\.eth\b/g,".sol");
 
+/* ── timer registry + visibility/perf controller (OBS-friendly) ── */
+const VIS = Q.get("freeze") !== "0";
+if(Q.get("lite") === "1") document.body.classList.add("lite");
+const TIMERS = [];
+function every(fn, ms){ const t = { fn, ms, id:null }; t.id = setInterval(fn, ms); TIMERS.push(t); return t; }
+function stopTimers(){ TIMERS.forEach(t=>{ if(t.id != null){ clearInterval(t.id); t.id = null; } }); }
+function startTimers(){ TIMERS.forEach(t=>{ if(t.id == null){ try{ t.fn(); }catch{} t.id = setInterval(t.fn, t.ms); } }); }
+function onVis(){
+  if(!VIS) return;
+  const tk = $("tk-track");
+  if(document.hidden){ stopTimers(); document.body.classList.add("hidden-src"); if(tk) tk.style.animationPlayState = "paused"; }
+  else { document.body.classList.remove("hidden-src"); if(tk) tk.style.animationPlayState = "running"; startTimers(); }
+}
+document.addEventListener("visibilitychange", onVis);
+
 /* clock */
 function clk(){ $("clock").textContent = new Date().toTimeString().slice(0,8); }
 clk(); setInterval(clk, 1000);
@@ -302,6 +320,7 @@ function drawSpark(arr, lineEl){
 }
 async function j(u){ try{ return await (await fetch(u)).json(); }catch{ return null; } }
 async function poll(){
+  if(document.hidden) return;
   const st = await j("/race/state"), od = await j("/race/odds"), fe = await j("/onchain/feed");
   const status = (st && st.status) || "betting";
 
@@ -337,11 +356,12 @@ async function poll(){
     if(typeof fe.count === "number") $("sb-laps").textContent = fe.count + " laps · USDC";
   }
 }
-poll(); setInterval(poll, 1100);
+poll(); every(poll, 1100);
 
 /* ── pit reporter ticker (rover reasoning feed → scrolling commentary) ── */
 let tkLastT = 0;
 async function pollTicker(){
+  if(document.hidden) return;
   const rz = await j("/reason/feed");
   if(!rz || !rz.events || !rz.events.length) return;
   if(rz.events[0].t === tkLastT) return;
@@ -357,7 +377,7 @@ async function pollTicker(){
   track.style.animation = "none"; void track.offsetWidth;
   track.style.animation = `marq ${dur.toFixed(1)}s linear infinite`;
 }
-pollTicker(); setInterval(pollTicker, 3000);
+pollTicker(); every(pollTicker, 3000);
 
 /* ── confetti (transparent canvas) ── */
 const cv = $("confetti"), cx = cv.getContext("2d");
@@ -366,6 +386,7 @@ sizeCanvas(); addEventListener("resize", sizeCanvas);
 let parts = [], raf = null;
 const COLORS = ["#ffd400","#14f195","#e10600","#9945ff","#f6f4ee"];
 function burst(){
+  if(document.hidden) return;
   parts = [];
   for(let i=0;i<170;i++){
     parts.push({ x:innerWidth/2 + (Math.random()-.5)*innerWidth*.5, y:innerHeight*.5,
@@ -376,6 +397,7 @@ function burst(){
   if(!raf) raf = requestAnimationFrame(draw);
 }
 function draw(){
+  if(document.hidden){ cx.clearRect(0,0,cv.width,cv.height); raf = null; return; }
   cx.clearRect(0,0,cv.width,cv.height);
   let alive = 0;
   for(const p of parts){
@@ -474,7 +496,7 @@ if(Q.get("sponsors") === "1"){
   $("sponsors").classList.add("show");
   const SPONSORS = ["◎ Solana","x402 · USDC","World ID","Walrus","Switchboard","SNS · .sol","Helius","Kora relayer","ERC-8004","Ledger","Privy TEE"];
   let spi = 0;
-  setInterval(()=>{ const el = $("sp-name"); el.style.opacity = 0; setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400); }, 2600);
+  every(()=>{ const el = $("sp-name"); el.style.opacity = 0; setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400); }, 2600);
 }
 
 /* ?demo=1 — fire a test moment every 12s so you can frame the graphic in OBS */

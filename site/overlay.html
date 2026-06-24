@@ -119,6 +119,39 @@
     background:linear-gradient(90deg, var(--violet), var(--teal)); color:#06121a; font-weight:900; letter-spacing:.12em;
     font-size:1.8vh; text-transform:uppercase; box-shadow:0 .4vh 2vh rgba(0,0,0,.6);}
 
+  /* ── floating bet reactions ── */
+  #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
+  .float{position:absolute; bottom:14vh; font-weight:800; font-size:2.3vh; white-space:nowrap;
+    text-shadow:0 0 1vh #000, 0 .2vh .5vh rgba(0,0,0,.85); animation:floatup 2.8s ease-out forwards; will-change:transform,opacity;}
+  .float.guard{color:var(--teal);} .float.courier{color:var(--amber);} .float.amt{color:var(--amber);}
+  .float .em{font-size:3vh;}
+  @keyframes floatup{0%{opacity:0; transform:translateY(0) scale(.7);}15%{opacity:1; transform:translateY(-3vh) scale(1);}100%{opacity:0; transform:translateY(-40vh) scale(1.05);}}
+
+  /* ── "now driving" pilot lower-third ── */
+  #pilot{position:fixed; left:3vw; bottom:18vh; z-index:50; display:flex; align-items:stretch;
+    transform:translateX(-118%); transition:transform .5s cubic-bezier(.2,.8,.2,1); will-change:transform;
+    background:linear-gradient(90deg, rgba(153,69,255,.94), rgba(14,15,19,.9)); border:1px solid var(--violet);
+    border-radius:1vh; overflow:hidden; box-shadow:0 1vh 4vh rgba(0,0,0,.55); filter:drop-shadow(0 .3vh .7vh rgba(0,0,0,.7));}
+  #pilot.on{transform:none;}
+  body.bartop #pilot{bottom:auto; top:18vh;}
+  #pilot .pl-flag{display:flex; align-items:center; justify-content:center; font-size:3vh; padding:0 1.2vw; background:rgba(0,0,0,.25);}
+  #pilot .pl-body{display:flex; flex-direction:column; justify-content:center; padding:1vh 1.4vw;}
+  #pilot .pl-lab{font-size:1.3vh; letter-spacing:.22em; text-transform:uppercase; color:#e6d4ff;}
+  #pilot .pl-lab b{color:#fff;}
+  #pilot .pl-who{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3vh; color:#fff; line-height:1; margin-top:.3vh;}
+  #pilot .pl-timer{display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 1.4vw; min-width:7vw; background:rgba(0,0,0,.3);}
+  #pilot .pl-time{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; color:var(--teal); font-variant-numeric:tabular-nums;}
+  #pilot .pl-track{width:6vw; height:.6vh; background:rgba(255,255,255,.18); border-radius:2px; margin-top:.6vh; overflow:hidden;}
+  #pilot .pl-bar{height:100%; width:100%; background:var(--teal); transition:width 1s linear;}
+
+  /* mute toggle (faint; click also unlocks audio in a browser tab) */
+  #snd{position:fixed; z-index:70; top:11vh; left:3vw; width:4.6vh; height:4.6vh; border-radius:50%;
+    border:1px solid var(--line); background:rgba(10,10,12,.55); color:var(--amber); font-size:2.1vh; cursor:pointer;
+    opacity:.2; transition:opacity .3s; display:flex; align-items:center; justify-content:center;
+    filter:drop-shadow(0 .2vh .5vh rgba(0,0,0,.8));}
+  #snd:hover{opacity:1;} #snd.off{color:var(--dim);}
+  body.bartop #snd{top:auto; bottom:11vh;}
+
   @media (prefers-reduced-motion:reduce){ *{animation:none !important;} #confetti{display:none;} }
 </style>
 </head>
@@ -148,6 +181,15 @@
   <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
 </div>
 
+<div id="floats"></div>
+<button id="snd" title="toggle sound">🔊</button>
+
+<div id="pilot">
+  <div class="pl-flag">🎮</div>
+  <div class="pl-body"><div class="pl-lab">Now driving · <b id="pl-car">CAR 01 · COURIER</b></div><div class="pl-who" id="pl-who">@viewer</div></div>
+  <div class="pl-timer"><div class="pl-time" id="pl-time">2:00</div><div class="pl-track"><div class="pl-bar" id="pl-bar"></div></div></div>
+</div>
+
 <div id="ticker">
   <div class="tk-badge">🎙️ Pit Reporter</div>
   <div class="tk-view"><div class="tk-track" id="tk-track"><span class="tk-seg" id="tk-a"></span><span class="tk-seg" id="tk-b"></span></div></div>
@@ -171,6 +213,60 @@ const Q = new URLSearchParams(location.search);
 if(Q.get("bar") === "top") document.body.classList.add("bartop");
 if(Q.get("bug") === "0")  $("bug").style.display = "none";
 if(Q.get("clock") === "0") $("clk").style.display = "none";
+
+/* ─── sound engine: synthesized cues (WebAudio, no asset files) ───────────── */
+const SOUND = (function(){
+  let on = Q.get("sound") !== "0";
+  let ctx = null;
+  function ac(){
+    if(!ctx){ try{ ctx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ ctx = null; } }
+    if(ctx && ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+  function tone(freq, t0, dur, type, gain){
+    const c = ac(); if(!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || "sine"; o.frequency.value = freq; o.connect(g); g.connect(c.destination);
+    const t = c.currentTime + t0;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain || 0.18, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(t0, dur, gain, freq, q){
+    const c = ac(); if(!c) return;
+    const n = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i] = Math.random()*2 - 1;
+    const src = c.createBufferSource(); src.buffer = buf;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq || 1200; bp.Q.value = q || 0.7;
+    const g = c.createGain(); src.connect(bp); bp.connect(g); g.connect(c.destination);
+    const t = c.currentTime + t0;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain || 0.15, t + dur*0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.start(t); src.stop(t + dur + 0.02);
+  }
+  const api = {
+    on(){ return on; },
+    toggle(){ on = !on; if(on) ac(); return on; },
+    unlock(){ ac(); },
+    kaching(){ if(!on) return; tone(1318.5,0,0.13,"triangle",0.16); tone(1760,0.085,0.30,"triangle",0.18); tone(2637,0.085,0.18,"sine",0.06); },
+    cheer(){ if(!on) return;
+      noise(0,1.25,0.16,820,0.5); noise(0.06,1.1,0.10,2300,0.8);
+      [784,988,1175].forEach((f,i)=>tone(f,0.10+i*0.12,0.34,"triangle",0.11));
+    },
+    blip(){ if(!on) return; tone(660,0,0.07,"square",0.09); tone(990,0.06,0.10,"square",0.09); },
+  };
+  ["pointerdown","keydown","touchstart"].forEach(ev => addEventListener(ev, ()=>api.unlock(), { once:true }));
+  return api;
+})();
+(function(){
+  const b = $("snd");
+  const sync = ()=>{ b.textContent = SOUND.on() ? "🔊" : "🔈"; b.classList.toggle("off", !SOUND.on()); };
+  b.addEventListener("click", ()=>{ SOUND.toggle(); sync(); });
+  if(Q.get("sound") === "0") b.style.display = "none";
+  sync();
+})();
 
 const sol = (s)=>(s||"").replace(/\.eth\b/g,".sol");
 
@@ -274,6 +370,9 @@ function draw(){
 let momentActive = false, momentTimer = null;
 function fireMoment(kind, big, sub, det){
   momentActive = true;
+  if(/PHOTO|FINISH/.test(kind)) SOUND.cheer();
+  else if(/BET/.test(kind)) SOUND.blip();
+  else SOUND.kaching();
   $("m-kick").textContent = kind; $("m-big").textContent = big;
   $("m-sub").textContent = sub || ""; $("m-det").textContent = det || "";
   $("moment").classList.add("on"); burst();
@@ -292,10 +391,60 @@ function maybeMoment(e){
     lastMoment = now;
   }
 }
+/* ── "now driving" pilot lower-third (driven by the x402 pilot bus) ── */
+const HANDLES = ["@pixel_pilot","@gmgm_sol","@degen_dan","@vroomqueen","@boxbox","@solspeed","@apex_anon","@nitro_nat","@chainchaser","@pitlane_pat"];
+const pickHandle = ()=> HANDLES[(Math.random()*HANDLES.length)|0];
+const PILOT_SECS = 120;
+let pilotEnd = 0, pilotIv = null, pilotCool = 0;
+function tickPilot(){
+  const rem = Math.max(0, pilotEnd - Date.now()), s = Math.ceil(rem/1000);
+  $("pl-time").textContent = Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
+  $("pl-bar").style.width = (rem/(PILOT_SECS*1000)*100).toFixed(1) + "%";
+  if(rem <= 0){ clearInterval(pilotIv); $("pilot").classList.remove("on"); }
+}
+function showPilot(rover, handle){
+  $("pl-car").textContent = rover === "guard" ? "CAR 00 · GUARD" : "CAR 01 · COURIER";
+  $("pl-who").textContent = handle;
+  $("pilot").classList.add("on");
+  pilotEnd = Date.now() + PILOT_SECS*1000;
+  clearInterval(pilotIv); pilotIv = setInterval(tickPilot, 1000); tickPilot();
+}
+function maybePilot(e){
+  if(!(e.layer === "backend" && /pilot/i.test(e.detail || ""))) return;
+  const now = Date.now();
+  if(now < pilotCool) return;
+  pilotCool = now + 32000;
+  const rover = /guard/i.test(e.detail) ? "guard" : "courier";
+  showPilot(rover, (e.extra && e.extra.pilot) || pickHandle());
+}
+/* ── floating bet reactions ── */
+const EMOTES = ["🔥","🎉","💸","🪙","🏎️","⚡","🤑","💚"];
+function spawnFloat(html, cls){
+  const c = $("floats"); if(!c) return;
+  const d = document.createElement("div");
+  d.className = "float " + (cls || "");
+  d.style.left = (8 + Math.random()*78) + "vw";
+  d.style.animationDuration = (2.4 + Math.random()*1.1) + "s";
+  d.innerHTML = html;
+  c.appendChild(d);
+  setTimeout(()=> d.remove(), 3600);
+}
+function spawnBetFloat(amt, side){
+  const s = side || "courier";
+  spawnFloat(`🪙 +$${amt.toFixed(2)} <span style="font-size:1.5vh;color:var(--dim)">◎ ${s.toUpperCase()}</span>`, "amt");
+  const n = 2 + (Math.random()*2|0);
+  for(let i=0;i<n;i++) setTimeout(()=> spawnFloat(`<span class="em">${EMOTES[(Math.random()*EMOTES.length)|0]}</span>`, s), i*120);
+}
+function maybeFloat(e){
+  if(e.layer === "chain" && e.kind === "BET" && e.severity === "ok" && typeof e.usdc === "number"){
+    spawnBetFloat(e.usdc, /guard/i.test(e.detail) ? "guard" : "courier");
+  }
+}
 try{
   const es = new EventSource("/events/stream");
-  es.onmessage = (m)=>{ try{ maybeMoment(JSON.parse(m.data)); }catch{} };
+  es.onmessage = (m)=>{ try{ const e = JSON.parse(m.data); maybeMoment(e); maybePilot(e); maybeFloat(e); }catch{} };
 }catch{}
+if(Q.get("demo") === "1"){ setTimeout(()=> showPilot("courier", pickHandle()), 4000); setInterval(()=> spawnBetFloat(2, Math.random()<0.5?"guard":"courier"), 5000); }
 
 /* ?demo=1 — fire a test moment every 12s so you can frame the graphic in OBS */
 if(Q.get("demo") === "1"){

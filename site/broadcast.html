@@ -126,6 +126,25 @@
   .drivekv .k{color:var(--dim); letter-spacing:.1em; text-transform:uppercase; font-size:1.3vh;}
   .drivekv .v{color:var(--txt);} .drivekv .v.g{color:var(--green);}
 
+  /* per-side bet QRs */
+  .bet-sides{display:flex; gap:1.6vw; width:100%; margin-bottom:1.2vh;}
+  .side{flex:1; display:flex; flex-direction:column; align-items:center; gap:.9vh; padding:1.2vh .6vw 2.4vh; border-radius:1vh;
+    border:1px solid var(--line); background:rgba(0,0,0,.3); transition:.3s;}
+  .side.fav{border-color:var(--amber); box-shadow:0 0 2.6vh rgba(255,212,0,.28); background:rgba(40,32,0,.4);}
+  .side-h{display:flex; align-items:center; gap:.6vw; font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.4vh;}
+  .side-h .car{color:var(--void); border-radius:.4vh; padding:0 .6vw; font-size:1.9vh;}
+  .side.guard .side-h .car{background:var(--teal);} .side.courier .side-h .car{background:var(--amber);}
+  .side-h .lbl{letter-spacing:.04em; color:var(--txt);}
+  .side-h .x{margin-left:.3vw; color:var(--amber); font-variant-numeric:tabular-nums;}
+  .side .qrwrap.sm{width:15vh; height:15vh; padding:1vh; box-shadow:0 0 3vh rgba(255,212,0,.14);}
+  .side-cap{font-size:1.15vh; letter-spacing:.16em; text-transform:uppercase; color:var(--dim);}
+
+  /* mute toggle (faint; click also unlocks audio in a browser tab) */
+  #snd{position:fixed; z-index:70; top:11vh; left:3vw; width:4.6vh; height:4.6vh; border-radius:50%;
+    border:1px solid var(--line); background:rgba(10,10,12,.6); color:var(--amber); font-size:2.1vh; cursor:pointer;
+    opacity:.28; transition:opacity .3s; display:flex; align-items:center; justify-content:center;}
+  #snd:hover{opacity:1;} #snd.off{color:var(--dim);}
+
   /* STANDINGS scene */
   .standings{flex:1; display:grid; grid-template-columns:1.3fr 1fr; gap:2.6vw; min-height:0;}
   .board{background:var(--panel); border:1px solid var(--line); border-top:.4vh solid var(--red); border-radius:1.2vh;
@@ -195,6 +214,52 @@
   .sb-bets .b-lab{font-size:1.15vh; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; text-align:right;}
   .flash{animation:flash .7s ease;}
   @keyframes flash{0%{filter:brightness(2.6)}100%{filter:brightness(1)}}
+
+  /* ── "now driving" pilot lower-third ── */
+  #pilot{position:fixed; left:3vw; bottom:18vh; z-index:50; display:flex; align-items:stretch;
+    transform:translateX(-118%); transition:transform .5s cubic-bezier(.2,.8,.2,1); will-change:transform;
+    background:linear-gradient(90deg, rgba(153,69,255,.94), rgba(14,15,19,.94)); border:1px solid var(--violet);
+    border-radius:1vh; overflow:hidden; box-shadow:0 1vh 4vh rgba(0,0,0,.5);}
+  #pilot.on{transform:none;}
+  #pilot .pl-flag{display:flex; align-items:center; justify-content:center; font-size:3vh; padding:0 1.2vw; background:rgba(0,0,0,.25);}
+  #pilot .pl-body{display:flex; flex-direction:column; justify-content:center; padding:1vh 1.4vw;}
+  #pilot .pl-lab{font-size:1.3vh; letter-spacing:.22em; text-transform:uppercase; color:#e6d4ff;}
+  #pilot .pl-lab b{color:#fff;}
+  #pilot .pl-who{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3vh; color:#fff; line-height:1; margin-top:.3vh;}
+  #pilot .pl-timer{display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 1.4vw; min-width:7vw; background:rgba(0,0,0,.3);}
+  #pilot .pl-time{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; color:var(--teal); font-variant-numeric:tabular-nums;}
+  #pilot .pl-track{width:6vw; height:.6vh; background:rgba(255,255,255,.18); border-radius:2px; margin-top:.6vh; overflow:hidden;}
+  #pilot .pl-bar{height:100%; width:100%; background:var(--teal); transition:width 1s linear;}
+
+  /* ── tonight's card / bracket ── */
+  .card-night{margin-top:1.4vh;}
+  .cn-head{font-size:1.4vh; letter-spacing:.2em; text-transform:uppercase; color:var(--amber); margin-bottom:.8vh; font-weight:700;}
+  .cr{display:grid; grid-template-columns:auto 1fr auto; gap:1vw; align-items:center; padding:.7vh .4vw;
+    border-bottom:1px solid rgba(255,212,0,.08); font-size:1.6vh; opacity:.5; transition:.3s;}
+  .cr.done{opacity:1;} .cr.live{opacity:1; background:rgba(0,208,97,.08); border-radius:.6vh;}
+  .cr-n{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--chrome); min-width:4.5vw; font-size:1.7vh;}
+  .cr.live .cr-n{color:var(--green);}
+  .cr-m{color:var(--dim); letter-spacing:.04em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cr-w{font-weight:700; color:var(--amber); white-space:nowrap;}
+  .cr.live .cr-w{color:var(--green); animation:blink 1.2s infinite;}
+
+  /* ── floating bet reactions ── */
+  #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
+  .float{position:absolute; bottom:13vh; font-weight:800; font-size:2.3vh; white-space:nowrap;
+    text-shadow:0 0 1vh #000, 0 .2vh .5vh rgba(0,0,0,.85); animation:floatup 2.8s ease-out forwards; will-change:transform,opacity;}
+  .float.guard{color:var(--teal);} .float.courier{color:var(--amber);} .float.amt{color:var(--amber);}
+  .float .em{font-size:3vh;}
+  @keyframes floatup{0%{opacity:0; transform:translateY(0) scale(.7);}15%{opacity:1; transform:translateY(-3vh) scale(1);}100%{opacity:0; transform:translateY(-40vh) scale(1.05);}}
+
+  /* ── season standings bar ── */
+  .season-bar{display:flex; align-items:center; gap:1vw; flex-wrap:wrap; margin-bottom:1.2vh; padding:.9vh 1vw;
+    background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:.8vh;}
+  .season-bar .sb-t{font-size:1.2vh; letter-spacing:.2em; text-transform:uppercase; color:var(--dim);}
+  .season-bar .pt{display:flex; align-items:center; gap:.4vw; font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.2vh;}
+  .season-bar .pt.guard{color:var(--teal);} .season-bar .pt.courier{color:var(--amber);}
+  .season-bar .pt .u{font-size:1.2vh; color:var(--dim); font-family:var(--mono); font-style:normal; font-weight:400; letter-spacing:.08em;}
+  .season-bar .dash{color:var(--red); font-weight:900;}
+  .season-bar .meta{margin-left:auto; color:var(--dim); font-size:1.25vh; letter-spacing:.08em;}
 
   /* ── money-moment takeover ── */
   #moment{position:fixed; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -273,14 +338,19 @@
         <h2>Place Your Bet</h2>
         <div class="desc" id="bet-desc">betting open — back a rover</div>
         <div class="betclock" id="betclock"><span class="bc-lab">Betting closes in</span><span class="bc-val" id="bc-val">0:00</span></div>
-        <div class="qrwrap"><div id="qr-bet"></div><span class="scanline-qr"></span></div>
-        <div class="meta">
-          <div class="odds">
-            <div class="o guard"><div class="n">◎ Guard</div><div class="x" id="cta-odds-guard">—</div></div>
-            <div class="o courier"><div class="n">◎ Courier</div><div class="x" id="cta-odds-courier">—</div></div>
+        <div class="bet-sides">
+          <div class="side guard" id="side-guard">
+            <div class="side-h"><span class="car">00</span><span class="lbl">GUARD</span><span class="x" id="cta-odds-guard">—x</span></div>
+            <div class="qrwrap sm"><div id="qr-bet-guard"></div><span class="scanline-qr"></span></div>
+            <div class="side-cap">◎ scan to back guard</div>
           </div>
-          <div class="badge world">World ID · one human · one bet</div>
+          <div class="side courier" id="side-courier">
+            <div class="side-h"><span class="car">01</span><span class="lbl">COURIER</span><span class="x" id="cta-odds-courier">—x</span></div>
+            <div class="qrwrap sm"><div id="qr-bet-courier"></div><span class="scanline-qr"></span></div>
+            <div class="side-cap">◎ scan to back courier</div>
+          </div>
         </div>
+        <div class="badge world">World ID · one human · one bet</div>
       </div>
       <div class="panel drive">
         <div class="kicker">x402 · pay-per-second piloting</div>
@@ -303,6 +373,7 @@
     <div class="standings">
       <div class="board">
         <h3>🏆 Network Leaderboard</h3>
+        <div class="season-bar" id="season-bar"></div>
         <div id="lb-rows"></div>
       </div>
       <div class="board">
@@ -311,13 +382,23 @@
           <div class="repcard"><div class="nm">◎ Guard</div><div class="vv" id="rep-guard">—</div><div class="lb">avg score</div></div>
           <div class="repcard"><div class="nm">◎ Courier</div><div class="vv" id="rep-courier">—</div><div class="lb">avg score</div></div>
         </div>
-        <div class="nextrace">
-          <div class="lab">racing resumes in</div>
-          <div class="big" id="next-race">GREEN FLAG SOON</div>
+        <div class="card-night">
+          <div class="cn-head">🏁 Tonight's Card · Night <span id="night-n">1</span></div>
+          <div id="card-rows"></div>
         </div>
       </div>
     </div>
   </section>
+</div>
+
+<div id="floats"></div>
+<button id="snd" title="toggle sound">🔊</button>
+
+<!-- "now driving" pilot lower-third -->
+<div id="pilot">
+  <div class="pl-flag">🎮</div>
+  <div class="pl-body"><div class="pl-lab">Now driving · <b id="pl-car">CAR 01 · COURIER</b></div><div class="pl-who" id="pl-who">@viewer</div></div>
+  <div class="pl-timer"><div class="pl-time" id="pl-time">2:00</div><div class="pl-track"><div class="pl-bar" id="pl-bar"></div></div></div>
 </div>
 
 <!-- pit reporter ticker -->
@@ -355,6 +436,60 @@
 <script>
 "use strict";
 const $ = (id)=>document.getElementById(id);
+
+/* ─── sound engine: synthesized cues (WebAudio, no asset files) ───────────── */
+const SOUND = (function(){
+  let on = new URLSearchParams(location.search).get("sound") !== "0";
+  let ctx = null;
+  function ac(){
+    if(!ctx){ try{ ctx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ ctx = null; } }
+    if(ctx && ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+  function tone(freq, t0, dur, type, gain){
+    const c = ac(); if(!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || "sine"; o.frequency.value = freq; o.connect(g); g.connect(c.destination);
+    const t = c.currentTime + t0;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain || 0.18, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(t0, dur, gain, freq, q){
+    const c = ac(); if(!c) return;
+    const n = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i] = Math.random()*2 - 1;
+    const src = c.createBufferSource(); src.buffer = buf;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq || 1200; bp.Q.value = q || 0.7;
+    const g = c.createGain(); src.connect(bp); bp.connect(g); g.connect(c.destination);
+    const t = c.currentTime + t0;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain || 0.15, t + dur*0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.start(t); src.stop(t + dur + 0.02);
+  }
+  const api = {
+    on(){ return on; },
+    toggle(){ on = !on; if(on) ac(); return on; },
+    unlock(){ ac(); },
+    kaching(){ if(!on) return; tone(1318.5,0,0.13,"triangle",0.16); tone(1760,0.085,0.30,"triangle",0.18); tone(2637,0.085,0.18,"sine",0.06); },
+    cheer(){ if(!on) return;
+      noise(0,1.25,0.16,820,0.5); noise(0.06,1.1,0.10,2300,0.8);            // crowd roar
+      [784,988,1175].forEach((f,i)=>tone(f,0.10+i*0.12,0.34,"triangle",0.11)); // fanfare
+    },
+    blip(){ if(!on) return; tone(660,0,0.07,"square",0.09); tone(990,0.06,0.10,"square",0.09); },
+  };
+  ["pointerdown","keydown","touchstart"].forEach(ev => addEventListener(ev, ()=>api.unlock(), { once:true }));
+  return api;
+})();
+(function(){
+  const b = $("snd");
+  const sync = ()=>{ b.textContent = SOUND.on() ? "🔊" : "🔈"; b.classList.toggle("off", !SOUND.on()); };
+  b.addEventListener("click", ()=>{ SOUND.toggle(); sync(); });
+  if(new URLSearchParams(location.search).get("sound") === "0") b.style.display = "none";
+  sync();
+})();
 
 /* ─── CONFIG: swap these bases for your real bet / pilot endpoints ────────── */
 const BET_BASE   = "https://clanker500.xyz/bet";    // deep-link: ?race=&action=&app=
@@ -397,12 +532,14 @@ async function poll(){
   else { bettingDeadline = 0; }
   prevStatus = status; curStatus = status;
 
-  // dynamic bet deep-link → QR (race id + World ID action/app), cached
+  // dynamic per-side bet deep-links → QR (race id + World ID action/app + side), cached
   const wid = await j("/worldid/config");
   const raceId = (st && st.id) || "clanker-500";
   const action = (wid && wid.action) || "rover-gp-bet";
   const app = (wid && wid.appId) ? "&app=" + encodeURIComponent(wid.appId) : "";
-  makeQR($("qr-bet"), `${BET_BASE}?race=${encodeURIComponent(raceId)}&action=${encodeURIComponent(action)}${app}`);
+  const betBase = `${BET_BASE}?race=${encodeURIComponent(raceId)}&action=${encodeURIComponent(action)}${app}`;
+  makeQR($("qr-bet-guard"),   betBase + "&side=guard");
+  makeQR($("qr-bet-courier"), betBase + "&side=courier");
 
   // phase chip + scorebug status
   const phaseEl = $("phase"), sbStatus = $("sb-status");
@@ -424,6 +561,8 @@ async function poll(){
     $("run-courier").classList.toggle("lead", !gFav && c!=null);
     $("cam-guard").classList.toggle("leading", gFav && status!=="finished");
     $("cam-courier").classList.toggle("leading", !gFav && status!=="finished");
+    $("side-guard").classList.toggle("fav", gFav && status==="betting");
+    $("side-courier").classList.toggle("fav", !gFav && c!=null && status==="betting");
   }
   if(od && typeof od.count === "number") $("sb-bets").textContent = od.count;
 
@@ -556,6 +695,9 @@ function drawConfetti(){
 let momentTimer = null;
 function fireMoment(kind, big, sub, det, tx){
   momentActive = true;
+  if(/PHOTO|FINISH/.test(kind)) SOUND.cheer();
+  else if(/BET/.test(kind)) SOUND.blip();
+  else SOUND.kaching();
   $("m-kick").textContent = kind;
   $("m-big").textContent = big;
   $("m-sub").textContent = sub || "";
@@ -574,6 +716,8 @@ function maybeMoment(e){
   // race win = the big one
   if(e.kind === "RACE SETTLE"){
     fireMoment("PHOTO FINISH", "🏁 COURIER", "takes the checkered flag", "verdict on-chain · proof on Walrus", null);
+    advanceCard("courier");
+    seasonAdd("courier");
     lastMoment = now; return;
   }
   if(now - lastMoment < 7000) return;                  // cooldown
@@ -584,9 +728,105 @@ function maybeMoment(e){
     lastMoment = now;
   }
 }
+/* ─── "now driving" pilot lower-third (driven by the x402 pilot bus) ──────── */
+const HANDLES = ["@pixel_pilot","@gmgm_sol","@degen_dan","@vroomqueen","@boxbox","@solspeed","@apex_anon","@nitro_nat","@chainchaser","@pitlane_pat"];
+const pickHandle = ()=> HANDLES[(Math.random()*HANDLES.length)|0];
+const PILOT_SECS = 120;
+let pilotEnd = 0, pilotIv = null, pilotCool = 0;
+function tickPilot(){
+  const rem = Math.max(0, pilotEnd - Date.now()), s = Math.ceil(rem/1000);
+  $("pl-time").textContent = Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
+  $("pl-bar").style.width = (rem/(PILOT_SECS*1000)*100).toFixed(1) + "%";
+  if(rem <= 0){ clearInterval(pilotIv); $("pilot").classList.remove("on"); }
+}
+function showPilot(rover, handle){
+  $("pl-car").textContent = rover === "guard" ? "CAR 00 · GUARD" : "CAR 01 · COURIER";
+  $("pl-who").textContent = handle;
+  $("pilot").classList.add("on");
+  pilotEnd = Date.now() + PILOT_SECS*1000;
+  clearInterval(pilotIv); pilotIv = setInterval(tickPilot, 1000); tickPilot();
+}
+function maybePilot(e){
+  if(!(e.layer === "backend" && /pilot/i.test(e.detail || ""))) return;
+  const now = Date.now();
+  if(now < pilotCool) return;                      // don't restack every cycle
+  pilotCool = now + 32000;
+  const rover = /guard/i.test(e.detail) ? "guard" : "courier";
+  showPilot(rover, (e.extra && e.extra.pilot) || pickHandle());
+}
+
+/* ─── tonight's card / bracket — fills in as races settle ─────────────────── */
+const CARD = [
+  { name:"HEAT 1", a:"guard", b:"courier" }, { name:"HEAT 2", a:"guard", b:"courier" },
+  { name:"HEAT 3", a:"guard", b:"courier" }, { name:"FINAL",  a:"guard", b:"courier" },
+];
+let heatIdx = 0, nightNum = 1; const cardWinners = [];
+function renderCard(){
+  $("night-n").textContent = nightNum;
+  $("card-rows").innerHTML = CARD.map((h,i)=>{
+    const w = cardWinners[i], done = w != null, live = i === heatIdx && !done;
+    const res = done ? "🏁 " + w.toUpperCase() : (live ? "LIVE" : "—");
+    return `<div class="cr ${done?'done':''} ${live?'live':''}"><span class="cr-n">${h.name}</span>`+
+      `<span class="cr-m">${h.a.toUpperCase()} vs ${h.b.toUpperCase()}</span><span class="cr-w">${res}</span></div>`;
+  }).join("");
+}
+function advanceCard(winner){
+  cardWinners[heatIdx] = winner;
+  if(heatIdx >= CARD.length - 1){ setTimeout(()=>{ nightNum++; cardWinners.length = 0; heatIdx = 0; renderCard(); }, 6000); }
+  else heatIdx++;
+  renderCard();
+}
+renderCard();
+
+/* ─── season standings — championship points that carry across nights ─────── */
+const SEASON_KEY = "clanker500.season.v1";
+let season = { races:0, wins:{guard:0,courier:0}, pts:{guard:0,courier:0} };
+try{ const s = JSON.parse(localStorage.getItem(SEASON_KEY)); if(s && s.wins && s.pts) season = s; }catch{}
+const saveSeason = ()=>{ try{ localStorage.setItem(SEASON_KEY, JSON.stringify(season)); }catch{} };
+function renderSeason(){
+  const el = $("season-bar"); if(!el) return;
+  const g = season.pts.guard, c = season.pts.courier, lead = g>c ? "guard" : c>g ? "courier" : null;
+  el.innerHTML =
+    `<span class="sb-t">Season</span>`+
+    `<span class="pt guard">${lead==='guard'?'👑 ':''}GUARD <span class="u">${g} pts</span></span>`+
+    `<span class="dash">—</span>`+
+    `<span class="pt courier">${lead==='courier'?'👑 ':''}COURIER <span class="u">${c} pts</span></span>`+
+    `<span class="meta">${season.races} races · Night ${nightNum} · 🏁 win = 3 pts</span>`;
+}
+function seasonAdd(winner){
+  season.races++; season.wins[winner] = (season.wins[winner]||0) + 1; season.pts[winner] = (season.pts[winner]||0) + 3;
+  saveSeason(); renderSeason();
+}
+renderSeason();
+
+/* ─── floating bet reactions ──────────────────────────────────────────────── */
+const EMOTES = ["🔥","🎉","💸","🪙","🏎️","⚡","🤑","💚"];
+function spawnFloat(html, cls){
+  const c = $("floats"); if(!c) return;
+  const d = document.createElement("div");
+  d.className = "float " + (cls || "");
+  d.style.left = (8 + Math.random()*78) + "vw";
+  d.style.animationDuration = (2.4 + Math.random()*1.1) + "s";
+  d.innerHTML = html;
+  c.appendChild(d);
+  setTimeout(()=> d.remove(), 3600);
+}
+function spawnBetFloat(amt, side){
+  const s = side || "courier";
+  spawnFloat(`🪙 +$${amt.toFixed(2)} <span style="font-size:1.5vh;color:var(--dim)">◎ ${s.toUpperCase()}</span>`, "amt");
+  const n = 2 + (Math.random()*2|0);
+  for(let i=0;i<n;i++) setTimeout(()=> spawnFloat(`<span class="em">${EMOTES[(Math.random()*EMOTES.length)|0]}</span>`, s), i*120);
+}
+function maybeFloat(e){
+  if(e.layer === "chain" && e.kind === "BET" && e.severity === "ok" && typeof e.usdc === "number"){
+    spawnBetFloat(e.usdc, /guard/i.test(e.detail) ? "guard" : "courier");
+  }
+}
+
+/* the bus feeds moments, the pilot credit, the bracket, and bet reactions */
 try{
   const es = new EventSource("/events/stream");
-  es.onmessage = (m)=>{ try{ maybeMoment(JSON.parse(m.data)); }catch{} };
+  es.onmessage = (m)=>{ try{ const e = JSON.parse(m.data); maybeMoment(e); maybePilot(e); maybeFloat(e); }catch{} };
 }catch{}
 
 /* ─── boot sequence ───────────────────────────────────────────────────────── */

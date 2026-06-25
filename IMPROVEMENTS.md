@@ -16,7 +16,7 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 
 ### Tests / verification
 - [ ] Add a `tools/unit.cjs` with pure-function unit tests for `impliedProb`, the alert-queue tier/cap logic, and `drawSpark`; wire into `verify.sh`.
-- [ ] Extend `verify.sh` to run the harness across query modes (`?cb=1 ?vertical=1 ?osd=1 ?blink=1 ?demo=1 ?clean=1`).
+- [x] Extend `verify.sh` to run the harness across 11 query modes per page (cb/vertical/osd/clean/blink/demo/lite/freeze/api/bartop) — catches mode-specific breakage.
 
 ### Accessibility
 - [ ] Full WCAG contrast pass on amber-on-panel and dim text; bump where < 4.5:1.

@@ -320,6 +320,13 @@
   .season-bar .meta{margin-left:auto; color:var(--dim); font-size:1.25vh; letter-spacing:.08em;}
   .backers-h{margin-top:1.4vh; font-size:1.4vh; letter-spacing:.18em; text-transform:uppercase; color:var(--teal); font-weight:700;}
 
+  /* race-control-offline banner (live mode, after consecutive failed polls) */
+  #offline{display:none; position:fixed; left:50%; top:42%; transform:translate(-50%,-50%); z-index:58; text-align:center;
+    padding:2vh 3vw; background:rgba(225,6,0,.16); border:1px solid var(--red); border-radius:1.2vh; backdrop-filter:blur(2px);}
+  body.offline #offline{display:block;}
+  #offline .o-h{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4vh; color:var(--red); text-transform:uppercase; text-shadow:0 0 2vh rgba(225,6,0,.5);}
+  #offline .o-s{font-size:1.6vh; color:var(--chrome); letter-spacing:.1em; margin-top:.6vh;}
+
   /* ── sponsor-rotation bug (top center) ── */
   #sponsors{position:fixed; top:3vh; left:50%; transform:translateX(-50%); z-index:40; display:flex; align-items:center; gap:.9vw;
     padding:.7vh 1.5vw; background:rgba(10,10,12,.6); border:1px solid var(--line); border-radius:99px;
@@ -410,6 +417,7 @@
 </div>
 
 <div id="sponsors"><span class="sp-lab">Powered by</span><span class="sp-name" id="sp-name">◎ Solana</span></div>
+<div id="offline"><div class="o-h">⚠ Race Control Offline</div><div class="o-s">reconnecting to the sidecar…</div></div>
 
 <div id="stage">
   <!-- GRID / RACE -->
@@ -641,8 +649,8 @@ let connFail = 0;
 function updateConn(ok){
   const el = $("conn"); if(!el) return;
   if(!API_MODE){ el.className = "conn mock"; el.innerHTML = "<i></i>Mock feed"; return; }
-  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "<i></i>Live sidecar"; }
-  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "<i></i>Reconnecting…"; }
+  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "<i></i>Live sidecar"; document.body.classList.remove("offline"); }
+  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "<i></i>Reconnecting…"; if(connFail >= 3) document.body.classList.add("offline"); }
 }
 updateConn(true);
 const BET_WINDOW = 18000;                            // synthesized betting window (ms)

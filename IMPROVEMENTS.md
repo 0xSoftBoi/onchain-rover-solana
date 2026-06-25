@@ -30,7 +30,7 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 
 ### UX / features
 - [x] Operator hotkeys on the broadcast page: n/→ next scene, p/← prev, m test alert, c clean, l lite (no deps).
-- [ ] "Standby / intermission" scene shown when the sidecar is offline (no live data), so the stream never looks dead.
+- [x] "Race Control Offline" banner (both pages) when live-mode polls keep failing — stream signals a dropped backend instead of frozen data.
 - [x] `STREAMING.md` guide: OBS setup, all query flags (both pages), operator hotkeys, sound, Blinks/ACTIONS_BASE wiring.
 - [ ] Real bet-via-Blink hand-off page: World ID IDKit → nullifier → POST the bet Action (closes the one gap from the Blinks work).
 - [ ] Auto-derive `ACTIONS_BASE` from `/chain/config` when `?api` is set.

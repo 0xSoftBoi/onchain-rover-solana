@@ -176,6 +176,12 @@
   /* OBS perf: pause decorative animation when source hidden; ?lite=1 strips it entirely */
   body.hidden-src .live i{ animation-play-state:paused; }
   body.lite .live i{ animation:none; opacity:1; }
+  /* race-control-offline banner (live mode, transparent-friendly pill) */
+  #offline{display:none; position:fixed; top:8vh; left:50%; transform:translateX(-50%); z-index:58;
+    padding:1vh 1.8vw; background:rgba(225,6,0,.22); border:1px solid var(--red); border-radius:99px;
+    font-family:var(--disp); font-style:italic; font-weight:900; font-size:2vh; color:#fff; text-transform:uppercase;
+    letter-spacing:.06em; filter:drop-shadow(0 .3vh .7vh rgba(0,0,0,.85));}
+  body.offline #offline{display:block;}
   /* ?cb=1 — colorblind-safe: guard/teal + success → blue */
   body.cb{ --teal:#3aa0ff; --green:#3aa0ff; }
   @media (prefers-reduced-motion:reduce){ *{animation:none !important;} #confetti{display:none;} }
@@ -209,6 +215,7 @@
 </div>
 
 <div id="sponsors"><span class="sp-lab">Powered by</span><span class="sp-name" id="sp-name">◎ Solana</span></div>
+<div id="offline">⚠ Race Control Offline</div>
 <div id="floats"></div>
 <button id="snd" title="toggle sound">🔊</button>
 
@@ -316,8 +323,8 @@ let connFail = 0;
 function updateConn(ok){
   const el = $("conn"); if(!el) return;
   if(!API_MODE){ el.className = "conn mock"; el.innerHTML = "Mock feed<i></i>"; return; }
-  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "Live sidecar<i></i>"; }
-  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "Reconnecting…<i></i>"; }
+  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "Live sidecar<i></i>"; document.body.classList.remove("offline"); }
+  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "Reconnecting…<i></i>"; if(connFail >= 3) document.body.classList.add("offline"); }
 }
 updateConn(true);
 

@@ -260,6 +260,21 @@
   .pr-clock.closing{color:var(--red); animation:blink .6s infinite;}
   .pr-pool-row{font-size:1.4vh; color:var(--dim); margin-bottom:1.1vh;}
   .pr-pool-row span{color:var(--amber); font-weight:700;}
+  .pr-prob{display:flex; justify-content:space-between; font-size:1.5vh; font-weight:700; margin-bottom:.4vh;}
+  .pr-prob .pg{color:var(--teal);} .pr-prob .pc{color:var(--amber);}
+  .pr-spark{width:100%; height:3vh; overflow:visible; margin-top:.6vh;}
+  .pr-spark polyline{fill:none; stroke:var(--amber); stroke-width:1.6; stroke-linejoin:round; stroke-linecap:round; filter:drop-shadow(0 0 .6vh var(--glow));}
+  .pr-spark-lab{font-size:1.05vh; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); text-align:center; margin-top:.2vh;}
+
+  /* implied-probability % + movement arrows (shown alongside odds) */
+  .prob{font-size:.66em; color:var(--teal); letter-spacing:.02em; font-weight:700;}
+  .prob .up{color:var(--green);} .prob .dn{color:var(--red);}
+
+  /* live/mock connection badge */
+  .conn{margin-top:.8vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700;}
+  .conn.live{color:var(--green);} .conn.mock{color:var(--dim);}
+  .conn i{display:inline-block; width:.9vh; height:.9vh; border-radius:50%; margin-right:.4vw; vertical-align:middle;}
+  .conn.live i{background:var(--green); box-shadow:0 0 1vh var(--green);} .conn.mock i{background:var(--dim);}
   .pr-sides{display:flex; gap:1vw;}
   .pr-side{flex:1; display:flex; flex-direction:column; gap:.7vh; align-items:center;}
   .pr-s-h{display:flex; justify-content:space-between; width:100%; font-family:var(--disp); font-style:italic; font-weight:900; font-size:1.9vh;}
@@ -364,6 +379,7 @@
 <div id="topright">
   <div class="clock" id="clock">--:--:--</div>
   <div class="phase ph-betting" id="phase">FORMATION LAP</div>
+  <div class="conn" id="conn"></div>
 </div>
 
 <div id="sponsors"><span class="sp-lab">Powered by</span><span class="sp-name" id="sp-name">◎ Solana</span></div>
@@ -466,19 +482,22 @@
 <aside id="predict">
   <div class="pr-head" id="pr-head">🟡 PREDICTION OPEN</div>
   <div class="pr-clock" id="pr-clock">0:00</div>
-  <div class="pr-pool-row"><span id="pr-pool">$0.00</span> pool · <span id="pr-bets">0 bets</span></div>
+  <div class="pr-pool-row">POOL <span id="pr-pool">$0.00</span> · SETTLED <span id="pr-settled">$0.00</span> · <span id="pr-bets">0</span> bets</div>
+  <div class="pr-prob"><span class="pg" id="pr-prob-guard">GUARD —</span><span class="pc" id="pr-prob-courier">COURIER —</span></div>
   <div class="pr-sides">
     <div class="pr-side guard">
-      <div class="pr-s-h"><span>GUARD</span><span class="pr-odds" id="pr-odds-guard">—x</span></div>
+      <div class="pr-s-h"><span>🛡 GUARD</span><span class="pr-odds" id="pr-odds-guard">—x</span></div>
       <div class="pr-bar-track"><div class="pr-bar guard" id="pr-bar-guard"></div></div>
       <div class="qrwrap sm"><div id="qr-pred-guard"></div></div>
     </div>
     <div class="pr-side courier">
-      <div class="pr-s-h"><span>COURIER</span><span class="pr-odds" id="pr-odds-courier">—x</span></div>
+      <div class="pr-s-h"><span>📦 COURIER</span><span class="pr-odds" id="pr-odds-courier">—x</span></div>
       <div class="pr-bar-track"><div class="pr-bar courier" id="pr-bar-courier"></div></div>
       <div class="qrwrap sm"><div id="qr-pred-courier"></div></div>
     </div>
   </div>
+  <svg class="pr-spark" id="pr-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="pr-prob-line" points=""/></svg>
+  <div class="pr-spark-lab">courier implied % over time</div>
   <div class="pr-foot">📲 scan · World ID · one human, one bet</div>
 </aside>
 
@@ -576,6 +595,19 @@ const SOUND = (function(){
 /* ─── CONFIG: swap these bases for your real bet / pilot endpoints ────────── */
 const BET_BASE   = "https://clanker500.xyz/bet";    // deep-link: ?race=&action=&app=
 const DRIVE_BASE = "https://clanker500.xyz/drive";  // deep-link: ?rover=&price=
+// CONFIG: Solana Actions/Blinks base — set to your sidecar's Actions API origin to turn the
+// bet/tip QRs into wallet-signing Blinks. Requires the sidecar /actions.json + /api/actions/* routes.
+const _qs = new URLSearchParams(location.search);
+const ACTIONS_BASE = (_qs.get("actions") || window.CLANKER_ACTIONS || "").replace(/\/$/, "");
+const BLINK_ON = _qs.get("blink") === "1" || !!ACTIONS_BASE;
+
+/* live/mock connection badge — sidecar via ?api / window.CLANKER_API, else mock feed */
+(function(){
+  const api = (_qs.get("api") || window.CLANKER_API || "").trim();
+  const el = $("conn"); if(!el) return;
+  if(api){ el.className = "conn live"; el.innerHTML = "<i></i>Live sidecar"; }
+  else { el.className = "conn mock"; el.innerHTML = "<i></i>Mock feed"; }
+})();
 const BET_WINDOW = 18000;                            // synthesized betting window (ms)
 
 /* ─── QR codes (regenerated only when the encoded link changes) ───────────── */
@@ -597,7 +629,7 @@ const sol = (s)=> (s||"").replace(/\.eth\b/g,".sol");
 let lastCount = 0, lastPurse = 0;
 let curStatus = "betting", prevStatus = "", bettingDeadline = 0;
 const fmtClock = (ms)=>{ const s = Math.ceil(ms/1000); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
-let purseHist = [];
+let purseHist = [], probHist = [];
 function drawSpark(arr, lineEl){
   if(!lineEl || arr.length < 2) return;
   const n = arr.length, max = Math.max(...arr), min = Math.min(...arr), rng = (max - min) || 1;
@@ -605,6 +637,22 @@ function drawSpark(arr, lineEl){
     const x = (i/(n-1))*100, y = 23 - ((v-min)/rng)*21;
     return x.toFixed(1) + "," + y.toFixed(1);
   }).join(" "));
+}
+/* parimutuel implied probability — pool share is the truth; fall back to normalized inverse odds */
+function impliedProb(od){
+  if(od && od.pool && od.pool.guard != null && od.pool.courier != null){
+    const t = (od.pool.guard + od.pool.courier) || 1;
+    return { guard: od.pool.guard / t * 100, courier: od.pool.courier / t * 100 };
+  }
+  const g = od && od.odds && od.odds.guard, c = od && od.odds && od.odds.courier;
+  if(g && c){ const ig = 1/g, ic = 1/c, s = ig + ic; return { guard: ig/s*100, courier: ic/s*100 }; }
+  return { guard: null, courier: null };
+}
+const fmtPct = p => p == null ? "—" : Math.round(p) + "%";
+let prevProb = { guard: null, courier: null };
+function probArrow(prev, p){
+  if(prev == null || p == null || Math.abs(p - prev) < 0.5) return "";
+  return p > prev ? '<span class="up">▲</span>' : '<span class="dn">▼</span>';
 }
 
 /* ─── timer registry + visibility/perf controller (OBS-friendly) ──────────── */
@@ -665,13 +713,16 @@ async function poll(){
   else if(status === "racing"){ phaseEl.textContent = "🟢 GREEN FLAG"; sbStatus.textContent="RACING"; sbStatus.style.color="var(--green)"; $("bet-desc").textContent="🔒 betting closed — cars are on track"; }
   else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = (st&&st.winner? sol(st.winner).toUpperCase()+" WINS":"FINISHED"); sbStatus.style.color="var(--violet)"; $("bet-desc").textContent="results in — next grid forming"; }
 
-  // odds → scorebug + CTA
+  // odds → scorebug + CTA (with implied probability % + movement arrows)
   if(od && od.odds){
     const g = od.odds.guard, c = od.odds.courier;
-    $("sb-odds-guard").innerHTML   = (g??"—")+"<small>x</small>";
-    $("sb-odds-courier").innerHTML = (c??"—")+"<small>x</small>";
-    $("cta-odds-guard").textContent   = (g??"—")+"x";
-    $("cta-odds-courier").textContent = (c??"—")+"x";
+    const pr = impliedProb(od);
+    const agar = probArrow(prevProb.guard, pr.guard), acar = probArrow(prevProb.courier, pr.courier);
+    $("sb-odds-guard").innerHTML   = (g??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.guard)+agar+'</span>';
+    $("sb-odds-courier").innerHTML = (c??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.courier)+acar+'</span>';
+    $("cta-odds-guard").innerHTML   = (g??"—")+'x <span class="prob">'+fmtPct(pr.guard)+'</span>';
+    $("cta-odds-courier").innerHTML = (c??"—")+'x <span class="prob">'+fmtPct(pr.courier)+'</span>';
+    prevProb = pr;
     // favourite (lower odds) gets the lead highlight
     const gFav = (g!=null && c!=null) ? g < c : false;
     $("run-guard").classList.toggle("lead", gFav);
@@ -715,22 +766,26 @@ async function pollCams(){
 }
 /* ─── prediction alert (Twitch-Predictions-style) — driven by status transitions ─ */
 let predHideTimer = null;
-function setPredContent(od){
+function setPredContent(od, pushHist){
   if(!od) return;
   const g = od.odds ? od.odds.guard : null, c = od.odds ? od.odds.courier : null;
   $("pr-odds-guard").textContent   = (g??"—") + "x";
   $("pr-odds-courier").textContent = (c??"—") + "x";
-  const pg = od.pool ? od.pool.guard : 0, pc = od.pool ? od.pool.courier : 0, tot = (pg + pc) || 1;
-  const gp = Math.round(pg / tot * 100);
+  const prob = impliedProb(od);
+  const pgp = prob.guard, pcp = prob.courier, gp = Math.round(pgp != null ? pgp : 50);
   $("pr-bar-guard").style.width   = gp + "%";
   $("pr-bar-courier").style.width = (100 - gp) + "%";
-  $("pr-pool").textContent = "$" + (od.total != null ? od.total.toFixed(2) : (pg + pc).toFixed(2));
-  $("pr-bets").textContent = (od.count != null ? od.count : 0) + " bets";
+  $("pr-prob-guard").textContent   = "🛡 GUARD " + fmtPct(pgp);
+  $("pr-prob-courier").textContent = "COURIER " + fmtPct(pcp) + " 📦";
+  $("pr-pool").textContent = "$" + (od.total != null ? od.total.toFixed(2) : "0.00");
+  $("pr-settled").textContent = "$" + (lastPurse || 0).toFixed(2);
+  $("pr-bets").textContent = (od.count != null ? od.count : 0);
+  if(pushHist && pcp != null){ probHist.push(pcp); if(probHist.length > 40) probHist.shift(); drawSpark(probHist, $("pr-prob-line")); }
 }
 function handlePredict(from, to, od){
   const el = $("predict"); if(!el) return;
   if(to === "betting"){
-    setPredContent(od);
+    setPredContent(od, true);                       // push probability history while betting
     if(from !== "betting"){                       // OPEN transition (incl. cold load)
       clearTimeout(predHideTimer);
       el.classList.remove("locked"); el.classList.add("on");

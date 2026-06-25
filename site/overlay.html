@@ -48,6 +48,11 @@
     font-variant-numeric:tabular-nums; text-shadow:var(--sh);}
   #clk .p{margin-top:.6vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase; text-shadow:var(--sh);}
   .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
+  #clk .conn{margin-top:.7vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700; text-shadow:var(--sh);}
+  #clk .conn.live{color:var(--green);} #clk .conn.mock{color:var(--dim);}
+  #clk .conn i{display:inline-block; width:.9vh; height:.9vh; border-radius:50%; margin-left:.5vw; vertical-align:middle;}
+  #clk .conn.live i{background:var(--green); box-shadow:0 0 1vh var(--green);} #clk .conn.mock i{background:var(--dim);}
+  .prob{font-size:.62em; color:var(--teal); font-weight:700; text-shadow:var(--sh);}
 
   /* ── scorebug (lower-third, semi-opaque only on the bar itself) ── */
   #scorebug{position:fixed; left:0; right:0; bottom:0; z-index:35; height:12.5vh;
@@ -183,6 +188,7 @@
 <div id="clk">
   <div class="c" id="clock">--:--:--</div>
   <div class="p ph-betting" id="phase">FORMATION LAP</div>
+  <div class="conn" id="conn"></div>
 </div>
 
 <div id="scorebug">
@@ -286,6 +292,26 @@ const SOUND = (function(){
 
 const sol = (s)=>(s||"").replace(/\.eth\b/g,".sol");
 
+/* implied probability (pool share, fallback normalized inverse odds) */
+function impliedProb(od){
+  if(od && od.pool && od.pool.guard != null && od.pool.courier != null){
+    const t = (od.pool.guard + od.pool.courier) || 1;
+    return { guard: od.pool.guard / t * 100, courier: od.pool.courier / t * 100 };
+  }
+  const g = od && od.odds && od.odds.guard, c = od && od.odds && od.odds.courier;
+  if(g && c){ const ig = 1/g, ic = 1/c, s = ig + ic; return { guard: ig/s*100, courier: ic/s*100 }; }
+  return { guard: null, courier: null };
+}
+const fmtPct = p => p == null ? "—" : Math.round(p) + "%";
+
+/* live/mock connection badge */
+(function(){
+  const api = (Q.get("api") || window.CLANKER_API || "").trim();
+  const el = $("conn"); if(!el) return;
+  if(api){ el.className = "conn live"; el.innerHTML = "Live sidecar<i></i>"; }
+  else { el.className = "conn mock"; el.innerHTML = "Mock feed<i></i>"; }
+})();
+
 /* ── timer registry + visibility/perf controller (OBS-friendly) ── */
 const VIS = Q.get("freeze") !== "0";
 if(Q.get("lite") === "1") document.body.classList.add("lite");
@@ -338,8 +364,9 @@ async function poll(){
 
   if(od && od.odds){
     const g = od.odds.guard, c = od.odds.courier;
-    $("sb-odds-guard").innerHTML   = (g??"—")+"<small>x</small>";
-    $("sb-odds-courier").innerHTML = (c??"—")+"<small>x</small>";
+    const pr = impliedProb(od);
+    $("sb-odds-guard").innerHTML   = (g??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.guard)+'</span>';
+    $("sb-odds-courier").innerHTML = (c??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.courier)+'</span>';
     const gFav = (g!=null && c!=null) ? g < c : false;
     $("run-guard").classList.toggle("lead", gFav);
     $("run-courier").classList.toggle("lead", !gFav && c!=null);

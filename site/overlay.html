@@ -172,6 +172,8 @@
   /* OBS perf: pause decorative animation when source hidden; ?lite=1 strips it entirely */
   body.hidden-src .live i{ animation-play-state:paused; }
   body.lite .live i{ animation:none; opacity:1; }
+  /* ?cb=1 — colorblind-safe: guard/teal + success → blue */
+  body.cb{ --teal:#3aa0ff; --green:#3aa0ff; }
   @media (prefers-reduced-motion:reduce){ *{animation:none !important;} #confetti{display:none;} }
 </style>
 </head>
@@ -315,6 +317,7 @@ const fmtPct = p => p == null ? "—" : Math.round(p) + "%";
 /* ── timer registry + visibility/perf controller (OBS-friendly) ── */
 const VIS = Q.get("freeze") !== "0";
 if(Q.get("lite") === "1") document.body.classList.add("lite");
+if(Q.get("cb") === "1") document.body.classList.add("cb");           // colorblind-safe palette
 const TIMERS = [];
 function every(fn, ms){ const t = { fn, ms, id:null }; t.id = setInterval(fn, ms); TIMERS.push(t); return t; }
 function stopTimers(){ TIMERS.forEach(t=>{ if(t.id != null){ clearInterval(t.id); t.id = null; } }); }

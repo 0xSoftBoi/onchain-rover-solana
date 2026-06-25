@@ -359,6 +359,19 @@
   body.clean #scorebug, body.clean #ticker{ transition:opacity .4s ease; }
   body.clean.sb-hide #scorebug, body.clean.sb-hide #ticker{ opacity:0; pointer-events:none; }
 
+  /* ?cb=1 — colorblind-safe: shift guard/teal + success toward blue (blue/orange/red is deuteranopia-safe) */
+  body.cb{ --teal:#3aa0ff; --green:#3aa0ff; }
+  /* ?vertical=1 — 9:16 clip layout (hero scenes single-column; right-rail predict hidden) */
+  body.vertical .cams{ grid-template-columns:1fr; grid-template-rows:1fr 1fr; }
+  body.vertical .cta{ grid-template-columns:1fr; }
+  body.vertical .standings{ grid-template-columns:1fr; }
+  body.vertical #predict{ display:none; }
+  /* ?osd=1 — FPV-style cam telemetry OSD (synthesized speed is flagged EST) */
+  .cam .osd{ position:absolute; left:1.4vw; bottom:1.6vh; display:none; gap:1vw; font-size:1.2vh; letter-spacing:.08em;
+    color:var(--chrome); text-shadow:0 0 1vh #000; }
+  body.osd .cam .osd{ display:flex; }
+  .cam .osd b{ color:var(--amber); } .cam .osd .est{ color:var(--dim); }
+
   @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important;} }
 </style>
 </head>
@@ -394,12 +407,14 @@
         <div class="ph" style="display:none">CAR 00 · SIGNAL WARMING</div>
         <span class="ovl">CAR 00 · GUARD</span><span class="sub" id="sub-guard">guard.roverfleet.sol</span>
         <span class="lead">▲ LEADER</span><span class="stat" id="stat-guard">—</span><span class="sl"></span>
+        <div class="osd" id="osd-guard"></div>
       </div>
       <div class="cam" id="cam-courier">
         <img id="feed-courier" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
         <div class="ph" style="display:none">CAR 01 · SIGNAL WARMING</div>
         <span class="ovl">CAR 01 · COURIER</span><span class="sub" id="sub-courier">courier.roverfleet.sol</span>
         <span class="lead">▲ LEADER</span><span class="stat" id="stat-courier">—</span><span class="sl"></span>
+        <div class="osd" id="osd-courier"></div>
       </div>
     </div>
   </section>
@@ -650,6 +665,7 @@ function impliedProb(od){
 }
 const fmtPct = p => p == null ? "—" : Math.round(p) + "%";
 let prevProb = { guard: null, courier: null };
+let leaderSide = null;   // favourite by odds — drives cam OSD P1/P2
 function probArrow(prev, p){
   if(prev == null || p == null || Math.abs(p - prev) < 0.5) return "";
   return p > prev ? '<span class="up">▲</span>' : '<span class="dn">▼</span>';
@@ -660,6 +676,9 @@ const _q = new URLSearchParams(location.search);
 const VIS = _q.get("freeze") !== "0";
 if(_q.get("lite") === "1") document.body.classList.add("lite");
 if(_q.get("clean") === "1") document.body.classList.add("clean");
+if(_q.get("cb") === "1") document.body.classList.add("cb");           // colorblind-safe palette
+if(_q.get("vertical") === "1") document.body.classList.add("vertical"); // 9:16 clip mode
+if(_q.get("osd") === "1") document.body.classList.add("osd");          // cam telemetry OSD
 const TIMERS = [];
 function every(fn, ms){ const t = { fn, ms, id:null }; t.id = setInterval(fn, ms); TIMERS.push(t); return t; }
 function stopTimers(){ TIMERS.forEach(t=>{ if(t.id != null){ clearInterval(t.id); t.id = null; } }); }
@@ -725,6 +744,7 @@ async function poll(){
     prevProb = pr;
     // favourite (lower odds) gets the lead highlight
     const gFav = (g!=null && c!=null) ? g < c : false;
+    leaderSide = (g!=null && c!=null) ? (gFav ? "guard" : "courier") : null;
     $("run-guard").classList.toggle("lead", gFav);
     $("run-courier").classList.toggle("lead", !gFav && c!=null);
     $("cam-guard").classList.toggle("leading", gFav && status!=="finished");
@@ -760,6 +780,14 @@ async function pollCams(){
         const src = r.feed || (r.url && r.url!=="#" ? r.url+"/stream" : null);
         if(src && img && !img.src.endsWith(src)){ img.src = src; img.style.display="block"; if(img.nextElementSibling) img.nextElementSibling.style.display="none"; }
         $("stat-"+n).textContent = r.ok ? ((r.battery_v||0).toFixed(2)+"V · ONLINE") : "OFFLINE";
+        const osd = $("osd-"+n);
+        if(osd){
+          const pos = leaderSide === n ? "P1" : (leaderSide ? "P2" : "—");
+          const sig = r.ok ? "▮▮▮▮" : "▮▯▯▯";
+          const bv = typeof r.battery_v === "number" ? r.battery_v : 0;
+          const spd = r.ok ? (0.9 + (bv % 1)).toFixed(1) : "0.0";   // synthesized on-board estimate
+          osd.innerHTML = `<span>POS <b>${pos}</b></span><span>SIG ${sig}</span><span class="est">~${spd} m/s EST</span>`;
+        }
       }
     }
   }

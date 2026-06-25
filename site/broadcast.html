@@ -915,11 +915,13 @@ function drawConfetti(){
   else { cx.clearRect(0,0,cv.width,cv.height); confettiRAF=null; }
 }
 
+/* ── serial alert queue: moments never overlap; tiers + priority + burst-cap ── */
 let momentTimer = null;
-function fireMoment(kind, big, sub, det, tx, opts){
-  opts = opts || {};
-  momentActive = true;
-  if(opts.sound === "cheer" || /PHOTO|FINISH|CHAMP/.test(kind)) SOUND.cheer();
+const momentQueue = [];
+const MOMENT_CAP = 3;
+function renderMoment(item){
+  const { kind, big, sub, det, tx, opts } = item;
+  if(opts.sound === "cheer" || /PHOTO|FINISH|CHAMP|WHALE/.test(kind)) SOUND.cheer();
   else if(/BET/.test(kind)) SOUND.blip();
   else SOUND.kaching();
   const m = $("moment");
@@ -931,27 +933,41 @@ function fireMoment(kind, big, sub, det, tx, opts){
   $("m-tx").textContent  = tx ? ("◎ " + tx) : "";
   m.classList.add("on");
   burst();
+}
+function drainQueue(){
+  if(!momentQueue.length){ momentActive = false; return; }
+  momentActive = true;                                   // keep scene-cycle paused until empty
+  const item = momentQueue.shift();
+  renderMoment(item);
   clearTimeout(momentTimer);
-  momentTimer = setTimeout(()=>{ m.classList.remove("on"); momentActive = false; }, opts.ms || 4200);
+  momentTimer = setTimeout(()=>{ $("moment").classList.remove("on"); setTimeout(drainQueue, 400); }, (item.opts && item.opts.ms) || 4200);
+}
+function fireMoment(kind, big, sub, det, tx, opts){
+  const item = { kind, big, sub, det, tx, opts: opts || {} };
+  if(item.opts.priority){ momentQueue.unshift(item); }   // RACE SETTLE / champion jump the line
+  else if(momentQueue.length >= MOMENT_CAP){
+    const i = momentQueue.findIndex(x => !x.opts.priority && !(x.opts.tier >= 1));  // drop a low-tier to make room
+    if(i >= 0) momentQueue.splice(i, 1); else return;    // queue full of higher-priority alerts → skip
+    momentQueue.push(item);
+  } else momentQueue.push(item);
+  if(!momentActive) drainQueue();
 }
 
-/* throttle so moments feel like events, not a strobe */
-let lastMoment = 0;
 function maybeMoment(e){
-  const now = Date.now();
-  // race win = the big one
+  // race win = the headline; side-effects fire on INGEST so the bracket never lags the queue
   if(e.kind === "RACE SETTLE"){
-    fireMoment("PHOTO FINISH", "🏁 COURIER", "takes the checkered flag", "verdict on-chain · proof on Walrus", null);
     advanceCard("courier");
     seasonAdd("courier");
-    lastMoment = now; return;
+    fireMoment("PHOTO FINISH", "🏁 COURIER", "takes the checkered flag", "verdict on-chain · proof on Walrus", null, { sound:"cheer", priority:true });
+    return;
   }
-  if(now - lastMoment < 7000) return;                  // cooldown
   if(e.layer === "chain" && e.severity === "ok" && typeof e.usdc === "number" && e.usdc > 0){
-    const label = e.kind === "BET" ? "BET PLACED" : "PAYMENT SETTLED";
-    const sub   = e.kind === "BET" ? "World-verified human" : "robot-to-robot · USDC";
-    fireMoment(label, "$" + e.usdc.toFixed(2), sub, sol(e.detail||""), (e.tx||"").slice(0,10)+"…");
-    lastMoment = now;
+    const isBet = e.kind === "BET", tx = (e.tx||"").slice(0,10) + "…", amt = "$" + e.usdc.toFixed(2);
+    let kind, sub, opts;
+    if(e.usdc >= 50){ kind = "🐋 WHALE BET"; sub = "biggest of the night"; opts = { sound:"cheer", cls:"champ", tier:2, ms:5000 }; }
+    else if(e.usdc >= 10){ kind = "💸 BIG BET"; sub = isBet ? "World-verified human" : "USDC"; opts = { tier:1, ms:4400 }; }
+    else { kind = isBet ? "BET PLACED" : "PAYMENT SETTLED"; sub = isBet ? "World-verified human" : "robot-to-robot · USDC"; opts = { tier:0 }; }
+    fireMoment(kind, amt, sub, sol(e.detail||""), tx, opts);
   }
 }
 /* ─── "now driving" pilot lower-third (driven by the x402 pilot bus) ──────── */
@@ -1004,7 +1020,7 @@ function advanceCard(winner){
     // crown the night champion (the FINAL decides it) — after the photo-finish beat
     setTimeout(()=> fireMoment(`NIGHT ${nightNum} CHAMPION`, "🏆 " + winner.toUpperCase(),
       `${season.pts[winner]||0} season points`, "race night complete · new card forming", null,
-      { sound:"cheer", cls:"champ", ms:5500 }), 4700);
+      { sound:"cheer", cls:"champ", ms:5500, priority:true }), 4700);
     setTimeout(()=>{ nightNum++; cardWinners.length = 0; heatIdx = 0; renderCard(); renderSeason(); }, 11000);
   } else heatIdx++;
 }

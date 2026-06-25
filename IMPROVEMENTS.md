@@ -28,7 +28,7 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 - [ ] Verify Page-Visibility pause actually stops all RAF/animation; add a quick self-check.
 
 ### UX / features
-- [ ] Operator hotkeys on the broadcast page (next/prev scene, force a test moment, toggle clean/lite) — documented, keyboard-only, no deps.
+- [x] Operator hotkeys on the broadcast page: n/→ next scene, p/← prev, m test alert, c clean, l lite (no deps).
 - [ ] "Standby / intermission" scene shown when the sidecar is offline (no live data), so the stream never looks dead.
 - [ ] `STREAMING.md` guide: OBS setup, every `?` query flag, how to wire `ACTIONS_BASE` for Blinks.
 - [ ] Real bet-via-Blink hand-off page: World ID IDKit → nullifier → POST the bet Action (closes the one gap from the Blinks work).

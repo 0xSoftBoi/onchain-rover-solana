@@ -938,6 +938,20 @@ function nextScene(){
   cycleTimer = setTimeout(nextScene, sc.ms);
 }
 
+/* operator hotkeys — n/→ next scene · p/← prev · m test alert · c clean · l lite */
+addEventListener("keydown", (e)=>{
+  const t = e.target;
+  if(t && /^(input|textarea|select)$/i.test(t.tagName || "")) return;
+  switch(e.key){
+    case "n": case "ArrowRight": clearTimeout(cycleTimer); nextScene(); break;
+    case "p": case "ArrowLeft":  clearTimeout(cycleTimer); si = (si - 2 + SCENES.length) % SCENES.length; nextScene(); break;
+    case "m": fireMoment("OPERATOR TEST", "✓", "hotkey-triggered alert", "verifying the takeover", null, {}); break;
+    case "c": document.body.classList.toggle("clean"); break;
+    case "l": document.body.classList.toggle("lite"); break;
+    default: return;
+  }
+});
+
 /* ─── money-moment takeover (driven by the live bus) ──────────────────────── */
 const cv = $("confetti"), cx = cv.getContext("2d");
 function sizeCanvas(){ cv.width = innerWidth; cv.height = innerHeight; }

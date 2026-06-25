@@ -41,5 +41,22 @@ eq(r.guard, 25, "pool wins over odds");
 r = impliedProb({});
 isNull(r.guard, "no data → guard null"); isNull(r.courier, "no data → courier null");
 
+// drawSpark — builds the SVG polyline points (x: 0..100, y inverted so a higher value sits higher)
+const drawSpark = eval("(" + extractFn(html, "drawSpark") + ")");
+function spark(arr) { let p; drawSpark(arr, { setAttribute: (k, v) => { p = v; } }); return p; }
+if (spark([5]) !== undefined) { console.log("  ✗ drawSpark <2 points should no-op"); fails++; }
+{
+  const p = spark([0, 10]);
+  if (p !== "0.0,23.0 100.0,2.0") { console.log("  ✗ drawSpark [0,10] →", p); fails++; }
+}
+{
+  const p = spark([5, 5, 5]); // flat series → rng guard, all mid-height
+  if (p !== "0.0,23.0 50.0,23.0 100.0,23.0") { console.log("  ✗ drawSpark flat →", p); fails++; }
+}
+{
+  const ys = spark([1, 2, 3]).split(" ").map(s => parseFloat(s.split(",")[1])); // higher value → smaller y
+  if (!(ys[0] > ys[1] && ys[1] > ys[2])) { console.log("  ✗ drawSpark not monotonic", ys); fails++; }
+}
+
 if (fails) { console.log("UNIT FAILED (" + fails + ")"); process.exit(1); }
-console.log("UNIT OK (impliedProb)");
+console.log("UNIT OK (impliedProb, drawSpark)");

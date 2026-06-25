@@ -16,7 +16,8 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 
 ### Tests / verification
 - [x] `tools/unit.cjs`: unit tests for `impliedProb` (extracted from source, asserts pool/odds/precedence/null), wired into `verify.sh`.
-- [ ] Extend `tools/unit.cjs` to also cover `drawSpark` (polyline scaling) and the alert-queue tier-decision logic.
+- [x] Extend `tools/unit.cjs` to cover `drawSpark` (polyline scaling: endpoints, flat-series guard, value→y inversion).
+- [ ] Cover the alert-queue tier-decision logic in unit tests (extract or refactor maybeMoment's tier branch to a testable helper).
 - [x] Extend `verify.sh` to run the harness across 11 query modes per page (cb/vertical/osd/clean/blink/demo/lite/freeze/api/bartop) — catches mode-specific breakage.
 
 ### Accessibility

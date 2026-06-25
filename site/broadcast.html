@@ -282,9 +282,10 @@
 
   /* live/mock connection badge */
   .conn{margin-top:.8vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700;}
-  .conn.live{color:var(--green);} .conn.mock{color:var(--dim);}
+  .conn.live{color:var(--green);} .conn.mock{color:var(--dim);} .conn.reconnecting{color:var(--amber);}
   .conn i{display:inline-block; width:.9vh; height:.9vh; border-radius:50%; margin-right:.4vw; vertical-align:middle;}
   .conn.live i{background:var(--green); box-shadow:0 0 1vh var(--green);} .conn.mock i{background:var(--dim);}
+  .conn.reconnecting i{background:var(--amber); box-shadow:0 0 1vh var(--amber); animation:blink 1s infinite;}
   .pr-sides{display:flex; gap:1vw;}
   .pr-side{flex:1; display:flex; flex-direction:column; gap:.7vh; align-items:center;}
   .pr-s-h{display:flex; justify-content:space-between; width:100%; font-family:var(--disp); font-style:italic; font-weight:900; font-size:1.9vh;}
@@ -630,13 +631,17 @@ const _qs = new URLSearchParams(location.search);
 const ACTIONS_BASE = (_qs.get("actions") || window.CLANKER_ACTIONS || "").replace(/\/$/, "");
 const BLINK_ON = _qs.get("blink") === "1" || !!ACTIONS_BASE;
 
-/* live/mock connection badge — sidecar via ?api / window.CLANKER_API, else mock feed */
-(function(){
-  const api = (_qs.get("api") || window.CLANKER_API || "").trim();
+/* live/mock connection badge — sidecar via ?api / window.CLANKER_API, else mock feed.
+   In live mode, flips to "Reconnecting…" after consecutive failed polls. */
+const API_MODE = !!(_qs.get("api") || window.CLANKER_API || "").trim();
+let connFail = 0;
+function updateConn(ok){
   const el = $("conn"); if(!el) return;
-  if(api){ el.className = "conn live"; el.innerHTML = "<i></i>Live sidecar"; }
-  else { el.className = "conn mock"; el.innerHTML = "<i></i>Mock feed"; }
-})();
+  if(!API_MODE){ el.className = "conn mock"; el.innerHTML = "<i></i>Mock feed"; return; }
+  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "<i></i>Live sidecar"; }
+  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "<i></i>Reconnecting…"; }
+}
+updateConn(true);
 const BET_WINDOW = 18000;                            // synthesized betting window (ms)
 
 /* ─── QR codes (regenerated only when the encoded link changes) ───────────── */
@@ -724,6 +729,7 @@ async function poll(){
   const st = await j("/race/state");
   const od = await j("/race/odds");
   const fe = await j("/onchain/feed");
+  updateConn(!!st);          // live-mode health: flips badge to "Reconnecting…" on failed polls
   const status = (st && st.status) || "betting";
   const prev = prevStatus;   // capture before reassignment, for prediction-alert transitions
 

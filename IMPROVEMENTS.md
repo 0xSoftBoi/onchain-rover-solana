@@ -10,8 +10,8 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 
 ## Backlog
 ### Correctness & boot
-- [ ] Fix the pre-existing `@bonfida/spl-name-service` ↔ `borsh` ESM packaging issue so `cd sidecar && npm run dev` boots (try a `borsh`/`overrides` pin in `sidecar/package.json`, or lazy-import SNS). Verify the full server starts and `/actions.json` responds.
-- [ ] Connection badge: add a "reconnecting" state driven by consecutive failed polls (not just `?api` presence).
+- [ ] Fix the pre-existing `@bonfida/spl-name-service` ↔ `borsh` ESM packaging issue so `cd sidecar && npm run dev` boots. NOTE (loop): the bad `borsh` is bundled INSIDE `@bonfida/.../dist/esm/node_modules/borsh` (its ESM `index.js` lacks a named `serialize`), so a root `overrides` won't reach it — needs a `@bonfida` version bump (network `npm install`) or lazy-importing SNS so the server boots without it. Do this DELIBERATELY (it needs a full-server boot to verify), not in a quick autonomous tick.
+- [x] Connection badge: "reconnecting" state after consecutive failed polls in live mode (both pages).
 - [ ] Audit every `$()` lookup added recently for null-safety on the overlay (fewer elements than broadcast).
 
 ### Tests / verification

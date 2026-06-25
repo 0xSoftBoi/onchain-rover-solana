@@ -49,9 +49,10 @@
   #clk .p{margin-top:.6vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase; text-shadow:var(--sh);}
   .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
   #clk .conn{margin-top:.7vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700; text-shadow:var(--sh);}
-  #clk .conn.live{color:var(--green);} #clk .conn.mock{color:var(--dim);}
+  #clk .conn.live{color:var(--green);} #clk .conn.mock{color:var(--dim);} #clk .conn.reconnecting{color:var(--amber);}
   #clk .conn i{display:inline-block; width:.9vh; height:.9vh; border-radius:50%; margin-left:.5vw; vertical-align:middle;}
   #clk .conn.live i{background:var(--green); box-shadow:0 0 1vh var(--green);} #clk .conn.mock i{background:var(--dim);}
+  #clk .conn.reconnecting i{background:var(--amber); box-shadow:0 0 1vh var(--amber); animation:blink 1s infinite;}
   .prob{font-size:.62em; color:var(--teal); font-weight:700; text-shadow:var(--sh);}
 
   /* ── scorebug (lower-third, semi-opaque only on the bar itself) ── */
@@ -306,13 +307,16 @@ function impliedProb(od){
 }
 const fmtPct = p => p == null ? "—" : Math.round(p) + "%";
 
-/* live/mock connection badge */
-(function(){
-  const api = (Q.get("api") || window.CLANKER_API || "").trim();
+/* live/mock connection badge — flips to "Reconnecting…" after failed polls in live mode */
+const API_MODE = !!(Q.get("api") || window.CLANKER_API || "").trim();
+let connFail = 0;
+function updateConn(ok){
   const el = $("conn"); if(!el) return;
-  if(api){ el.className = "conn live"; el.innerHTML = "Live sidecar<i></i>"; }
-  else { el.className = "conn mock"; el.innerHTML = "Mock feed<i></i>"; }
-})();
+  if(!API_MODE){ el.className = "conn mock"; el.innerHTML = "Mock feed<i></i>"; return; }
+  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "Live sidecar<i></i>"; }
+  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "Reconnecting…<i></i>"; }
+}
+updateConn(true);
 
 /* ── timer registry + visibility/perf controller (OBS-friendly) ── */
 const VIS = Q.get("freeze") !== "0";
@@ -351,6 +355,7 @@ async function j(u){ try{ return await (await fetch(u)).json(); }catch{ return n
 async function poll(){
   if(document.hidden) return;
   const st = await j("/race/state"), od = await j("/race/odds"), fe = await j("/onchain/feed");
+  updateConn(!!st);
   const status = (st && st.status) || "betting";
 
   // betting-window countdown: (re)arm on entry to the betting phase

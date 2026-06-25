@@ -16,7 +16,11 @@
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import * as anchor from "@coral-xyz/anchor";
-import { BN, type Idl } from "@coral-xyz/anchor";
+import { type Idl } from "@coral-xyz/anchor";
+// anchor 0.30 exposes BN only on the CJS default export, not the ESM namespace, so a
+// named `import { BN }` crashes under Node ESM (tsx). Bind the value + type explicitly.
+const BN = (anchor as unknown as { default: { BN: typeof import("@coral-xyz/anchor").BN } }).default.BN;
+type BN = InstanceType<typeof import("@coral-xyz/anchor").BN>;
 import {
   Connection,
   Keypair,

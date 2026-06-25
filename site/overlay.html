@@ -75,6 +75,9 @@
   .runner .od{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.8vh; color:var(--txt); font-variant-numeric:tabular-nums;}
   .runner .od small{font-size:1.3vh; color:var(--dim);}
   .runner.lead{border-color:var(--amber); box-shadow:0 0 2.4vh rgba(255,212,0,.3); background:rgba(40,32,0,.5);}
+  .runner .fav-tag{display:none; margin-left:.5vw; font-size:1.2vh; font-weight:800; letter-spacing:.1em; color:#0a0a0c;
+    background:var(--amber); padding:.2vh .5vw; border-radius:.4vh; text-shadow:none;}
+  .runner.lead .fav-tag{display:inline-block;}
   .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red); font-size:2.6vh; text-shadow:var(--sh);}
   .sb-bets{align-items:flex-end; min-width:8vw;}
   .sb-bets .b-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--teal); line-height:1; text-shadow:var(--sh);}
@@ -197,9 +200,9 @@
 <div id="scorebug">
   <div class="sb-status"><span class="s-lab">Race Control</span><span class="s-val" id="sb-status">STANDBY</span></div>
   <div class="sb-grid">
-    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span></div>
+    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span><span class="fav-tag">★&nbsp;FAV</span></div>
     <span class="vs">VS</span>
-    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span></div>
+    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span><span class="fav-tag">★&nbsp;FAV</span></div>
   </div>
   <div class="sb-bets"><span class="b-val" id="sb-bets">0</span><span class="b-lab">verified<br>bets</span></div>
   <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><svg class="spark" id="purse-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="purse-line" points=""/></svg><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>

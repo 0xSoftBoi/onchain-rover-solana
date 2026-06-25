@@ -20,7 +20,8 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 
 ### Accessibility
 - [ ] Full WCAG contrast pass on amber-on-panel and dim text; bump where < 4.5:1.
-- [ ] Ensure every color-coded signal (win/loss, up/down, fav) has a redundant text/glyph cue, including in `?cb=1`.
+- [x] Scorebug favourite now shows a redundant "★ FAV" marker (not just amber glow) — non-color cue, both pages.
+- [ ] Continue: ensure remaining color-only signals (e.g. phase chip colors, `.flash`) have redundant cues.
 
 ### Performance
 - [ ] Coalesce the broadcast poll fan-out further (single batched fetch helper); measure fetch/s.

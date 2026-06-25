@@ -58,5 +58,14 @@ if (spark([5]) !== undefined) { console.log("  ✗ drawSpark <2 points should no
   if (!(ys[0] > ys[1] && ys[1] > ys[2])) { console.log("  ✗ drawSpark not monotonic", ys); fails++; }
 }
 
+// betTier — alert size thresholds: 2 whale (>=50), 1 big (>=10), 0 normal
+const betTier = eval("(" + extractFn(html, "betTier") + ")");
+eq(betTier(0), 0, "betTier 0 → normal");
+eq(betTier(9.99), 0, "betTier 9.99 → normal");
+eq(betTier(10), 1, "betTier 10 → big");
+eq(betTier(49.99), 1, "betTier 49.99 → big");
+eq(betTier(50), 2, "betTier 50 → whale");
+eq(betTier(1000), 2, "betTier 1000 → whale");
+
 if (fails) { console.log("UNIT FAILED (" + fails + ")"); process.exit(1); }
-console.log("UNIT OK (impliedProb, drawSpark)");
+console.log("UNIT OK (impliedProb, drawSpark, betTier)");

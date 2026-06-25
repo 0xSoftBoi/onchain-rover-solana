@@ -25,7 +25,7 @@ for f in site/broadcast.html site/overlay.html; do
   if [ -z "$bad" ]; then echo "  ✓ $f  runtime (${#MODES[@]} modes)"; else echo "  ✗ $f  runtime FAILED:$bad"; fail=1; fi
 done
 
-if node tools/unit.cjs 2>/dev/null | grep -q "UNIT OK"; then echo "  ✓ unit (impliedProb)"; else echo "  ✗ unit"; fail=1; fi
+if node tools/unit.cjs 2>/dev/null | grep -q "UNIT OK"; then echo "  ✓ unit (impliedProb, drawSpark, betTier)"; else echo "  ✗ unit"; fail=1; fi
 
 if [ "${1:-}" = "--sidecar" ]; then
   if (cd sidecar && timeout 300 node_modules/.bin/tsc --noEmit -p tsconfig.json 2>&1 | grep -q "error TS"); then

@@ -1041,13 +1041,16 @@ function maybeMoment(e){
   }
   if(e.layer === "chain" && e.severity === "ok" && typeof e.usdc === "number" && e.usdc > 0){
     const isBet = e.kind === "BET", tx = (e.tx||"").slice(0,10) + "…", amt = "$" + e.usdc.toFixed(2);
+    const tier = betTier(e.usdc);
     let kind, sub, opts;
-    if(e.usdc >= 50){ kind = "🐋 WHALE BET"; sub = "biggest of the night"; opts = { sound:"cheer", cls:"champ", tier:2, ms:5000 }; }
-    else if(e.usdc >= 10){ kind = "💸 BIG BET"; sub = isBet ? "World-verified human" : "USDC"; opts = { tier:1, ms:4400 }; }
-    else { kind = isBet ? "BET PLACED" : "PAYMENT SETTLED"; sub = isBet ? "World-verified human" : "robot-to-robot · USDC"; opts = { tier:0 }; }
+    if(tier === 2){ kind = "🐋 WHALE BET"; sub = "biggest of the night"; opts = { sound:"cheer", cls:"champ", tier, ms:5000 }; }
+    else if(tier === 1){ kind = "💸 BIG BET"; sub = isBet ? "World-verified human" : "USDC"; opts = { tier, ms:4400 }; }
+    else { kind = isBet ? "BET PLACED" : "PAYMENT SETTLED"; sub = isBet ? "World-verified human" : "robot-to-robot · USDC"; opts = { tier }; }
     fireMoment(kind, amt, sub, sol(e.detail||""), tx, opts);
   }
 }
+/* alert tier by USDC size: 2 = whale (>=50), 1 = big (>=10), 0 = normal */
+function betTier(usdc){ return usdc >= 50 ? 2 : usdc >= 10 ? 1 : 0; }
 /* ─── "now driving" pilot lower-third (driven by the x402 pilot bus) ──────── */
 const HANDLES = ["@pixel_pilot","@gmgm_sol","@degen_dan","@vroomqueen","@boxbox","@solspeed","@apex_anon","@nitro_nat","@chainchaser","@pitlane_pat"];
 const pickHandle = ()=> HANDLES[(Math.random()*HANDLES.length)|0];

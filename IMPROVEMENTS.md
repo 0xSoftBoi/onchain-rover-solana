@@ -15,7 +15,8 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 - [ ] Audit every `$()` lookup added recently for null-safety on the overlay (fewer elements than broadcast).
 
 ### Tests / verification
-- [ ] Add a `tools/unit.cjs` with pure-function unit tests for `impliedProb`, the alert-queue tier/cap logic, and `drawSpark`; wire into `verify.sh`.
+- [x] `tools/unit.cjs`: unit tests for `impliedProb` (extracted from source, asserts pool/odds/precedence/null), wired into `verify.sh`.
+- [ ] Extend `tools/unit.cjs` to also cover `drawSpark` (polyline scaling) and the alert-queue tier-decision logic.
 - [x] Extend `verify.sh` to run the harness across 11 query modes per page (cb/vertical/osd/clean/blink/demo/lite/freeze/api/bartop) — catches mode-specific breakage.
 
 ### Accessibility

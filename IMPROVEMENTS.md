@@ -24,7 +24,7 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 - [ ] Continue: ensure remaining color-only signals (e.g. phase chip colors, `.flash`) have redundant cues.
 
 ### Performance
-- [ ] Coalesce the broadcast poll fan-out further (single batched fetch helper); measure fetch/s.
+- [x] Parallelize the poll fetches (race/state + race/odds + onchain/feed) with Promise.all — ~3× lower poll latency, both pages.
 - [ ] Verify Page-Visibility pause actually stops all RAF/animation; add a quick self-check.
 
 ### UX / features

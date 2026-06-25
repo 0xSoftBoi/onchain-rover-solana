@@ -357,7 +357,7 @@ function drawSpark(arr, lineEl){
 async function j(u){ try{ return await (await fetch(u)).json(); }catch{ return null; } }
 async function poll(){
   if(document.hidden) return;
-  const st = await j("/race/state"), od = await j("/race/odds"), fe = await j("/onchain/feed");
+  const [st, od, fe] = await Promise.all([j("/race/state"), j("/race/odds"), j("/onchain/feed")]);  // parallel: 1 RTT, not 3
   updateConn(!!st);
   const status = (st && st.status) || "betting";
 

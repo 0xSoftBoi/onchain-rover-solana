@@ -729,9 +729,7 @@ let widCfg = null;
 async function loadWid(){ widCfg = await j("/worldid/config"); }   // invariant — fetched rarely, not every tick
 async function poll(){
   if(document.hidden) return;
-  const st = await j("/race/state");
-  const od = await j("/race/odds");
-  const fe = await j("/onchain/feed");
+  const [st, od, fe] = await Promise.all([j("/race/state"), j("/race/odds"), j("/onchain/feed")]);  // parallel: 1 RTT, not 3
   updateConn(!!st);          // live-mode health: flips badge to "Reconnecting…" on failed polls
   const status = (st && st.status) || "betting";
   const prev = prevStatus;   // capture before reassignment, for prediction-alert transitions

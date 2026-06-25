@@ -23,9 +23,13 @@ import {
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
+  TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
+  createTransferInstruction,
   getAccount,
   getAssociatedTokenAddressSync,
   getOrCreateAssociatedTokenAccount,
@@ -806,4 +810,91 @@ export async function payOnChain(from: string, to: string, amountUsdc: string) {
     BigInt(value.toString())
   );
   return { tx, status: "success" as const, from, to, amountUsdc, ms: Date.now() - t0 };
+}
+
+// ─── Solana Actions / Blinks: unsigned-transaction builders ──────────────────
+// A Blink client (wallet / dial.to) POSTs {account} and expects a base64 unsigned
+// transaction back to sign. These wrap existing instruction-building in a v0 tx.
+
+/** Compile instructions into a base64-serialized unsigned v0 transaction. */
+export async function buildUnsignedTransaction(
+  instructions: TransactionInstruction[],
+  feePayer: PublicKey,
+): Promise<string> {
+  const conn = connection();
+  const { blockhash } = await conn.getLatestBlockhash();
+  const msg = new TransactionMessage({
+    payerKey: feePayer,
+    recentBlockhash: blockhash,
+    instructions,
+  }).compileToV0Message();
+  const tx = new VersionedTransaction(msg);
+  return Buffer.from(tx.serialize()).toString("base64");
+}
+
+/** Raw SPL-USDC transfer from an owner's ATA to a destination token account. */
+export function buildSplTransferInstruction(
+  owner: PublicKey,
+  destTokenAccount: PublicKey,
+  amountUsdc: string,
+): TransactionInstruction {
+  return createTransferInstruction(
+    ata(owner),
+    destTokenAccount,
+    owner,
+    BigInt(units(amountUsdc).toString()),
+    [],
+    TOKEN_PROGRAM_ID,
+  );
+}
+
+/** Tip the fleet treasury — account-only USDC transfer (the clean Blink path). */
+export async function buildActionTipTx(account: string, amountUsdc: string): Promise<string> {
+  const payer = new PublicKey(account);
+  const ix = buildSplTransferInstruction(payer, treasuryVaultPda(), amountUsdc);
+  return buildUnsignedTransaction([ix], payer);
+}
+
+/** Unsigned `place_bet` instruction — mirrors placeBetOnChain but returns the ix. */
+export async function buildPlaceBetInstruction(
+  marketId: number,
+  racerIdx: number,
+  amountUsdc: string,
+  nullifier: string,
+  bettor: PublicKey,
+): Promise<TransactionInstruction> {
+  const p = program();
+  const market = marketPda(marketId);
+  const null32 = nullifierBytes(nullifier);
+  return await (p.methods as any)
+    .placeBet(new BN(marketId), racerIdx, units(amountUsdc), Array.from(null32))
+    .accounts({
+      market,
+      bettor,
+      bettorToken: ata(bettor),
+      vault: marketVaultPda(market),
+      bet: betPda(market, bettor),
+      nullifier: nullifierPda(market, null32),
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .instruction();
+}
+
+/** Bet Action — requires a World-ID-verified nullifier (wallet Blinks can't mint one). */
+export async function buildActionBetTx(
+  account: string,
+  marketId: number,
+  racerIdx: number,
+  amountUsdc: string,
+  nullifier: string,
+): Promise<string> {
+  const bettor = new PublicKey(account);
+  const ix = await buildPlaceBetInstruction(marketId, racerIdx, amountUsdc, nullifier, bettor);
+  return buildUnsignedTransaction([ix], bettor);
+}
+
+/** Treasury USDC token account (tip destination), base58. */
+export function treasuryVaultAddress(): string {
+  return treasuryVaultPda().toBase58();
 }

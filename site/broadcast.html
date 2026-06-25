@@ -126,6 +126,16 @@
   .drivekv .k{color:var(--dim); letter-spacing:.1em; text-transform:uppercase; font-size:1.3vh;}
   .drivekv .v{color:var(--txt);} .drivekv .v.g{color:var(--green);}
 
+  /* TIP THE FLEET — Solana Blink (shown only when ACTIONS_BASE is configured) */
+  .tip-bar{display:none; align-items:center; gap:1.4vw; margin-top:1.6vh; padding:1.2vh 1.6vw;
+    background:linear-gradient(90deg, rgba(153,69,255,.16), rgba(20,241,149,.1)); border:1px solid var(--line);
+    border-radius:1vh;}
+  .tip-bar.on{display:flex;}
+  .tip-bar .qrwrap.sm{width:9vh; height:9vh; padding:.7vh; flex:none;}
+  .tip-bar .tip-txt b{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; color:var(--amber);
+    text-transform:uppercase; letter-spacing:.03em;}
+  .tip-bar .tip-sub{font-size:1.4vh; color:var(--chrome); letter-spacing:.02em; margin-top:.4vh;}
+
   /* per-side bet QRs */
   .bet-sides{display:flex; gap:1.6vw; width:100%; margin-bottom:1.2vh;}
   .side{flex:1; display:flex; flex-direction:column; align-items:center; gap:.9vh; padding:1.2vh .6vw 2.4vh; border-radius:1vh;
@@ -455,6 +465,10 @@
         </div>
       </div>
     </div>
+    <div class="tip-bar" id="tip-bar">
+      <div class="qrwrap sm"><div id="qr-tip"></div></div>
+      <div class="tip-txt"><b>⚡ TIP THE FLEET</b><div class="tip-sub">scan → sign in your wallet · a Solana Blink, no app, no connect</div></div>
+    </div>
   </section>
 
   <!-- STANDINGS / INTERMISSION -->
@@ -637,6 +651,13 @@ function makeQR(el, text){
   }catch(e){ el.textContent = "QR?"; }
 }
 makeQR($("qr-drive"), DRIVE_BASE + "?rover=courier&price=1.00");
+// TIP THE FLEET — a real Solana Blink when an Actions API is configured (account-only USDC transfer).
+// Bet stays on the on-site World-ID flow: a wallet-native Blink can't run the World ID widget to mint
+// the one-human-one-bet nullifier place_bet requires.
+if(ACTIONS_BASE){
+  const tipBar = $("tip-bar"); if(tipBar) tipBar.classList.add("on");
+  makeQR($("qr-tip"), "solana-action:" + ACTIONS_BASE + "/api/actions/tip");
+}
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 const j = async (u)=>{ try{ return await (await fetch(u)).json(); }catch{ return null; } };

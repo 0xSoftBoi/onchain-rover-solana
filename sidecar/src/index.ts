@@ -9,6 +9,7 @@ import express from "express";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { solanaPaymentGate, x402SolanaPublicConfig } from "./solana-x402.js";
+import { installActions } from "./solana-actions.js";
 import * as clawpump from "./clawpump.js";
 
 import "./env.js"; // MUST be first — loads dotenv before any env-reading module
@@ -48,12 +49,16 @@ app.use(express.json());
 // the live sidecar via ?api=<url>. Read-only demo surface, so allow all origins.
 app.use((req, res, next) => {
   res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Headers", "Content-Type, ngrok-skip-browser-warning, X-PAYMENT");
-  res.set("Access-Control-Expose-Headers", "X-PAYMENT-RESPONSE");
+  // includes the headers the Solana Actions spec expects (Content-Encoding, Accept-Encoding)
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization, Content-Encoding, Accept-Encoding, ngrok-skip-browser-warning, X-PAYMENT");
+  res.set("Access-Control-Expose-Headers", "X-PAYMENT-RESPONSE, X-Action-Version, X-Blockchain-Ids");
   res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
+
+// Solana Actions / Blinks API (/actions.json + /api/actions/*)
+installActions(app);
 
 // Live event bus: the dashboard subscribes once and gets every layer's activity
 // pushed (SSE). A snapshot seeds late-joiners. See events.ts.

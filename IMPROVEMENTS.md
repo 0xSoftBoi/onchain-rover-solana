@@ -12,7 +12,7 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 ### Correctness & boot
 - [ ] Fix the pre-existing `@bonfida/spl-name-service` ↔ `borsh` ESM packaging issue so `cd sidecar && npm run dev` boots. NOTE (loop): the bad `borsh` is bundled INSIDE `@bonfida/.../dist/esm/node_modules/borsh` (its ESM `index.js` lacks a named `serialize`), so a root `overrides` won't reach it — needs a `@bonfida` version bump (network `npm install`) or lazy-importing SNS so the server boots without it. Do this DELIBERATELY (it needs a full-server boot to verify), not in a quick autonomous tick.
 - [x] Connection badge: "reconnecting" state after consecutive failed polls in live mode (both pages).
-- [ ] Audit every `$()` lookup added recently for null-safety on the overlay (fewer elements than broadcast).
+- [x] Audit every `$()` lookup added recently for null-safety on the overlay (fewer elements than broadcast). Guarded all element derefs in the forever-running paths (`poll`, `pollTicker`, `clk`, moment queue, pilot lower-third, sponsor rotation, confetti canvas) + load-time flag toggles; a missing element now no-ops instead of throwing every tick. Zero unguarded `$().` chains remain.
 
 ### Tests / verification
 - [x] `tools/unit.cjs`: unit tests for `impliedProb` (extracted from source, asserts pool/odds/precedence/null), wired into `verify.sh`.

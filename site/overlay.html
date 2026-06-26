@@ -246,8 +246,8 @@ const Q = new URLSearchParams(location.search);
 
 /* ── query toggles ── */
 if(Q.get("bar") === "top") document.body.classList.add("bartop");
-if(Q.get("bug") === "0")  $("bug").style.display = "none";
-if(Q.get("clock") === "0") $("clk").style.display = "none";
+if(Q.get("bug") === "0")  { const el = $("bug"); if(el) el.style.display = "none"; }
+if(Q.get("clock") === "0") { const el = $("clk"); if(el) el.style.display = "none"; }
 
 /* ─── sound engine: synthesized cues (WebAudio, no asset files) ───────────── */
 const SOUND = (function(){
@@ -296,7 +296,7 @@ const SOUND = (function(){
   return api;
 })();
 (function(){
-  const b = $("snd");
+  const b = $("snd"); if(!b) return;
   const sync = ()=>{ b.textContent = SOUND.on() ? "🔊" : "🔈"; b.classList.toggle("off", !SOUND.on()); };
   b.addEventListener("click", ()=>{ SOUND.toggle(); sync(); });
   if(Q.get("sound") === "0") b.style.display = "none";
@@ -345,7 +345,7 @@ function onVis(){
 document.addEventListener("visibilitychange", onVis);
 
 /* clock */
-function clk(){ $("clock").textContent = new Date().toTimeString().slice(0,8); }
+function clk(){ const el = $("clock"); if(el) el.textContent = new Date().toTimeString().slice(0,8); }
 clk(); setInterval(clk, 1000);
 
 /* ── poll: bind the scorebug to live (mock or ?api) data ── */
@@ -375,30 +375,34 @@ async function poll(){
   const rem = bettingDeadline ? Math.max(0, bettingDeadline - Date.now()) : 0;
 
   const phaseEl = $("phase"), sbStatus = $("sb-status");
-  phaseEl.className = "p ph-" + status;
-  if(status === "betting"){ phaseEl.textContent = rem > 0 ? ("🟡 BETTING · " + fmtClock(rem)) : "🟡 LOCKING…"; sbStatus.textContent = "BETTING OPEN"; sbStatus.style.color = "var(--amber)"; }
-  else if(status === "racing"){ phaseEl.textContent = "🟢 GREEN FLAG"; sbStatus.textContent = "RACING"; sbStatus.style.color = "var(--green)"; }
-  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = st&&st.winner ? sol(st.winner).toUpperCase()+" WINS" : "FINISHED"; sbStatus.style.color = "var(--violet)"; }
+  if(phaseEl) phaseEl.className = "p ph-" + status;
+  if(status === "betting"){ if(phaseEl) phaseEl.textContent = rem > 0 ? ("🟡 BETTING · " + fmtClock(rem)) : "🟡 LOCKING…"; if(sbStatus){ sbStatus.textContent = "BETTING OPEN"; sbStatus.style.color = "var(--amber)"; } }
+  else if(status === "racing"){ if(phaseEl) phaseEl.textContent = "🟢 GREEN FLAG"; if(sbStatus){ sbStatus.textContent = "RACING"; sbStatus.style.color = "var(--green)"; } }
+  else { if(phaseEl) phaseEl.textContent = "🏁 CHECKERED FLAG"; if(sbStatus){ sbStatus.textContent = st&&st.winner ? sol(st.winner).toUpperCase()+" WINS" : "FINISHED"; sbStatus.style.color = "var(--violet)"; } }
 
   if(od && od.odds){
     const g = od.odds.guard, c = od.odds.courier;
     const pr = impliedProb(od);
-    $("sb-odds-guard").innerHTML   = (g??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.guard)+'</span>';
-    $("sb-odds-courier").innerHTML = (c??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.courier)+'</span>';
+    const og = $("sb-odds-guard"), oc = $("sb-odds-courier"), rg = $("run-guard"), rc = $("run-courier");
+    if(og) og.innerHTML = (g??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.guard)+'</span>';
+    if(oc) oc.innerHTML = (c??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.courier)+'</span>';
     const gFav = (g!=null && c!=null) ? g < c : false;
-    $("run-guard").classList.toggle("lead", gFav);
-    $("run-courier").classList.toggle("lead", !gFav && c!=null);
+    if(rg) rg.classList.toggle("lead", gFav);
+    if(rc) rc.classList.toggle("lead", !gFav && c!=null);
   }
-  if(od && typeof od.count === "number") $("sb-bets").textContent = od.count;
+  if(od && typeof od.count === "number"){ const el = $("sb-bets"); if(el) el.textContent = od.count; }
 
   if(fe){
     if(typeof fe.settledUsdc === "number"){
-      $("sb-purse").textContent = "$" + fe.settledUsdc.toFixed(2);
-      if(fe.settledUsdc > lastPurse){ const el=$("sb-purse"); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      const el = $("sb-purse");
+      if(el){
+        el.textContent = "$" + fe.settledUsdc.toFixed(2);
+        if(fe.settledUsdc > lastPurse){ el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      }
       lastPurse = fe.settledUsdc;
       purseHist.push(fe.settledUsdc); if(purseHist.length > 40) purseHist.shift(); drawSpark(purseHist, $("purse-line"));
     }
-    if(typeof fe.count === "number") $("sb-laps").textContent = fe.count + " laps · USDC";
+    if(typeof fe.count === "number"){ const el = $("sb-laps"); if(el) el.textContent = fe.count + " laps · USDC"; }
   }
 }
 poll(); every(poll, 1100);
@@ -416,8 +420,9 @@ async function pollTicker(){
     const txt = (e.text || "").replace(/&/g,"&amp;").replace(/</g,"&lt;");
     return `<span class="sp ${e.robot||''}">${who}</span> ${txt}`;
   }).join('<span class="di">◆</span>') + '<span class="di">◆</span>';
-  $("tk-a").innerHTML = seg; $("tk-b").innerHTML = seg;
-  const track = $("tk-track");
+  const tkA = $("tk-a"), tkB = $("tk-b"), track = $("tk-track");
+  if(!track) return;
+  if(tkA) tkA.innerHTML = seg; if(tkB) tkB.innerHTML = seg;
   const dur = Math.max(16, (track.scrollWidth / 2) / 90);
   track.style.animation = "none"; void track.offsetWidth;
   track.style.animation = `marq ${dur.toFixed(1)}s linear infinite`;
@@ -425,13 +430,13 @@ async function pollTicker(){
 pollTicker(); every(pollTicker, 3000);
 
 /* ── confetti (transparent canvas) ── */
-const cv = $("confetti"), cx = cv.getContext("2d");
-function sizeCanvas(){ cv.width = innerWidth; cv.height = innerHeight; }
+const cv = $("confetti"), cx = cv && cv.getContext("2d");
+function sizeCanvas(){ if(cv){ cv.width = innerWidth; cv.height = innerHeight; } }
 sizeCanvas(); addEventListener("resize", sizeCanvas);
 let parts = [], raf = null;
 const COLORS = ["#ffd400","#14f195","#e10600","#9945ff","#f6f4ee"];
 function burst(){
-  if(document.hidden) return;
+  if(!cx || document.hidden) return;
   parts = [];
   for(let i=0;i<170;i++){
     parts.push({ x:innerWidth/2 + (Math.random()-.5)*innerWidth*.5, y:innerHeight*.5,
@@ -442,6 +447,7 @@ function burst(){
   if(!raf) raf = requestAnimationFrame(draw);
 }
 function draw(){
+  if(!cx) { raf = null; return; }
   if(document.hidden){ cx.clearRect(0,0,cv.width,cv.height); raf = null; return; }
   cx.clearRect(0,0,cv.width,cv.height);
   let alive = 0;
@@ -465,9 +471,10 @@ function renderMoment(item){
   if(opts.sound === "cheer" || /PHOTO|FINISH|WHALE/.test(kind)) SOUND.cheer();
   else if(/BET/.test(kind)) SOUND.blip();
   else SOUND.kaching();
-  $("m-kick").textContent = kind; $("m-big").textContent = big;
-  $("m-sub").textContent = sub || ""; $("m-det").textContent = det || "";
-  $("moment").classList.add("on"); burst();
+  const kE = $("m-kick"), bE = $("m-big"), sE = $("m-sub"), dE = $("m-det"), mE = $("moment");
+  if(kE) kE.textContent = kind; if(bE) bE.textContent = big;
+  if(sE) sE.textContent = sub || ""; if(dE) dE.textContent = det || "";
+  if(mE) mE.classList.add("on"); burst();
 }
 function drainQueue(){
   if(!momentQueue.length){ momentActive = false; return; }
@@ -475,7 +482,7 @@ function drainQueue(){
   const item = momentQueue.shift();
   renderMoment(item);
   clearTimeout(momentTimer);
-  momentTimer = setTimeout(()=>{ $("moment").classList.remove("on"); setTimeout(drainQueue, 400); }, (item.opts && item.opts.ms) || 4000);
+  momentTimer = setTimeout(()=>{ const mE = $("moment"); if(mE) mE.classList.remove("on"); setTimeout(drainQueue, 400); }, (item.opts && item.opts.ms) || 4000);
 }
 function fireMoment(kind, big, sub, det, opts){
   const item = { kind, big, sub, det, opts: opts || {} };
@@ -508,14 +515,16 @@ const PILOT_SECS = 120;
 let pilotEnd = 0, pilotIv = null, pilotCool = 0;
 function tickPilot(){
   const rem = Math.max(0, pilotEnd - Date.now()), s = Math.ceil(rem/1000);
-  $("pl-time").textContent = Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
-  $("pl-bar").style.width = (rem/(PILOT_SECS*1000)*100).toFixed(1) + "%";
-  if(rem <= 0){ clearInterval(pilotIv); $("pilot").classList.remove("on"); }
+  const tE = $("pl-time"), bE = $("pl-bar"), pE = $("pilot");
+  if(tE) tE.textContent = Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
+  if(bE) bE.style.width = (rem/(PILOT_SECS*1000)*100).toFixed(1) + "%";
+  if(rem <= 0){ clearInterval(pilotIv); if(pE) pE.classList.remove("on"); }
 }
 function showPilot(rover, handle){
-  $("pl-car").textContent = rover === "guard" ? "CAR 00 · GUARD" : "CAR 01 · COURIER";
-  $("pl-who").textContent = handle;
-  $("pilot").classList.add("on");
+  const cE = $("pl-car"), wE = $("pl-who"), pE = $("pilot");
+  if(cE) cE.textContent = rover === "guard" ? "CAR 00 · GUARD" : "CAR 01 · COURIER";
+  if(wE) wE.textContent = handle;
+  if(pE) pE.classList.add("on");
   pilotEnd = Date.now() + PILOT_SECS*1000;
   clearInterval(pilotIv); pilotIv = setInterval(tickPilot, 1000); tickPilot();
 }
@@ -558,10 +567,10 @@ if(Q.get("demo") === "1"){ setTimeout(()=> showPilot("courier", pickHandle()), 4
 
 /* sponsor-rotation bug (opt-in: ?sponsors=1) */
 if(Q.get("sponsors") === "1"){
-  $("sponsors").classList.add("show");
+  const spBox = $("sponsors"); if(spBox) spBox.classList.add("show");
   const SPONSORS = ["◎ Solana","x402 · USDC","World ID","Walrus","Switchboard","SNS · .sol","Helius","Kora relayer","ERC-8004","Ledger","Privy TEE"];
   let spi = 0;
-  every(()=>{ const el = $("sp-name"); el.style.opacity = 0; setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400); }, 2600);
+  every(()=>{ const el = $("sp-name"); if(!el) return; el.style.opacity = 0; setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400); }, 2600);
 }
 
 /* ?demo=1 — fire a test moment every 12s so you can frame the graphic in OBS */

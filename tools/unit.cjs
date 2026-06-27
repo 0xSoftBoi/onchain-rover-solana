@@ -67,5 +67,46 @@ eq(betTier(49.99), 1, "betTier 49.99 → big");
 eq(betTier(50), 2, "betTier 50 → whale");
 eq(betTier(1000), 2, "betTier 1000 → whale");
 
+// ── WCAG contrast (1.4.3) — brand text colors must clear AA on the dark panel,
+//    and no readable text may use the sub-AA saturated base --red/--violet ──
+const overlay = fs.readFileSync(__dirname + "/../site/overlay.html", "utf8");
+function cssVar(src, name) {
+  const m = src.match(new RegExp("--" + name + "\\s*:\\s*([^;]+);"));
+  return m ? m[1].trim() : null;
+}
+function toRgb(s) {
+  let m = s.match(/^#([0-9a-f]{6})$/i);
+  if (m) return [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16));
+  m = s.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (m) return [+m[1], +m[2], +m[3]];
+  throw new Error("unparseable color: " + s);
+}
+function alphaOf(s) { const m = s.match(/rgba?\([^)]*,\s*([\d.]+)\s*\)/); return m ? +m[1] : 1; }
+const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+const contrast = (a, b) => { const hi = Math.max(lum(a), lum(b)), lo = Math.min(lum(a), lum(b)); return (hi + 0.05) / (lo + 0.05); };
+const blend = (fg, a, bg) => fg.map((c, i) => Math.round(a * c + (1 - a) * bg[i]));
+
+const voidRgb = toRgb(cssVar(html, "void"));
+const panelRaw = cssVar(html, "panel");
+const panel = blend(toRgb(panelRaw), alphaOf(panelRaw), voidRgb); // semi-opaque panel over void
+function ratioOK(name, want) {
+  const c = contrast(toRgb(cssVar(html, name)), panel);
+  if (want === "fail") {
+    if (c >= 4.5) { console.log("  ✗ --" + name + " expected to FAIL AA (rationale for -t variant) but = " + c.toFixed(2)); fails++; }
+  } else if (c < 4.5) { console.log("  ✗ contrast --" + name + " on panel = " + c.toFixed(2) + " < 4.5"); fails++; }
+}
+// readable text colors must clear AA (4.5:1)
+["amber", "amber-d", "txt", "dim", "green", "teal", "chrome", "red-t", "violet-t"].forEach(n => ratioOK(n));
+// the saturated base intentionally fails AA as normal text — that's why -t exists
+ratioOK("red", "fail"); ratioOK("violet", "fail");
+// invariant: no readable text (CSS `color:` or JS `.style.color=`) may use the base
+// --red/--violet; the negative lookbehind skips decorative `border-top-color:var(--red)`
+const baseTextUse = /(?<!-)color\s*[:=]\s*"?var\(--(red|violet)\)/g;
+for (const [label, src] of [["broadcast", html], ["overlay", overlay]]) {
+  const hits = src.match(baseTextUse);
+  if (hits) { console.log("  ✗ " + label + ": " + hits.length + " readable text use(s) of sub-AA base color — use --red-t/--violet-t:", hits[0]); fails++; }
+}
+
 if (fails) { console.log("UNIT FAILED (" + fails + ")"); process.exit(1); }
-console.log("UNIT OK (impliedProb, drawSpark, betTier)");
+console.log("UNIT OK (impliedProb, drawSpark, betTier, contrast)");

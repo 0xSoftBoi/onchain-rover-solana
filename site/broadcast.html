@@ -15,6 +15,10 @@
     --amber:#ffd400; --amber-d:#e0a800; --amber-dim:#7a6400;
     --teal:#14f195;            /* Solana green */
     --green:#00d061; --red:#e10600; --violet:#9945ff; /* Solana purple */
+    /* AA text variants: base --red/--violet fail WCAG 1.4.3 (4.5:1) as normal text
+       on --panel (3.89 / 4.27); these clear it (5.64 / 5.42). Use for readable text;
+       keep the saturated base for glows/borders/shadows. Locked by tools/unit.cjs. */
+    --red-t:#ff4438; --violet-t:#a366ff;
     --txt:#f6f4ee; --dim:#8b8a82;
     --line:rgba(255,212,0,.22); --glow:rgba(255,212,0,.4); --chrome:#cfd2d6;
     --disp:Impact,"Arial Narrow Bold","Arial Narrow",sans-serif;
@@ -50,7 +54,7 @@
   #brandbug .stk .t1{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.5vh; text-transform:uppercase;
     letter-spacing:.04em;} #brandbug .stk .t1 b{color:var(--amber);}
   #brandbug .stk .t2{font-size:1.25vh; letter-spacing:.34em; color:var(--dim); text-transform:uppercase; margin-top:.5vh;}
-  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red); font-weight:700;}
+  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red-t); font-weight:700;}
   .live i{width:1.1vh; height:1.1vh; border-radius:50%; background:var(--red); box-shadow:0 0 1.4vh var(--red);
     animation:blink 1.1s infinite;}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
@@ -59,7 +63,7 @@
   #topright .clock{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.4vh; color:var(--txt);
     letter-spacing:.02em; font-variant-numeric:tabular-nums;}
   #topright .phase{margin-top:.7vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase;}
-  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
+  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet-t);}
 
   /* ── center stage ── */
   #stage{position:absolute; left:0; right:0; top:8.8vh; bottom:18vh; z-index:10;}
@@ -103,7 +107,7 @@
   .panel h2{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.6vh; text-transform:uppercase;
     line-height:.95; margin:.4vh 0 .2vh;}
   .panel.bet h2{color:var(--amber); text-shadow:.2vh .2vh 0 var(--red), 0 0 2.6vh var(--glow);}
-  .panel.drive h2{color:var(--violet); text-shadow:.2vh .2vh 0 #000, 0 0 2.6vh rgba(153,69,255,.5);}
+  .panel.drive h2{color:var(--violet-t); text-shadow:.2vh .2vh 0 #000, 0 0 2.6vh rgba(153,69,255,.5);}
   .panel .desc{font-size:1.6vh; color:var(--chrome); letter-spacing:.04em; margin-bottom:1.4vh; min-height:2vh;}
   .qrwrap{background:#fff; padding:1.4vh; border-radius:1vh; box-shadow:0 0 4vh rgba(255,212,0,.18);
     width:24vh; height:24vh; display:flex; align-items:center; justify-content:center; position:relative;}
@@ -121,7 +125,7 @@
   .odds .o.guard .x{color:var(--teal);} .odds .o.courier .x{color:var(--amber);}
   .badge{display:inline-block; font-size:1.25vh; letter-spacing:.18em; text-transform:uppercase; padding:.5vh 1vw;
     border:1px solid currentColor; border-radius:.5vh; margin-top:.4vh;}
-  .badge.world{color:var(--teal);} .badge.x402{color:var(--violet);}
+  .badge.world{color:var(--teal);} .badge.x402{color:var(--violet-t);}
   .drivekv{display:flex; justify-content:space-between; gap:1vw; font-size:1.5vh; padding:.7vh 0; border-bottom:1px solid rgba(255,212,0,.1);}
   .drivekv .k{color:var(--dim); letter-spacing:.1em; text-transform:uppercase; font-size:1.3vh;}
   .drivekv .v{color:var(--txt);} .drivekv .v.g{color:var(--green);}
@@ -187,14 +191,14 @@
   #ticker .tk-seg{padding-left:3vw; font-size:1.95vh; letter-spacing:.02em; color:var(--chrome);}
   #ticker .tk-seg .sp{font-weight:700; letter-spacing:.08em;}
   #ticker .tk-seg .sp.guard{color:var(--teal);} #ticker .tk-seg .sp.courier{color:var(--amber);}
-  #ticker .tk-seg .di{color:var(--red); margin:0 1.2vw;}
+  #ticker .tk-seg .di{color:var(--red-t); margin:0 1.2vw;}
   @keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   /* betting countdown on the bet panel */
   .betclock{display:flex; flex-direction:column; align-items:center; margin:.2vh 0 1.2vh;}
   .betclock .bc-lab{font-size:1.2vh; letter-spacing:.3em; text-transform:uppercase; color:var(--dim);}
   .betclock .bc-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--amber);
     font-variant-numeric:tabular-nums; line-height:1; text-shadow:0 0 2vh var(--glow);}
-  .betclock.closing .bc-val{color:var(--red); animation:blink .6s infinite;}
+  .betclock.closing .bc-val{color:var(--red-t); animation:blink .6s infinite;}
 
   /* ── scorebug (always on) ── */
   #scorebug{position:fixed; left:0; right:0; bottom:0; z-index:35; height:12vh;
@@ -216,7 +220,7 @@
   .runner .fav-tag{display:none; margin-left:.5vw; font-size:1.2vh; font-weight:800; letter-spacing:.1em; color:#0a0a0c;
     background:var(--amber); padding:.2vh .5vw; border-radius:.4vh;}
   .runner.lead .fav-tag{display:inline-block;}
-  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red); font-size:2.4vh;}
+  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red-t); font-size:2.4vh;}
   .sb-purse{align-items:flex-end; border-left:1px solid var(--line);}
   .sb-purse .p-lab{font-size:1.2vh; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;}
   .sb-purse .p-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.4vh; color:var(--amber);
@@ -267,10 +271,10 @@
   #predict.locked{border-top-color:var(--red);}
   .pr-head{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.4vh; text-transform:uppercase;
     color:var(--amber); letter-spacing:.03em; text-shadow:0 0 1.6vh var(--glow);}
-  #predict.locked .pr-head{color:var(--red); text-shadow:0 0 1.6vh rgba(225,6,0,.5);}
+  #predict.locked .pr-head{color:var(--red-t); text-shadow:0 0 1.6vh rgba(225,6,0,.5);}
   .pr-clock{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--txt);
     font-variant-numeric:tabular-nums; line-height:1; margin:.3vh 0 .5vh;}
-  .pr-clock.closing{color:var(--red); animation:blink .6s infinite;}
+  .pr-clock.closing{color:var(--red-t); animation:blink .6s infinite;}
   .pr-pool-row{font-size:1.4vh; color:var(--dim); margin-bottom:1.1vh;}
   .pr-pool-row span{color:var(--amber); font-weight:700;}
   .pr-prob{display:flex; justify-content:space-between; font-size:1.5vh; font-weight:700; margin-bottom:.4vh;}
@@ -281,7 +285,7 @@
 
   /* implied-probability % + movement arrows (shown alongside odds) */
   .prob{font-size:.66em; color:var(--teal); letter-spacing:.02em; font-weight:700;}
-  .prob .up{color:var(--green);} .prob .dn{color:var(--red);}
+  .prob .up{color:var(--green);} .prob .dn{color:var(--red-t);}
 
   /* live/mock connection badge */
   .conn{margin-top:.8vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700;}
@@ -316,7 +320,7 @@
   .season-bar .pt{display:flex; align-items:center; gap:.4vw; font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.2vh;}
   .season-bar .pt.guard{color:var(--teal);} .season-bar .pt.courier{color:var(--amber);}
   .season-bar .pt .u{font-size:1.2vh; color:var(--dim); font-family:var(--mono); font-style:normal; font-weight:400; letter-spacing:.08em;}
-  .season-bar .dash{color:var(--red); font-weight:900;}
+  .season-bar .dash{color:var(--red-t); font-weight:900;}
   .season-bar .meta{margin-left:auto; color:var(--dim); font-size:1.25vh; letter-spacing:.08em;}
   .backers-h{margin-top:1.4vh; font-size:1.4vh; letter-spacing:.18em; text-transform:uppercase; color:var(--teal); font-weight:700;}
 
@@ -324,7 +328,7 @@
   #offline{display:none; position:fixed; left:50%; top:42%; transform:translate(-50%,-50%); z-index:58; text-align:center;
     padding:2vh 3vw; background:rgba(225,6,0,.16); border:1px solid var(--red); border-radius:1.2vh; backdrop-filter:blur(2px);}
   body.offline #offline{display:block;}
-  #offline .o-h{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4vh; color:var(--red); text-transform:uppercase; text-shadow:0 0 2vh rgba(225,6,0,.5);}
+  #offline .o-h{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4vh; color:var(--red-t); text-transform:uppercase; text-shadow:0 0 2vh rgba(225,6,0,.5);}
   #offline .o-s{font-size:1.6vh; color:var(--chrome); letter-spacing:.1em; margin-top:.6vh;}
 
   /* ── sponsor-rotation bug (top center) ── */
@@ -766,7 +770,7 @@ async function poll(){
   phaseEl.className = "phase ph-" + status;
   if(status === "betting"){ phaseEl.textContent = "🟡 BETTING OPEN"; sbStatus.textContent="BETTING OPEN"; sbStatus.style.color="var(--amber)"; $("bet-desc").textContent="betting open — back a rover now"; }
   else if(status === "racing"){ phaseEl.textContent = "🟢 GREEN FLAG"; sbStatus.textContent="RACING"; sbStatus.style.color="var(--green)"; $("bet-desc").textContent="🔒 betting closed — cars are on track"; }
-  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = (st&&st.winner? sol(st.winner).toUpperCase()+" WINS":"FINISHED"); sbStatus.style.color="var(--violet)"; $("bet-desc").textContent="results in — next grid forming"; }
+  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = (st&&st.winner? sol(st.winner).toUpperCase()+" WINS":"FINISHED"); sbStatus.style.color="var(--violet-t)"; $("bet-desc").textContent="results in — next grid forming"; }
 
   // odds → scorebug + CTA (with implied probability % + movement arrows)
   if(od && od.odds){

@@ -21,9 +21,9 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 - [x] Extend `verify.sh` to run the harness across 11 query modes per page (cb/vertical/osd/clean/blink/demo/lite/freeze/api/bartop) — catches mode-specific breakage.
 
 ### Accessibility
-- [ ] Full WCAG contrast pass on amber-on-panel and dim text; bump where < 4.5:1.
+- [x] Full WCAG contrast pass on amber-on-panel and dim text; bump where < 4.5:1. Measured all brand text colors against the effective panel (rgba(14,15,19,.78) over --void): amber 13.48 and dim 5.57–6.83 both already PASS AA — the named worries were fine. Only sub-4.5 colors as normal text were --violet (4.27) and --red (3.89); added AA text variants --violet-t #a366ff (5.42) / --red-t #ff4438 (5.64) applied to all readable `color:` + JS status text (16 usages), keeping the saturated base for glows/borders/shadows (decorative). Locked by a new contrast self-test in tools/unit.cjs (computes WCAG ratios + asserts no readable text uses the sub-AA base).
 - [x] Scorebug favourite now shows a redundant "★ FAV" marker (not just amber glow) — non-color cue, both pages.
-- [ ] Continue: ensure remaining color-only signals (e.g. phase chip colors, `.flash`) have redundant cues.
+- [x] Continue: ensure remaining color-only signals (e.g. phase chip colors, `.flash`) have redundant cues. Audited both pages: phase chips already carry emoji + distinct text (🟡 BETTING / 🟢 GREEN FLAG / 🏁 CHECKERED FLAG); conn badge has a text label + a blinking dot for "reconnecting"; the favourite has ★ FAV; leaderboard podium carries rank numbers (1/2/3), not color alone; sb-status encodes phase by distinct words too. `.flash` is a transient "value changed" pulse (brightness), not a categorical color code. No color-only signal remained — WCAG 1.4.1 satisfied.
 
 ### Performance
 - [x] Parallelize the poll fetches (race/state + race/odds + onchain/feed) with Promise.all — ~3× lower poll latency, both pages.

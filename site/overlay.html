@@ -18,6 +18,9 @@
   :root{
     --amber:#ffd400; --amber-d:#e0a800; --teal:#14f195; --green:#00d061;
     --red:#e10600; --violet:#9945ff; --txt:#f6f4ee; --dim:#9b9a92; --chrome:#cfd2d6;
+    /* AA text variants (WCAG 1.4.3): base --red/--violet fail 4.5:1 as normal text
+       on the scorebug panel; these clear it. Text only — base stays for glows/borders. */
+    --red-t:#ff4438; --violet-t:#a366ff;
     --line:rgba(255,212,0,.28); --glow:rgba(255,212,0,.42);
     --disp:Impact,"Arial Narrow Bold","Arial Narrow",sans-serif;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -36,7 +39,7 @@
   #bug .t1{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; text-transform:uppercase;
     letter-spacing:.04em; text-shadow:var(--sh);} #bug .t1 b{color:var(--amber);}
   #bug .t2{font-size:1.3vh; letter-spacing:.3em; color:var(--chrome); text-transform:uppercase; margin-top:.6vh; text-shadow:var(--sh);}
-  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red); font-weight:800;}
+  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red-t); font-weight:800;}
   .live i{width:1.1vh; height:1.1vh; border-radius:50%; background:var(--red); box-shadow:0 0 1.4vh var(--red);
     animation:blink 1.1s infinite;}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
@@ -47,7 +50,7 @@
   #clk .c{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.6vh; color:var(--txt);
     font-variant-numeric:tabular-nums; text-shadow:var(--sh);}
   #clk .p{margin-top:.6vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase; text-shadow:var(--sh);}
-  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
+  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet-t);}
   #clk .conn{margin-top:.7vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700; text-shadow:var(--sh);}
   #clk .conn.live{color:var(--green);} #clk .conn.mock{color:var(--dim);} #clk .conn.reconnecting{color:var(--amber);}
   #clk .conn i{display:inline-block; width:.9vh; height:.9vh; border-radius:50%; margin-left:.5vw; vertical-align:middle;}
@@ -78,7 +81,7 @@
   .runner .fav-tag{display:none; margin-left:.5vw; font-size:1.2vh; font-weight:800; letter-spacing:.1em; color:#0a0a0c;
     background:var(--amber); padding:.2vh .5vw; border-radius:.4vh; text-shadow:none;}
   .runner.lead .fav-tag{display:inline-block;}
-  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red); font-size:2.6vh; text-shadow:var(--sh);}
+  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red-t); font-size:2.6vh; text-shadow:var(--sh);}
   .sb-bets{align-items:flex-end; min-width:8vw;}
   .sb-bets .b-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--teal); line-height:1; text-shadow:var(--sh);}
   .sb-bets .b-lab{font-size:1.2vh; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; text-align:right; text-shadow:var(--sh);}
@@ -104,7 +107,7 @@
   #ticker .tk-seg{padding-left:3vw; font-size:1.9vh; letter-spacing:.02em; color:var(--chrome); text-shadow:var(--sh);}
   #ticker .tk-seg .sp{font-weight:800; letter-spacing:.08em;}
   #ticker .tk-seg .sp.guard{color:var(--teal);} #ticker .tk-seg .sp.courier{color:var(--amber);}
-  #ticker .tk-seg .di{color:var(--red); margin:0 1.2vw;}
+  #ticker .tk-seg .di{color:var(--red-t); margin:0 1.2vw;}
   @keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   body.bartop #ticker{top:12.5vh; bottom:auto; border-top:none; border-bottom:1px solid var(--line);
     background:linear-gradient(0deg, rgba(10,10,12,0), rgba(10,10,12,.82));}
@@ -378,7 +381,7 @@ async function poll(){
   if(phaseEl) phaseEl.className = "p ph-" + status;
   if(status === "betting"){ if(phaseEl) phaseEl.textContent = rem > 0 ? ("🟡 BETTING · " + fmtClock(rem)) : "🟡 LOCKING…"; if(sbStatus){ sbStatus.textContent = "BETTING OPEN"; sbStatus.style.color = "var(--amber)"; } }
   else if(status === "racing"){ if(phaseEl) phaseEl.textContent = "🟢 GREEN FLAG"; if(sbStatus){ sbStatus.textContent = "RACING"; sbStatus.style.color = "var(--green)"; } }
-  else { if(phaseEl) phaseEl.textContent = "🏁 CHECKERED FLAG"; if(sbStatus){ sbStatus.textContent = st&&st.winner ? sol(st.winner).toUpperCase()+" WINS" : "FINISHED"; sbStatus.style.color = "var(--violet)"; } }
+  else { if(phaseEl) phaseEl.textContent = "🏁 CHECKERED FLAG"; if(sbStatus){ sbStatus.textContent = st&&st.winner ? sol(st.winner).toUpperCase()+" WINS" : "FINISHED"; sbStatus.style.color="var(--violet-t)"; } }
 
   if(od && od.odds){
     const g = od.odds.guard, c = od.odds.courier;

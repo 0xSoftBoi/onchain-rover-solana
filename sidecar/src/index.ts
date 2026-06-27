@@ -41,6 +41,8 @@ import * as events from "./events.js";
 import * as playerSession from "./player-session.js";
 import * as players from "./player-store.js";
 import * as progress from "./progress.js";
+import * as markets from "./markets.js";
+import * as parlay from "./parlay.js";
 
 // Never let one bad call take down the demo: log unhandled errors, stay up.
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
@@ -587,11 +589,70 @@ app.get("/race/cashout", (req, res) => {
     value: +value.toFixed(2), pnl: +(value - stake).toFixed(2),
   });
 });
-app.post("/race/arm", (_req, res) => res.json(race.armRace()));
+
+// --- Prop markets + parlay (bet-builder). Multiple parimutuel markets per race;
+// session-gated multi-bet via the player token. Under DEMO_MOCK the markets are
+// seeded so the board lights up without a live round.
+function activeRoundId(): string {
+  const s: any = race.raceState();
+  return (s && s.id) || "clanker-500-demo";
+}
+app.get("/race/markets", (_req, res) => {
+  const roundId = activeRoundId();
+  markets.ensureMarkets(roundId, { seed: MOCK });
+  res.json(markets.view(roundId));
+});
+app.post("/race/markets/:id/bet", playerSession.auth, (req: any, res) => {
+  try {
+    const outcome = String(req.body?.outcome ?? "");
+    const stake = Number(req.body?.amount);
+    const m = markets.placeMarketBet(req.params.id, outcome, stake);
+    const isUnderdog = markets.oddsFor(m)[outcome] >= 2;
+    progress.recordBet(req.nullifier, { stake, market: m.type, isUnderdog });
+    res.json({ market: markets.viewMarket(m), player: players.summary(players.getOrCreate(req.nullifier)) });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+app.post("/race/parlay", playerSession.auth, (req: any, res) => {
+  try {
+    const roundId = activeRoundId();
+    markets.ensureMarkets(roundId, { seed: MOCK });
+    const stake = Number(req.body?.stake);
+    const t = parlay.create(req.nullifier, roundId, req.body?.legs ?? [], stake);
+    progress.recordBet(req.nullifier, { stake, market: "PARLAY", parlay: true });
+    res.json({ ticket: parlay.publicTicket(t) });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+app.get("/player/parlays", playerSession.auth, (req: any, res) => {
+  res.json({ tickets: parlay.forPlayer(req.nullifier).map(parlay.publicTicket) });
+});
+
+// Settle prop markets + parlays for a round and fan results into player stats.
+// Decoupled from the full race lifecycle so the demo (and tests) can settle the
+// seeded markets without a started race; /race/finish also calls this.
+function settleMarketsAndParlays(roundId: string, winner?: string) {
+  markets.settleAll(roundId, { winner, mock: MOCK });
+  const tickets = parlay.settleForRound(roundId);
+  for (const t of tickets)
+    progress.recordSettle(t.nullifier, { won: t.status === "won", stake: t.stake, payout: t.payout, parlayDepth: t.legs.length });
+  return tickets;
+}
+app.post("/race/markets/settle", (req, res) => {
+  try {
+    const roundId = activeRoundId();
+    const tickets = settleMarketsAndParlays(roundId, req.body?.winner ? String(req.body.winner) : undefined);
+    res.json({ roundId, markets: markets.view(roundId).markets, settledTickets: tickets.length });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/race/arm", (_req, res) => {
+  try { markets.lockAll(activeRoundId()); } catch { /* no markets yet */ }
+  res.json(race.armRace());
+});
 app.post("/race/start", (_req, res) => res.json(race.startRace()));
 app.post("/race/finish", async (req, res) => {
   try {
     const winner = req.body.winner as RobotName;
+    const marketRid = activeRoundId();   // capture BEFORE recordFinish (it mutates race state/id)
     const r = race.recordFinish(winner);
     // The GUARD is the race oracle: capture its finish-line photo and anchor it
     // immutably on Walrus — that real hash + blobId settle the market on-chain.
@@ -609,6 +670,10 @@ app.post("/race/finish", async (req, res) => {
       settled = await chainOp("RACE SETTLE", `${winner} wins · proof ${(proof.blobId||"").slice(0,10)}…`, undefined,
         () => settle.settleRaceOnChain(onChainRaceId!, winnerIdx, proof.sha256 ?? "", proof.blobId ?? ""));
     }
+    // Settle prop markets + parlays for this round, and fan settlements into player
+    // stats (streaks/P&L). MARGIN/FASTEST_LAP/DNF are synthesized under DEMO_MOCK and
+    // voided/refunded in real mode until per-slot finish timing is captured.
+    try { settleMarketsAndParlays(marketRid, winner); } catch (e) { console.error("market/parlay settle:", e); }
     res.json({ ...r, proof, settled });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });

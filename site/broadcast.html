@@ -360,6 +360,39 @@
   .co-btn{width:100%; cursor:pointer; font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; font-size:1.8vh; color:#0a0a0c; background:var(--amber); border:none; border-radius:.6vh; padding:.7vh 0; transition:filter .15s;}
   .co-btn:hover{filter:brightness(1.1);}
   .co-foot{font-size:1.05vh; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); text-align:center; margin-top:.5vh;}
+  /* ── prop markets + bet-builder scene ── */
+  .builder{display:grid; grid-template-columns:1.4fr 1fr; gap:2vw; height:100%; align-content:start;}
+  .board.bb{display:flex; flex-direction:column;}
+  #pm-list{display:flex; flex-direction:column; gap:1.1vh;}
+  .pm-card{border:1px solid var(--line); border-radius:1vh; padding:1.1vh 1.2vw; background:rgba(0,0,0,.32);}
+  .pm-card .pm-h{display:flex; align-items:baseline; gap:.7vw; margin-bottom:.7vh;}
+  .pm-card .pm-lbl{font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.04em; font-size:1.9vh; color:var(--amber);}
+  .pm-card .pm-status{margin-left:auto; font-size:1vh; letter-spacing:.1em; text-transform:uppercase; color:var(--dim);}
+  .pm-outs{display:flex; gap:.8vw; flex-wrap:wrap;}
+  .pm-out{flex:1 1 0; min-width:7vw; cursor:pointer; border:1px solid var(--line); border-radius:.7vh; padding:.7vh .8vw; background:rgba(255,255,255,.03); transition:border-color .15s, background .15s; text-align:center;}
+  .pm-out:hover{border-color:var(--amber);}
+  .pm-out.picked{border-color:var(--amber); background:rgba(255,212,0,.14);}
+  .pm-out .o-name{font-size:1.25vh; letter-spacing:.04em; text-transform:uppercase; color:var(--txt);}
+  .pm-out .o-odds{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.4vh; color:var(--teal);}
+  .pm-card.locked{opacity:.55;} .pm-card.locked .pm-out{cursor:not-allowed;}
+  .bb-badge{margin-left:auto; font-family:var(--mono); font-size:1vh; font-weight:700; letter-spacing:.06em; color:var(--dim); border:1px solid var(--line); border-radius:.3vh; padding:.1vh .5vw;}
+  .bb-badge.on{color:#0a0a0c; background:var(--teal); border-color:var(--teal);}
+  #bb-legs{flex:1; min-height:8vh; margin:.8vh 0; display:flex; flex-direction:column; gap:.6vh;}
+  .bb-empty{font-size:1.2vh; color:var(--dim); letter-spacing:.04em; text-transform:uppercase; padding:1vh 0; text-align:center;}
+  .bb-leg{display:flex; align-items:center; gap:.6vw; font-size:1.35vh; border:1px solid var(--line); border-radius:.5vh; padding:.5vh .7vw;}
+  .bb-leg .l-type{color:var(--dim); text-transform:uppercase; font-size:1vh; letter-spacing:.08em;}
+  .bb-leg .l-out{color:var(--txt); font-weight:700; text-transform:uppercase;}
+  .bb-leg .l-odds{margin-left:auto; font-family:var(--disp); font-style:italic; font-weight:900; color:var(--teal);}
+  .bb-leg .l-x{cursor:pointer; color:var(--red-t); font-weight:900; padding:0 .3vw;}
+  .bb-foot .bb-row{display:flex; justify-content:space-between; align-items:center; font-size:1.4vh; letter-spacing:.04em; text-transform:uppercase; color:var(--dim); padding:.35vh 0;}
+  .bb-foot .bb-row b{font-family:var(--disp); font-style:italic; color:var(--txt); font-size:2.2vh;}
+  .bb-foot .bb-row.big b{color:var(--amber); font-size:3vh; text-shadow:0 0 2vh var(--glow);}
+  .bb-stakebox{color:var(--txt); font-weight:700;}
+  .bb-stakebox input{width:5vw; background:rgba(255,255,255,.06); border:1px solid var(--line); border-radius:.4vh; color:var(--txt); font-family:var(--mono); font-size:1.6vh; padding:.2vh .4vw; text-align:right;}
+  .bb-submit{width:100%; margin-top:.8vh; cursor:pointer; font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; font-size:2vh; color:#0a0a0c; background:var(--amber); border:none; border-radius:.6vh; padding:.8vh 0; transition:filter .15s;}
+  .bb-submit:hover{filter:brightness(1.1);} .bb-submit:disabled{opacity:.5; cursor:default;}
+  .bb-msg{font-size:1.1vh; letter-spacing:.05em; color:var(--dim); text-align:center; margin-top:.6vh; min-height:1.5vh;}
+  .bb-msg.ok{color:var(--teal);} .bb-msg.bad{color:var(--red-t);}
 
   /* ── floating bet reactions ── */
   #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
@@ -570,6 +603,24 @@
         <div class="card-night">
           <div class="cn-head">🏁 Tonight's Card · Night <span id="night-n">1</span></div>
           <div id="card-rows"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene scene-builder" id="sc-builder">
+    <div class="scene-title">PROP MARKETS · <b>BET BUILDER</b><span class="tag">parlay your legs · World ID · one human</span></div>
+    <div class="builder">
+      <div class="board"><h3>🎯 Live Prop Markets</h3><div id="pm-list"><div class="bb-empty">loading markets…</div></div></div>
+      <div class="board bb">
+        <h3>🧾 Bet Slip<span class="bb-badge" id="bb-session">not linked</span></h3>
+        <div id="bb-legs"><div class="bb-empty">tap a market outcome to add a leg (2+ for a parlay)</div></div>
+        <div class="bb-foot">
+          <div class="bb-row"><span>stake</span><span class="bb-stakebox">$<input id="bb-stake" type="number" min="1" step="1" value="5"></span></div>
+          <div class="bb-row"><span>combined odds</span><b id="bb-odds">—</b></div>
+          <div class="bb-row big"><span>potential payout</span><b id="bb-payout">$0.00</b></div>
+          <button class="bb-submit" id="bb-submit" type="button">PLACE PARLAY</button>
+          <div class="bb-msg" id="bb-msg">World-ID one-human-one-account · odds locked at placement</div>
         </div>
       </div>
     </div>
@@ -1066,10 +1117,84 @@ async function pollStandings(){
 }
 pollStandings(); every(pollStandings, 4000);
 
-/* ─── scene auto-cycle ─────────────────────────────────────────────────────── */
+/* ─── prop markets + bet builder (parlay slip) ─────────────────────────────────
+   Server-authoritative: GET /race/markets, POST /race/parlay (session-gated). The
+   demo auto-links a player session. Harness-safe: loadMarkets guards empty/null,
+   network writes only on click, all DOM via $() / guarded querySelectorAll. */
+let bbToken = null, bbSlip = [], bbMarkets = [];
+async function jPost(u, body, token){
+  try{
+    const h = { "Content-Type":"application/json" }; if(token) h.Authorization = "Bearer " + token;
+    return await (await fetch(u, { method:"POST", headers:h, body:JSON.stringify(body||{}) })).json();
+  }catch{ return null; }
+}
+async function bbSession(){
+  if(bbToken) return bbToken;
+  const r = await jPost("/player/session", { demo:true, seed:"viewer-"+(location.hostname||"local") });
+  if(r && r.token){ bbToken = r.token; const b = $("bb-session"); if(b){ b.textContent = "World ID linked"; b.classList.add("on"); } }
+  return bbToken;
+}
+function bbCombined(){ return bbSlip.reduce((a,l)=>a*l.odds, 1); }
+function bbRenderSlip(){
+  const legs = $("bb-legs");
+  if(legs){
+    legs.innerHTML = bbSlip.length
+      ? bbSlip.map((l,i)=>`<div class="bb-leg"><span class="l-type">${l.type}</span><span class="l-out">${l.outcome}</span><span class="l-odds">${l.odds.toFixed(2)}x</span><span class="l-x" data-i="${i}">✕</span></div>`).join("")
+      : `<div class="bb-empty">tap a market outcome to add a leg (2+ for a parlay)</div>`;
+    (legs.querySelectorAll(".l-x")||[]).forEach(x=> x.addEventListener("click", ()=>{ bbSlip.splice(+x.getAttribute("data-i"),1); bbRenderSlip(); bbPaintPicks(); }));
+  }
+  const combined = bbCombined();
+  const stake = Math.max(0, Number(($("bb-stake")||{}).value) || 0);
+  const od = $("bb-odds"); if(od) od.textContent = bbSlip.length>=2 ? combined.toFixed(2)+"x" : (bbSlip.length===1 ? "add 1+ more" : "—");
+  const pay = $("bb-payout"); if(pay) pay.textContent = "$" + (bbSlip.length>=2 ? stake*combined : 0).toFixed(2);
+}
+function bbPaintPicks(){
+  (document.querySelectorAll(".pm-out")||[]).forEach(el=>{
+    el.classList.toggle("picked", bbSlip.some(l=> l.marketId===el.getAttribute("data-m") && l.outcome===el.getAttribute("data-o")));
+  });
+}
+function bbToggle(m, outcome, odds){
+  if(!m || m.status!=="open") return;
+  const i = bbSlip.findIndex(l=>l.marketId===m.id);
+  if(i>=0 && bbSlip[i].outcome===outcome) bbSlip.splice(i,1);          // tap same → remove
+  else if(i>=0) bbSlip[i] = { marketId:m.id, type:m.type, outcome, odds }; // switch within market
+  else bbSlip.push({ marketId:m.id, type:m.type, outcome, odds });
+  bbRenderSlip(); bbPaintPicks();
+}
+async function loadMarkets(){
+  if(document.hidden) return;
+  const data = await j("/race/markets");
+  if(!data || !Array.isArray(data.markets)) return;           // {} (harness) / null (standalone) → no-op
+  bbMarkets = data.markets;
+  const list = $("pm-list"); if(!list) return;
+  list.innerHTML = data.markets.map(m=>`<div class="pm-card ${m.status!=="open"?"locked":""}"><div class="pm-h"><span class="pm-lbl">${m.label}</span><span class="pm-status">${m.status}</span></div><div class="pm-outs">${m.outcomes.map(o=>`<div class="pm-out" data-m="${m.id}" data-o="${o}"><div class="o-name">${o}</div><div class="o-odds">${((m.odds&&m.odds[o])||1).toFixed(2)}x</div></div>`).join("")}</div></div>`).join("");
+  (list.querySelectorAll(".pm-out")||[]).forEach(el=> el.addEventListener("click", ()=>{
+    const m = bbMarkets.find(x=>x.id===el.getAttribute("data-m"));
+    if(m) bbToggle(m, el.getAttribute("data-o"), (m.odds&&m.odds[el.getAttribute("data-o")])||1);
+  }));
+  bbPaintPicks();
+}
+loadMarkets(); every(loadMarkets, 3000);
+{ const st = $("bb-stake"); if(st) st.addEventListener("input", bbRenderSlip); }
+{ const sb = $("bb-submit"); if(sb) sb.addEventListener("click", async ()=>{
+  const msg = $("bb-msg");
+  if(bbSlip.length < 2){ if(msg){ msg.textContent = "add at least 2 legs for a parlay"; msg.className = "bb-msg bad"; } return; }
+  const stake = Math.max(1, Number(($("bb-stake")||{}).value) || 0);
+  if(msg){ msg.textContent = "linking World ID…"; msg.className = "bb-msg"; }
+  const tok = await bbSession();
+  if(!tok){ if(msg){ msg.textContent = "session unavailable (standalone mock)"; msg.className = "bb-msg bad"; } return; }
+  const r = await jPost("/race/parlay", { legs: bbSlip.map(l=>({ marketId:l.marketId, outcome:l.outcome })), stake }, tok);
+  if(r && r.ticket){
+    if(msg){ msg.textContent = "✓ parlay placed · " + r.ticket.combinedOdds.toFixed(2) + "x → $" + r.ticket.potentialPayout.toFixed(2); msg.className = "bb-msg ok"; }
+    bbSlip = []; bbRenderSlip(); bbPaintPicks();
+    if(typeof setHype === "function") setHype(100);
+  } else if(msg){ msg.textContent = (r && r.error) || "parlay rejected"; msg.className = "bb-msg bad"; }
+}); }
+
 const SCENES = [
   { id:"sc-grid",      ms:16000 },
   { id:"sc-cta",       ms:15000 },   // the hero: shown long & often
+  { id:"sc-builder",   ms:13000 },   // prop markets + bet builder
   { id:"sc-grid",      ms:12000 },
   { id:"sc-standings", ms:11000 },
 ];

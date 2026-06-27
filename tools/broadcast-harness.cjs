@@ -66,6 +66,10 @@ const DATA = {
   "/status": { robots: { guard: { ok: true, ens: "guard.roverfleet.eth", feed: "x", battery_v: 12.4 }, courier: { ok: true, ens: "courier.roverfleet.eth", feed: "y", battery_v: 12.1 } } },
   "/worldid/config": { configured: true, action: "rover-gp-bet", appId: "app_clanker500" },
   "/leaderboard/network": { configured: true, rows: [{ agent: "vroom.eth", feedback: 142 }] },
+  "/race/markets": { roundId: "clanker-500", status: "open", markets: [
+    { id: "winner-clanker-500", type: "WINNER", label: "Race Winner", outcomes: ["guard", "courier"], pools: { guard: 13, courier: 5 }, total: 18, odds: { guard: 1.38, courier: 3.6 }, status: "open", winningOutcome: null },
+    { id: "margin-clanker-500", type: "MARGIN", label: "Winning Margin", outcomes: ["blowout", "photo"], pools: { blowout: 2, photo: 2 }, total: 4, odds: { blowout: 2, photo: 2 }, status: "open", winningOutcome: null },
+  ] },
 };
 global.fetch = (u) => {
   const p = String(u).replace(global.location.origin, "").split("?")[0];

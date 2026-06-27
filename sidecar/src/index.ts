@@ -38,6 +38,9 @@ import * as telemetryTrace from "./telemetry-trace.js";
 import * as treasuryLedger from "./treasury-ledger.js";
 import * as session from "./session.js";
 import * as events from "./events.js";
+import * as playerSession from "./player-session.js";
+import * as players from "./player-store.js";
+import * as progress from "./progress.js";
 
 // Never let one bad call take down the demo: log unhandled errors, stay up.
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
@@ -425,6 +428,31 @@ app.get("/leaderboard/network", async (_req, res) => {
 app.post("/worldid/verify", async (req, res) => {
   try { res.json(await worldid.verify(req.body.proof, req.body.signal)); }
   catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// --- Player session: a bearer token bound to a World ID nullifier so a verified
+// human can place many bets/parlays + track quests/stats (additive to /race/bet).
+// Under DEMO_MOCK, {demo:true} mints a token over a synthesized nullifier so the
+// deployed demo can exercise the flow without a live World ID app.
+app.post("/player/session", async (req, res) => {
+  try {
+    let nullifier: string, demo = false;
+    if (MOCK && req.body?.demo) {
+      demo = true;
+      nullifier = "demo:" + createHash("sha256").update(String(req.body.seed ?? randomBytes(8).toString("hex"))).digest("hex").slice(0, 12);
+    } else {
+      const v = await worldid.verify(req.body.proof, req.body.signal);
+      if (!v?.nullifier) throw new Error("World ID verification did not return a nullifier");
+      nullifier = v.nullifier;
+    }
+    players.getOrCreate(nullifier);
+    const { token, payload } = playerSession.issueToken(nullifier, { demo });
+    res.json({ token, nullifier: players.maskHandle(nullifier), demo, expiresAt: payload.exp });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.get("/player/me", playerSession.auth, (req: any, res) => {
+  res.json(players.summary(players.getOrCreate(req.nullifier)));
 });
 
 // Bet: requires a World-ID-verified nullifier. The proof is re-verified server

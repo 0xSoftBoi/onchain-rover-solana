@@ -304,6 +304,52 @@
   #predict .qrwrap.sm{width:8vw; height:8vw; padding:.7vh; box-shadow:none;}
   #predict.locked .qrwrap{opacity:.25; filter:grayscale(1); transition:.3s;}
   .pr-foot{margin-top:1.1vh; font-size:1.15vh; letter-spacing:.1em; text-transform:uppercase; color:var(--teal); text-align:center;}
+  /* provably-fair card — betting-integrity trust panel (commit-reveal + oracle + proof) */
+  #predict .pf-card{margin-top:1vh; padding:1vh 1.1vw; border:1px solid var(--line); border-radius:.8vh; background:rgba(0,0,0,.34);}
+  .pf-h{font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; color:var(--teal); display:flex; align-items:center; gap:.5vw; font-size:1.7vh; margin-bottom:.6vh;}
+  .pf-badge{margin-left:auto; font-family:var(--mono); font-style:normal; font-size:1vh; font-weight:700; color:#0a0a0c; background:var(--amber); padding:.1vh .5vw; border-radius:.3vh; letter-spacing:.08em;}
+  .pf-badge.settled{background:var(--teal);}
+  .pf-row{display:flex; justify-content:space-between; gap:1vw; padding:.25vh 0; font-size:1.15vh; color:var(--dim); text-transform:uppercase; letter-spacing:.04em;}
+  .pf-row code,.pf-row a,.pf-row span:last-child{font-family:var(--mono); color:var(--txt); text-transform:none; letter-spacing:0;}
+  .pf-row a{color:var(--teal); text-decoration:none;}
+  .pf-reveal{display:none;} .pf-reveal.on{display:flex;}
+  .pf-verify{margin:.6vh 0 .3vh; width:100%; cursor:pointer; font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; font-size:1.4vh; color:#0a0a0c; background:var(--amber); border:none; border-radius:.5vh; padding:.5vh 0;}
+  .pf-out{font-family:var(--mono); font-size:1.1vh; color:var(--dim); text-align:center; padding:.2vh 0;}
+  .pf-out.ok{color:var(--teal);} .pf-out.bad{color:var(--red-t);}
+  .pf-tags{display:flex; flex-wrap:wrap; gap:.4vw; margin-top:.6vh;}
+  .pf-tags span{font-size:1vh; color:var(--teal); border:1px solid var(--line); border-radius:.3vh; padding:.1vh .4vw; text-transform:uppercase; letter-spacing:.05em;}
+  /* ── juicy-engagement: hype/combo meter, win streak, cosmetic crate ── */
+  #hype{position:fixed; top:2vh; left:50%; transform:translateX(-50%); z-index:38; width:24vw; min-width:230px;
+    background:rgba(10,10,12,.6); border:1px solid var(--line); border-radius:1vh; padding:.7vh 1vw; transition:box-shadow .3s, border-color .3s;
+    filter:drop-shadow(0 .2vh .6vh rgba(0,0,0,.7));}
+  #hype.lvl3{border-color:var(--red-t); box-shadow:0 0 2.6vh rgba(255,68,56,.4);}
+  .hy-top{display:flex; align-items:baseline; justify-content:space-between;}
+  .hy-lab{font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.08em; color:var(--amber); font-size:1.5vh;}
+  .hy-combo{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red-t); font-size:1.9vh; opacity:0; transition:opacity .15s, transform .15s;}
+  .hy-combo.on{opacity:1; transform:scale(1.12);}
+  .hy-track{height:.9vh; background:rgba(255,255,255,.08); border-radius:1vh; overflow:hidden; margin-top:.5vh;}
+  .hy-fill{height:100%; width:0%; border-radius:1vh; background:linear-gradient(90deg,var(--teal),var(--amber)); transition:width .25s ease;}
+  #hype.lvl2 .hy-fill{background:linear-gradient(90deg,var(--amber),#ff8a00);}
+  #hype.lvl3 .hy-fill{background:linear-gradient(90deg,#ff8a00,var(--red-t));}
+  .hy-streak{font-size:1.15vh; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); margin-top:.4vh; text-align:center; min-height:1.5vh;}
+  .hy-streak b{color:var(--amber);}
+  @keyframes jshake{10%,90%{transform:translate(-1px,0)}20%,80%{transform:translate(2px,0)}30%,50%,70%{transform:translate(-3px,0)}40%,60%{transform:translate(3px,0)}}
+  body.shake{animation:jshake .5s cubic-bezier(.36,.07,.19,.97);}
+  #crate{position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center; flex-direction:column;
+    background:radial-gradient(circle at 50% 45%, rgba(20,20,26,.86), rgba(5,5,7,.95)); backdrop-filter:blur(3px);}
+  #crate.on{display:flex;}
+  .cr-box{position:relative; font-size:14vh; line-height:1; animation:crshake .12s linear 0s infinite;}
+  .cr-box.pop{animation:crpop .5s ease forwards;}
+  @keyframes crshake{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+  @keyframes crpop{0%{transform:scale(1)}40%{transform:scale(1.3)}100%{transform:scale(0); opacity:0}}
+  .cr-glow{position:absolute; inset:-40%; border-radius:50%; background:radial-gradient(circle,var(--glow),transparent 70%); opacity:.5; z-index:-1;}
+  .cr-reveal{display:none; text-align:center;} .cr-reveal.on{display:block; animation:crrise .5s ease;}
+  @keyframes crrise{from{transform:translateY(2vh) scale(.85); opacity:0}to{transform:none; opacity:1}}
+  .cr-rarity{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3vh; letter-spacing:.1em;}
+  .cr-rarity.common{color:var(--chrome);} .cr-rarity.rare{color:var(--teal);} .cr-rarity.epic{color:var(--violet-t);} .cr-rarity.legendary{color:var(--amber);}
+  .cr-item{font-family:var(--disp); font-style:italic; font-weight:900; font-size:7vh; margin:.4vh 0; color:var(--txt); text-shadow:0 0 4vh var(--glow);}
+  .cr-odds{font-family:var(--mono); font-size:1.6vh; color:var(--dim);}
+  .cr-foot{font-size:1.2vh; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin-top:1vh;}
 
   /* ── floating bet reactions ── */
   #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
@@ -544,6 +590,17 @@
   <svg class="pr-spark" id="pr-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="pr-prob-line" points=""/></svg>
   <div class="pr-spark-lab">courier implied % over time</div>
   <div class="pr-foot">📲 scan · World ID · one human, one bet</div>
+  <div class="pf-card" id="pf-card">
+    <div class="pf-h">🛡 PROVABLY FAIR<span class="pf-badge" id="pf-status">COMMITTED</span></div>
+    <div class="pf-row"><span>commit · sha256</span><code id="pf-hash">—</code></div>
+    <div class="pf-row"><span>client seed</span><code id="pf-client">—</code></div>
+    <div class="pf-row pf-reveal" id="pf-reveal-row"><span>reveal · seed</span><code id="pf-seed">—</code></div>
+    <button class="pf-verify" id="pf-verify" type="button">↻ Verify in browser</button>
+    <div class="pf-out" id="pf-verify-out">sha256(seed) ?= commit</div>
+    <div class="pf-row"><span>settled by</span><a id="pf-oracle" target="_blank" rel="noopener">—</a></div>
+    <div class="pf-row"><span>photo-finish</span><a id="pf-proof" target="_blank" rel="noopener">— </a></div>
+    <div class="pf-tags" id="pf-tags"></div>
+  </div>
 </aside>
 
 <!-- pit reporter ticker -->
@@ -573,6 +630,22 @@
   <div class="msub" id="m-sub"></div>
   <div class="mdet" id="m-det"></div>
   <div class="mtx" id="m-tx"></div>
+</div>
+
+<!-- juicy-engagement: hype/combo meter + win streak + cosmetic crate (transparent, cosmetic-only) -->
+<div id="hype">
+  <div class="hy-top"><span class="hy-lab" id="hy-lab">HYPE</span><span class="hy-combo" id="hy-combo"></span></div>
+  <div class="hy-track"><div class="hy-fill" id="hy-fill"></div></div>
+  <div class="hy-streak" id="hy-streak"></div>
+</div>
+<div id="crate">
+  <div class="cr-box" id="cr-box"><span class="cr-emoji">🎁</span><div class="cr-glow"></div></div>
+  <div class="cr-reveal" id="cr-reveal">
+    <div class="cr-rarity" id="cr-rarity">RARE</div>
+    <div class="cr-item" id="cr-item">🏎️ Neon Livery</div>
+    <div class="cr-odds" id="cr-odds">drop odds · rare 27%</div>
+    <div class="cr-foot">PIT CRATE · cosmetic only · odds shown · no purchase to play</div>
+  </div>
 </div>
 
 <!-- boot -->
@@ -739,6 +812,49 @@ clk(); setInterval(clk, 1000);
 /* ─── poll loop: bind scorebug + scenes to live (mock) data ───────────────── */
 let widCfg = null;
 async function loadWid(){ widCfg = await j("/worldid/config"); }   // invariant — fetched rarely, not every tick
+
+/* ─── provably-fair card: commit-reveal seed + oracle settlement + photo-finish proof ───
+   The race outcome is settled by the Switchboard oracle + Walrus proof; the commit-reveal
+   serverSeed locks the pre-race RNG (grid/lane draw) so the operator can't change it after
+   bets are in. The Verify button re-derives sha256(serverSeed) in YOUR browser and checks it
+   equals the hash published before betting opened. Harness-safe: data renders are guarded for
+   empty responses, and the only crypto.subtle call runs on click (never auto-run). */
+let fairnessRec = null;
+const pfShort = (s)=> typeof s === "string" && s.length > 16 ? s.slice(0,10) + "…" + s.slice(-6) : (s ?? "—");
+async function loadFairness(){
+  const f = await j("/race/fairness");
+  if(!f || !f.commit) return;                 // {} (harness) / null (pure-mock standalone) → no-op
+  fairnessRec = f;
+  const set = (id,v)=>{ const e = $(id); if(e) e.textContent = v; };
+  set("pf-hash",   pfShort(f.commit.serverSeedHash));
+  set("pf-client", pfShort(f.commit.clientSeed));
+  set("pf-nonce",  f.commit.nonce);
+  const revealed = !!(f.reveal && f.reveal.serverSeed);
+  const revRow = $("pf-reveal-row"); if(revRow) revRow.classList.toggle("on", revealed);
+  if(revealed) set("pf-seed", pfShort(f.reveal.serverSeed));
+  const badge = $("pf-status");
+  if(badge){ badge.textContent = revealed ? "SETTLED" : "COMMITTED"; badge.classList.toggle("settled", revealed); }
+  const orc = $("pf-oracle");
+  if(orc && f.settlement){ orc.textContent = `${f.settlement.oracle} ${f.settlement.attestationScore}/${f.settlement.threshold} ✓`; if(f.settlement.explorer) orc.href = f.settlement.explorer; }
+  const proof = $("pf-proof");
+  if(proof && f.proof){ proof.textContent = `${f.proof.store} proof ↗`; if(f.proof.url) proof.href = f.proof.url; }
+  const tags = $("pf-tags");
+  if(tags && Array.isArray(f.integrity)){ tags.innerHTML = f.integrity.map(t=>`<span>${t}</span>`).join(""); }
+}
+async function verifyFairness(){
+  const out = $("pf-verify-out"); if(!out) return;
+  if(!fairnessRec || !fairnessRec.reveal || !fairnessRec.commit){ out.textContent = "awaiting reveal (settle)"; out.className = "pf-out"; return; }
+  if(!(window.crypto && window.crypto.subtle && window.TextEncoder)){ out.textContent = "crypto unavailable here"; out.className = "pf-out"; return; }
+  out.textContent = "hashing…"; out.className = "pf-out";
+  try{
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fairnessRec.reveal.serverSeed));
+    const hex = [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+    const ok = hex === fairnessRec.commit.serverSeedHash;
+    out.textContent = ok ? "✓ VERIFIED — commit matches reveal" : "✗ MISMATCH — do not trust";
+    out.className = "pf-out " + (ok ? "ok" : "bad");
+  }catch(e){ out.textContent = "verify error"; out.className = "pf-out bad"; }
+}
+{ const vb = $("pf-verify"); if(vb) vb.addEventListener("click", verifyFairness); }
 async function poll(){
   if(document.hidden) return;
   const [st, od, fe] = await Promise.all([j("/race/state"), j("/race/odds"), j("/onchain/feed")]);  // parallel: 1 RTT, not 3
@@ -875,6 +991,7 @@ function handlePredict(from, to, od){
 }
 
 loadWid().then(()=>{ poll(); every(poll, 1100); });
+loadFairness(); every(loadFairness, 12000);   // commit-reveal refreshes per round, not per tick
 pollCams(); every(pollCams, 2500);
 
 /* ─── betting countdown display (smooth, 250ms) ───────────────────────────── */
@@ -958,6 +1075,7 @@ addEventListener("keydown", (e)=>{
     case "n": case "ArrowRight": clearTimeout(cycleTimer); nextScene(); break;
     case "p": case "ArrowLeft":  clearTimeout(cycleTimer); si = (si - 2 + SCENES.length) % SCENES.length; nextScene(); break;
     case "m": fireMoment("OPERATOR TEST", "✓", "hotkey-triggered alert", "verifying the takeover", null, {}); break;
+    case "g": openCrate(); break;   // demo: force a cosmetic pit-crate drop
     case "c": document.body.classList.toggle("clean"); break;
     case "l": document.body.classList.toggle("lite"); break;
     default: return;
@@ -1189,10 +1307,74 @@ function tallyBacker(e){
 }
 renderBackers();
 
-/* the bus feeds moments, the pilot credit, the bracket, bet reactions, and the backers wall */
+/* ─── juicy-engagement: hype/combo meter, win streaks, cosmetic crate ──────────
+   Transparent dopamine, not dark patterns: the crate is COSMETIC-only with drop
+   odds shown, the hype meter just reflects real bet flow, streaks count real wins.
+   Harness-safe: $() returns stubs, the crate reveal/auto-dismiss run on setTimeout
+   (no-op under the harness), and nothing throws on the exercised event types. */
+const HYPE_DECAY = 1.4;
+let hype = 0, combo = 0, lastBetT = 0, winStreak = 0, crateTimer = null;
+const RARITIES = [
+  { name:"COMMON",    cls:"common",    odds:60, items:["🔩 Pit Decal","🎽 Classic Livery","🪪 Crew Badge"] },
+  { name:"RARE",      cls:"rare",      odds:27, items:["🏎️ Neon Livery","🛞 Slick Set","📻 Team Radio Skin"] },
+  { name:"EPIC",      cls:"epic",      odds:10, items:["🔥 Flame Wrap","⚡ Turbo Aura","🛡 Chrome Shell"] },
+  { name:"LEGENDARY", cls:"legendary", odds:3,  items:["🌈 Holo Champion Livery","🏆 Gold Grand Prix Trophy"] },
+];
+function setHype(v){
+  hype = Math.max(0, Math.min(100, v));
+  const fill = $("hy-fill"); if(fill) fill.style.width = hype.toFixed(0) + "%";
+  const box = $("hype"); if(box){ box.classList.toggle("lvl2", hype>=45 && hype<80); box.classList.toggle("lvl3", hype>=80); }
+  const lab = $("hy-lab"); if(lab) lab.textContent = hype>=80 ? "🔥 ON FIRE" : hype>=45 ? "HEATING UP" : "HYPE";
+}
+function bumpCombo(){
+  const now = Date.now();
+  combo = (now - lastBetT < 6000) ? combo + 1 : 1;       // chain bets within 6s
+  lastBetT = now;
+  setHype(hype + 12 + combo*3);
+  const c = $("hy-combo");
+  if(c){ if(combo>=2){ c.textContent = "COMBO ×" + combo; c.classList.add("on"); } else { c.classList.remove("on"); } }
+}
+function shake(){ const b = document.body; if(!b) return; b.classList.remove("shake"); void b.offsetWidth; b.classList.add("shake"); }
+function pickRarity(){ let r = Math.random()*100, acc = 0; for(const rr of RARITIES){ acc += rr.odds; if(r < acc) return rr; } return RARITIES[0]; }
+function openCrate(){
+  const wrap = $("crate"); if(!wrap) return;
+  const rr = pickRarity(), item = rr.items[(Math.random()*rr.items.length)|0];
+  const box = $("cr-box"), reveal = $("cr-reveal");
+  if(reveal) reveal.classList.remove("on");
+  if(box) box.classList.remove("pop");
+  wrap.classList.add("on"); SOUND.blip();
+  clearTimeout(crateTimer);
+  crateTimer = setTimeout(()=>{                            // shake ~1.8s, then pop + reveal
+    if(box) box.classList.add("pop");
+    const rk = $("cr-rarity"); if(rk){ rk.textContent = rr.name; rk.className = "cr-rarity " + rr.cls; }
+    const it = $("cr-item");   if(it) it.textContent = item;
+    const od = $("cr-odds");   if(od) od.textContent = "drop odds · " + rr.name.toLowerCase() + " " + rr.odds + "%";
+    if(reveal) reveal.classList.add("on");
+    SOUND.cheer(); burst();
+    crateTimer = setTimeout(()=>{ if(wrap) wrap.classList.remove("on"); }, 4400);
+  }, 1800);
+}
+function juice(e){
+  if(!e) return;
+  if(e.kind === "BET" && e.severity === "ok" && typeof e.usdc === "number"){
+    bumpCombo();
+    if(e.usdc >= 50) shake();                              // whale-bet rumble
+  }
+  if(e.kind === "RACE SETTLE"){
+    winStreak++;
+    const s = $("hy-streak");
+    if(s) s.innerHTML = winStreak>=2 ? ("🔥".repeat(Math.min(winStreak,5)) + " <b>COURIER · " + winStreak + "-RACE STREAK</b>") : "";
+    setHype(100); shake();
+    if(winStreak % 3 === 0) openCrate();                   // crate drop every 3rd straight win
+  }
+}
+every(()=>{ if(hype>0) setHype(hype - HYPE_DECAY); if(combo && Date.now()-lastBetT>6000){ combo=0; const c=$("hy-combo"); if(c) c.classList.remove("on"); } }, 220);
+setHype(0);
+
+/* the bus feeds moments, the pilot credit, the bracket, bet reactions, the backers wall, and the juice */
 try{
   const es = new EventSource("/events/stream");
-  es.onmessage = (m)=>{ try{ const e = JSON.parse(m.data); maybeMoment(e); maybePilot(e); maybeFloat(e); tallyBacker(e); }catch{} };
+  es.onmessage = (m)=>{ try{ const e = JSON.parse(m.data); maybeMoment(e); maybePilot(e); maybeFloat(e); tallyBacker(e); juice(e); }catch{} };
 }catch{}
 
 /* ─── boot sequence ───────────────────────────────────────────────────────── */

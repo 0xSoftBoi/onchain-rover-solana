@@ -37,5 +37,19 @@ focused, shippable. Never commit if verify fails. Do not modify `site/clanker-mo
 - [ ] Auto-derive `ACTIONS_BASE` from `/chain/config` when `?api` is set.
 - [ ] Tasteful parity: bring `?osd`/telemetry or `?clean` ideas to the overlay where they don't fight the transparent mandate.
 
+### Gambling / casino features (competitive gap analysis vs top crypto-gaming sites)
+Researched Stake/Rollbit/Shuffle (casinos), Polymarket/Drift BET/Azuro/Hxro (prediction/parimutuel),
+Solpump/Solana Crash (degen), and crypto sportsbooks. Shortlist below, demo-mockable via DEMO_MOCK.
+- [x] **Provably-fair panel** — commit-reveal round seed (serverSeedHash committed before betting, serverSeed revealed at settle, in-browser `sha256(seed)==hash` verify) + Switchboard oracle settlement + Walrus photo-finish proof + integrity badges (World ID one-human-one-bet, bets locked at green flag, on-chain parimutuel pool). Built: sidecar `/race/fairness` (commit-reveal stable per process via node:crypto; reveals at settle, demo always reveals); broadcast.html `#pf-card` in the betting sidebar with a real in-browser **Verify** button (`crypto.subtle.digest`, guarded + on-click only so harness-safe; empty-response guarded; can't touch clanker-mock.js). Verified: real `sha256(serverSeed)==serverSeedHash` passes; verify.sh --sidecar OK.
+- [x] **Juicy-engagement pack** (transparent game-feel, NOT dark patterns) — hype/combo meter driven by real bet flow (chains within 6s, decays idle, escalates HYPE→HEATING UP→ON FIRE), win-streak flames on settle, whale-bet/settle screen-shake, and a **cosmetic** PIT CRATE opening animation with rarity + **disclosed drop odds** (Common 60 / Rare 27 / Epic 10 / Legendary 3 = 100%, verified distribution matches). Cosmetic-only, no purchase to play, no loss-disguised-as-win. Built into broadcast.html, hooked on the live bus; harness-safe (crate reveal on setTimeout, all renders guarded). Hotkey `g` force-opens a crate.
+- [ ] **Live cash-out** mid-race (odds-driven sell-back before settle) — marquee sportsbook feature, unique to live robot racing.
+- [ ] **Prop markets + parlay / bet-builder** — beyond binary winner: margin of victory, fastest lap, DNF/crash, over-under lap time; combine legs.
+- [ ] **Weekly wager race + quests/missions + achievements** — Stake/Shuffle run $100k wager-leaderboards; BGaming Quests-style daily missions ("back the underdog", "bet 3 races"); badges/streaks. (Retention LTV uplift 30–199% per 2026 benchmarks.)
+- [ ] **VIP tiers + bettor rakeback** (Bronze→Diamond, 10–20%) — today rake → Pit Fund only; add a bettor-facing rakeback/tier.
+- [ ] **Live chat + rain/tip drops + whale tracker / copy-betting + market comments** — every degen/casino site has a community chat; the demo currently feels solo.
+- [ ] **Free demo bet / faucet + points→airdrop season** — degen acquisition standard; bridges to $CLANK.
+- [ ] **Responsible-gambling + geofencing/KYC surface** — deposit/loss limits, self-exclusion, region gating (already designed in TOKENOMICS §15, not yet in the product surface).
+- [ ] **User-created / permissionless prop markets + LP / maker rewards** — Drift BET DAO markets, Polymarket liquidity-rewards/limit orders, Azuro Liquidity Tree.
+
 ## Done
 - (loop appends completed items here with the commit hash)

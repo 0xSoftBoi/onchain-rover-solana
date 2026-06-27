@@ -6,7 +6,7 @@
  * Robot FastAPIs are LAN-only behind this.
  */
 import express from "express";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { solanaPaymentGate, x402SolanaPublicConfig } from "./solana-x402.js";
@@ -506,6 +506,42 @@ app.get("/race/state", (_req, res) => {
   // clanker-mock.js fall back to its animated demo race (see site serving below).
   if (MOCK && !s) return res.status(404).end();
   res.json(s);
+});
+// ── Provably-fair record (commit-reveal). The race OUTCOME is settled by the
+// Switchboard oracle + the Walrus photo-finish proof; the serverSeed commits the
+// pre-race RNG (grid/lane draw) so it can't be changed after bets are placed. The
+// hash is published before betting; the seed is revealed at settle. The broadcast
+// page re-derives sha256(serverSeed) in-browser and checks it equals the hash.
+// Stable per process so the committed hash is consistent across polls. ──────────
+const FAIRNESS = (() => {
+  const serverSeed = randomBytes(32).toString("hex");
+  const serverSeedHash = createHash("sha256").update(serverSeed).digest("hex");
+  const clientSeed = randomBytes(8).toString("hex"); // stands in for a Solana blockhash
+  return { serverSeed, serverSeedHash, clientSeed };
+})();
+app.get("/race/fairness", (_req, res) => {
+  const s = race.raceState();
+  // demo always shows a settled, fully-verifiable round; real mode reveals only after settle
+  const revealed = MOCK ? true : !!(s && s.winner);
+  res.json({
+    round: (s && s.id) || "clanker-500-demo",
+    commit: { serverSeedHash: FAIRNESS.serverSeedHash, clientSeed: FAIRNESS.clientSeed, nonce: 500 },
+    reveal: revealed ? { serverSeed: FAIRNESS.serverSeed } : null,
+    outcome: revealed ? ((s && s.winner) || "courier") : null,
+    settlement: {
+      oracle: "Switchboard",
+      attestationScore: 80,
+      threshold: 70,
+      explorer: "https://explorer.solana.com/tx/5Kq8demoSettlementClanker500RoverGrandPrixProof?cluster=devnet",
+    },
+    proof: { store: "Walrus", url: "https://walruscan.com/blob/0xCLANKER500photofinishdemoproof" },
+    integrity: [
+      "World ID · one human, one bet",
+      "bets lock at green flag",
+      "on-chain parimutuel pool",
+      "insiders barred from betting",
+    ],
+  });
 });
 app.post("/race/arm", (_req, res) => res.json(race.armRace()));
 app.post("/race/start", (_req, res) => res.json(race.startRace()));

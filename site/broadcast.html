@@ -393,6 +393,24 @@
   .bb-submit:hover{filter:brightness(1.1);} .bb-submit:disabled{opacity:.5; cursor:default;}
   .bb-msg{font-size:1.1vh; letter-spacing:.05em; color:var(--dim); text-align:center; margin-top:.6vh; min-height:1.5vh;}
   .bb-msg.ok{color:var(--teal);} .bb-msg.bad{color:var(--red-t);}
+  /* ── weekly wager race + quests + achievements scene ── */
+  .wager{display:grid; grid-template-columns:1fr 1fr; gap:2vw; height:100%; align-content:start;}
+  .wr-week{margin-left:.6vw; font-family:var(--mono); font-size:1.1vh; color:var(--dim); letter-spacing:.06em;}
+  .wr-poolline{font-size:1.4vh; letter-spacing:.04em; text-transform:uppercase; color:var(--dim); margin:.4vh 0 1vh;}
+  .wr-poolline b{font-family:var(--disp); font-style:italic; color:var(--amber); font-size:1.9vh; text-shadow:0 0 1.6vh var(--glow);}
+  #wr-rows .row, #quest-rows .qrow{margin-bottom:.5vh;}
+  .wr-myrank{margin-top:1vh; font-size:1.3vh; letter-spacing:.05em; color:var(--teal); text-transform:uppercase;}
+  .qrow{display:flex; align-items:center; gap:.8vw; border:1px solid var(--line); border-radius:.6vh; padding:.6vh .8vw;}
+  .qrow .q-d{flex:1; font-size:1.35vh;}
+  .qrow .q-d small{display:block; color:var(--dim); font-size:1vh; letter-spacing:.06em; text-transform:uppercase;}
+  .qrow .q-bar{width:7vw; height:.8vh; background:rgba(255,255,255,.08); border-radius:1vh; overflow:hidden;}
+  .qrow .q-bar i{display:block; height:100%; background:linear-gradient(90deg,var(--teal),var(--amber));}
+  .qrow .q-tag{font-size:1vh; letter-spacing:.06em; text-transform:uppercase; color:var(--dim);}
+  .qrow.done .q-tag{color:var(--teal);} .qrow.claimed .q-tag{color:var(--amber);}
+  .ach-h{margin:1.2vh 0 .7vh; font-size:1.3vh; letter-spacing:.06em; text-transform:uppercase; color:var(--amber);}
+  #ach-rows{display:flex; flex-wrap:wrap; gap:.6vw;}
+  .ach{display:flex; align-items:center; gap:.4vw; font-size:1.25vh; border:1px solid var(--line); border-radius:.4vh; padding:.3vh .6vw;}
+  .ach.locked{opacity:.4;} .ach .a-i{font-size:1.8vh;}
 
   /* ── floating bet reactions ── */
   #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
@@ -622,6 +640,24 @@
           <button class="bb-submit" id="bb-submit" type="button">PLACE PARLAY</button>
           <div class="bb-msg" id="bb-msg">World-ID one-human-one-account · odds locked at placement</div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene scene-wager" id="sc-wager">
+    <div class="scene-title">💰 WEEKLY <b>WAGER RACE</b><span class="tag">most wagered wins the pool · World ID one human</span></div>
+    <div class="wager">
+      <div class="board">
+        <h3>🏁 Standings <span class="wr-week" id="wr-week">—</span></h3>
+        <div class="wr-poolline">PRIZE POOL <b id="wr-pool">$0.00</b> · closes in <b id="wr-clock">—</b></div>
+        <div id="wr-rows"></div>
+        <div class="wr-myrank" id="wr-myrank"></div>
+      </div>
+      <div class="board">
+        <h3>🎯 Quests <span class="wr-week">resets daily/weekly</span></h3>
+        <div id="quest-rows"></div>
+        <div class="ach-h">🏅 Achievements · <span id="points-total">0</span> pts · streak <span id="streak-val">0</span></div>
+        <div id="ach-rows"></div>
       </div>
     </div>
   </section>
@@ -1175,6 +1211,45 @@ async function loadMarkets(){
   bbPaintPicks();
 }
 loadMarkets(); every(loadMarkets, 3000);
+
+/* ─── weekly wager race + quests + achievements (server-authoritative) ─────────
+   Harness-safe: guards empty/null, every() pollers, auto-links a demo session for
+   the player-scoped panels. In live mode the backers wall is repointed to the real
+   wager standings (replacing client synthesis). */
+async function jAuth(u){
+  try{ const h = {}; if(bbToken) h.Authorization = "Bearer " + bbToken; return await (await fetch(u, { headers:h })).json(); }catch{ return null; }
+}
+async function pollWager(){
+  if(document.hidden) return;
+  const w = await jAuth("/wager-race");
+  if(!w || !Array.isArray(w.standings)) return;
+  const pool = $("wr-pool"); if(pool) pool.textContent = "$" + (w.prizePool || 0).toFixed(2);
+  const wk = $("wr-week"); if(wk) wk.textContent = w.weekId || "";
+  const clk = $("wr-clock"); if(clk) clk.textContent = w.endsAt ? fmtClock(Math.max(0, w.endsAt - (w.now || Date.now()))) : "—";
+  const rows = $("wr-rows");
+  if(rows) rows.innerHTML = w.standings.slice(0,5).map((r,i)=>`<div class="row p${i+1}"><span class="pos">${r.rank}</span><span class="who">${r.handle}</span><span class="sc">$${r.wagered.toFixed(2)}${r.prize>0?" · win $"+r.prize.toFixed(2):""}</span></div>`).join("");
+  const mr = $("wr-myrank"); if(mr) mr.textContent = w.myRank ? ("YOU · #" + w.myRank.rank + " · $" + w.myRank.wagered.toFixed(2) + " wagered") : "";
+  if(API_MODE){ const br = $("backers-rows"); if(br) br.innerHTML = w.standings.slice(0,5).map((r,i)=>`<div class="row p${i+1}"><span class="pos">${r.rank}</span><span class="who">${r.handle}</span><span class="sc">$${r.wagered.toFixed(2)}</span></div>`).join(""); }
+}
+async function pollQuests(){
+  if(document.hidden) return;
+  await bbSession();          // auto-link a demo session so the player panels render
+  const q = await jAuth("/player/quests");
+  const qr = $("quest-rows");
+  if(qr && q && Array.isArray(q.quests))
+    qr.innerHTML = q.quests.map(x=>`<div class="qrow ${x.complete?"done":""} ${x.claimed?"claimed":""}"><div class="q-d">${x.desc}<small>${x.cadence} · +${x.reward.amount} ${x.reward.type}</small></div><div class="q-bar"><i style="width:${Math.round(100*Math.min(x.progress,x.target)/x.target)}%"></i></div><div class="q-tag">${x.claimed?"claimed":x.complete?"ready":x.progress+"/"+x.target}</div></div>`).join("");
+  const a = await jAuth("/player/achievements");
+  if(a){
+    const pt = $("points-total"); if(pt) pt.textContent = a.points || 0;
+    const sv = $("streak-val"); if(sv) sv.textContent = (a.streak && a.streak.current) || 0;
+    const ar = $("ach-rows");
+    if(ar && Array.isArray(a.unlocked))
+      ar.innerHTML = a.unlocked.map(u=>`<span class="ach"><span class="a-i">${u.icon}</span>${u.name}</span>`).join("") + (Array.isArray(a.locked) ? a.locked.map(u=>`<span class="ach locked"><span class="a-i">${u.icon}</span>${u.name}</span>`).join("") : "");
+  }
+}
+pollWager(); every(pollWager, 5000);
+pollQuests(); every(pollQuests, 8000);
+
 { const st = $("bb-stake"); if(st) st.addEventListener("input", bbRenderSlip); }
 { const sb = $("bb-submit"); if(sb) sb.addEventListener("click", async ()=>{
   const msg = $("bb-msg");
@@ -1196,6 +1271,7 @@ const SCENES = [
   { id:"sc-cta",       ms:15000 },   // the hero: shown long & often
   { id:"sc-builder",   ms:13000 },   // prop markets + bet builder
   { id:"sc-grid",      ms:12000 },
+  { id:"sc-wager",     ms:13000 },   // weekly wager race + quests + achievements
   { id:"sc-standings", ms:11000 },
 ];
 let si = -1, cycleTimer = null, momentActive = false;
@@ -1298,6 +1374,10 @@ function fireMoment(kind, big, sub, det, tx, opts){
 }
 
 function maybeMoment(e){
+  if(e.kind === "ACHIEVEMENT"){
+    fireMoment("🏅 ACHIEVEMENT", (e.extra&&e.extra.name)||"Unlocked", "milestone reached", "+"+((e.extra&&e.extra.points)||0)+" pts", null, { sound:"cheer", cls:"champ", tier:1 });
+    return;
+  }
   // race win = the headline; side-effects fire on INGEST so the bracket never lags the queue
   if(e.kind === "RACE SETTLE"){
     advanceCard("courier");
@@ -1443,6 +1523,7 @@ function renderBackers(){
     : `<div class="row"><span class="pos">—</span><span class="who" style="color:var(--dim)">no bets yet · be the first on the wall</span><span class="sc"></span></div>`;
 }
 function tallyBacker(e){
+  if(API_MODE) return;   // live mode: the backers wall is the server-authoritative wager standings (pollWager)
   if(!(e.layer === "chain" && e.kind === "BET" && e.severity === "ok" && typeof e.usdc === "number")) return;
   const h = HANDLES[(backerTurn++) % HANDLES.length];          // synthesized "verified backer" (no real handle on BET events)
   const cur = backers[h] || { usdc:0, bets:0 };

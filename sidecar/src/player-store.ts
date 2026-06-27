@@ -28,6 +28,7 @@ export type PlayerProfile = {
   biggestWin: number;
   parlayCount: number;
   underdogWins: number;
+  bestParlayWinDepth: number;
   points: number;
   streak: { current: number; best: number };
   achievements: Record<string, number>; // id -> unlockedAt
@@ -84,6 +85,7 @@ function fresh(nullifier: string): PlayerProfile {
     biggestWin: 0,
     parlayCount: 0,
     underdogWins: 0,
+    bestParlayWinDepth: 0,
     points: 0,
     streak: { current: 0, best: 0 },
     achievements: {},

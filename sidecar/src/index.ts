@@ -43,6 +43,9 @@ import * as players from "./player-store.js";
 import * as progress from "./progress.js";
 import * as markets from "./markets.js";
 import * as parlay from "./parlay.js";
+import * as season from "./season.js";
+import * as quests from "./quests.js";
+import * as achievements from "./achievements.js";
 
 // Never let one bad call take down the demo: log unhandled errors, stay up.
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
@@ -165,6 +168,12 @@ function _pushMock() {
   const ms = 1400 + (_mockTx % 9) * 220, block = 4200000 + _mockTx, gasUsdc = +(0.002 + (_mockTx % 5) * 0.0006).toFixed(6);
   _mockEvents.unshift({ t: Date.now(), kind, detail, tx, explorer: ex(tx), usdc, ms, block, gasUsdc, chain: "Arc" });
   if (_mockEvents.length > 60) _mockEvents.pop();
+  // attribute mock bets to a rotating pool of synthetic humans so the wager race,
+  // quests, and achievements populate live (server-authoritative, not client fakes).
+  if (kind === "BET" && (usdc as number) > 0) {
+    const n = "demo:rival-" + ["ace", "nova", "pax", "zee", "kit"][_mockTx % 5];
+    try { emitUnlocks(progress.recordBet(n, { stake: usdc as number, market: "WINNER", isUnderdog: _mockTx % 3 === 0 }).unlocked); } catch { /* best-effort */ }
+  }
   // mock the pending→confirmed handshake on the bus so the wall streams live
   const pid = events.begin("chain", kind, detail, usdc as number);
   setTimeout(() => { events.end(pid);
@@ -608,7 +617,7 @@ app.post("/race/markets/:id/bet", playerSession.auth, (req: any, res) => {
     const stake = Number(req.body?.amount);
     const m = markets.placeMarketBet(req.params.id, outcome, stake);
     const isUnderdog = markets.oddsFor(m)[outcome] >= 2;
-    progress.recordBet(req.nullifier, { stake, market: m.type, isUnderdog });
+    emitUnlocks(progress.recordBet(req.nullifier, { stake, market: m.type, isUnderdog }).unlocked);
     res.json({ market: markets.viewMarket(m), player: players.summary(players.getOrCreate(req.nullifier)) });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -618,12 +627,36 @@ app.post("/race/parlay", playerSession.auth, (req: any, res) => {
     markets.ensureMarkets(roundId, { seed: MOCK });
     const stake = Number(req.body?.stake);
     const t = parlay.create(req.nullifier, roundId, req.body?.legs ?? [], stake);
-    progress.recordBet(req.nullifier, { stake, market: "PARLAY", parlay: true });
+    emitUnlocks(progress.recordBet(req.nullifier, { stake, market: "PARLAY", parlay: true }).unlocked);
     res.json({ ticket: parlay.publicTicket(t) });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 app.get("/player/parlays", playerSession.auth, (req: any, res) => {
   res.json({ tickets: parlay.forPlayer(req.nullifier).map(parlay.publicTicket) });
+});
+
+// --- Retention: weekly wager race + quests + achievements (Phase 2) ---
+function emitUnlocks(unlocked: { id: string; name: string; icon: string; points: number }[]) {
+  for (const u of unlocked)
+    try { events.emit({ layer: "backend", kind: "ACHIEVEMENT", severity: "ok", detail: `${u.icon} ${u.name}`, extra: { name: u.name, points: u.points } } as any); } catch { /* bus optional */ }
+}
+app.get("/wager-race", playerSession.optionalAuth, (req: any, res) => {
+  try { res.json(season.view(req.nullifier)); }
+  catch (e: any) { res.status(200).json({ weekId: "", prizePool: 0, standings: [], myRank: null, error: e.message }); }
+});
+app.get("/player/quests", playerSession.optionalAuth, (req: any, res) => {
+  if (!req.nullifier) return res.json({ points: 0, quests: [], resetsAt: {} });
+  res.json(quests.view(players.getOrCreate(req.nullifier)));
+});
+app.post("/player/quests/:id/claim", playerSession.auth, (req: any, res) => {
+  const p = players.getOrCreate(req.nullifier);
+  const r = quests.claim(p, req.params.id);
+  if (r.ok) players.save(p);
+  res.json(r);
+});
+app.get("/player/achievements", playerSession.optionalAuth, (req: any, res) => {
+  if (!req.nullifier) return res.json({ points: 0, streak: { current: 0, best: 0 }, unlocked: [], locked: [] });
+  res.json(achievements.view(players.getOrCreate(req.nullifier)));
 });
 
 // Settle prop markets + parlays for a round and fan results into player stats.
@@ -633,7 +666,7 @@ function settleMarketsAndParlays(roundId: string, winner?: string) {
   markets.settleAll(roundId, { winner, mock: MOCK });
   const tickets = parlay.settleForRound(roundId);
   for (const t of tickets)
-    progress.recordSettle(t.nullifier, { won: t.status === "won", stake: t.stake, payout: t.payout, parlayDepth: t.legs.length });
+    emitUnlocks(progress.recordSettle(t.nullifier, { won: t.status === "won", stake: t.stake, payout: t.payout, parlayDepth: t.legs.length }).unlocked);
   return tickets;
 }
 app.post("/race/markets/settle", (req, res) => {
@@ -1442,6 +1475,11 @@ app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("handler error:", err?.message ?? err);
   if (!res.headersSent) res.status(500).json({ error: String(err?.message ?? err) });
 });
+
+// Weekly wager-race rollover: deterministic week id + idempotent reconcile. Run on
+// boot and on an interval (also lazily on every GET /wager-race) so it never wedges.
+try { season.reconcile(); } catch (e) { console.error("season reconcile (boot):", e); }
+setInterval(() => { try { season.reconcile(); } catch (e) { console.error("season reconcile:", e); } }, MOCK ? 15_000 : 60_000);
 
 const PORT = Number(process.env.PORT ?? 4021);
 server.listen(PORT, () => console.log(`sidecar on :${PORT} (Arc ${ARC.chainId})`));

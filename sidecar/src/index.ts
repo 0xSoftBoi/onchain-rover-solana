@@ -543,6 +543,22 @@ app.get("/race/fairness", (_req, res) => {
     ],
   });
 });
+// Live cash-out quote — sell a position before settle at the current market value.
+// value = stake × (entryOdds / currentOdds) × (1 − margin), capped at the full payout.
+// Rises as your side shortens (becomes more favoured), falls as it drifts out.
+app.get("/race/cashout", (req, res) => {
+  const side = req.query.side === "guard" ? "guard" : "courier";
+  const stake = Math.max(0, Number(req.query.stake) || 0);
+  const entry = Math.max(1.01, Number(req.query.entry) || 0);
+  const od: any = MOCK ? mockOdds() : race.odds();
+  const cur = od && od.odds && typeof od.odds[side] === "number" ? od.odds[side] : entry;
+  const MARGIN = 0.05;
+  const value = Math.max(0, Math.min(stake * entry, stake * (entry / cur) * (1 - MARGIN)));
+  res.json({
+    side, stake, entryOdds: entry, currentOdds: cur, marginPct: MARGIN * 100,
+    value: +value.toFixed(2), pnl: +(value - stake).toFixed(2),
+  });
+});
 app.post("/race/arm", (_req, res) => res.json(race.armRace()));
 app.post("/race/start", (_req, res) => res.json(race.startRace()));
 app.post("/race/finish", async (req, res) => {

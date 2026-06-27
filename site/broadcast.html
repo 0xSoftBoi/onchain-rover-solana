@@ -350,6 +350,16 @@
   .cr-item{font-family:var(--disp); font-style:italic; font-weight:900; font-size:7vh; margin:.4vh 0; color:var(--txt); text-shadow:0 0 4vh var(--glow);}
   .cr-odds{font-family:var(--mono); font-size:1.6vh; color:var(--dim);}
   .cr-foot{font-size:1.2vh; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin-top:1vh;}
+  /* ── live cash-out card (sell a position before settle at the live market value) ── */
+  .panel.bet .cashout{margin-top:1vh; padding:.9vh 1vw; border:1px solid var(--line); border-radius:.8vh; background:rgba(0,0,0,.34);}
+  .co-h{font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; color:var(--amber); font-size:1.6vh; display:flex; align-items:center; gap:.5vw;}
+  .co-pos{margin-left:auto; font-family:var(--mono); font-style:normal; font-size:1.1vh; color:var(--dim); letter-spacing:0;}
+  .co-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.2vh; line-height:1; color:var(--txt); margin:.3vh 0; font-variant-numeric:tabular-nums; transition:color .2s;}
+  .co-pnl{font-size:1.3vh; letter-spacing:.05em; color:var(--dim); margin-bottom:.6vh;}
+  .co-pnl.up{color:var(--teal);} .co-pnl.dn{color:var(--red-t);}
+  .co-btn{width:100%; cursor:pointer; font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; font-size:1.8vh; color:#0a0a0c; background:var(--amber); border:none; border-radius:.6vh; padding:.7vh 0; transition:filter .15s;}
+  .co-btn:hover{filter:brightness(1.1);}
+  .co-foot{font-size:1.05vh; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); text-align:center; margin-top:.5vh;}
 
   /* ── floating bet reactions ── */
   #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
@@ -513,6 +523,13 @@
           </div>
         </div>
         <div class="badge world">World ID · one human · one bet</div>
+        <div class="cashout" id="cashout">
+          <div class="co-h">⚡ LIVE CASH-OUT<span class="co-pos" id="co-pos">arming…</span></div>
+          <div class="co-val" id="co-val">$0.00</div>
+          <div class="co-pnl" id="co-pnl">sell your position before the flag</div>
+          <button class="co-btn" id="co-btn" type="button">CASH OUT</button>
+          <div class="co-foot">live market value · 5% cash-out margin</div>
+        </div>
       </div>
       <div class="panel drive">
         <div class="kicker">x402 · pay-per-second piloting</div>
@@ -855,9 +872,11 @@ async function verifyFairness(){
   }catch(e){ out.textContent = "verify error"; out.className = "pf-out bad"; }
 }
 { const vb = $("pf-verify"); if(vb) vb.addEventListener("click", verifyFairness); }
+let lastOdds = null;   // most recent /race/odds, shared with the live cash-out widget
 async function poll(){
   if(document.hidden) return;
   const [st, od, fe] = await Promise.all([j("/race/state"), j("/race/odds"), j("/onchain/feed")]);  // parallel: 1 RTT, not 3
+  lastOdds = od;             // shared with the live cash-out widget (client-side fallback quote)
   updateConn(!!st);          // live-mode health: flips badge to "Reconnecting…" on failed polls
   const status = (st && st.status) || "betting";
   const prev = prevStatus;   // capture before reassignment, for prediction-alert transitions
@@ -1370,6 +1389,47 @@ function juice(e){
 }
 every(()=>{ if(hype>0) setHype(hype - HYPE_DECAY); if(combo && Date.now()-lastBetT>6000){ combo=0; const c=$("hy-combo"); if(c) c.classList.remove("on"); } }, 220);
 setHype(0);
+
+/* ─── live cash-out: sell a position before the flag at the live market value ───────
+   value = stake × (entryOdds / currentOdds) × (1 − margin), capped at full payout — rises
+   as your side shortens (more favoured), falls as it drifts. Server /race/cashout is the
+   canonical quote; we fall back to a client calc from polled odds in pure-mock standalone.
+   Demo auto-arms a $5 position on the favourite so the value is always live; the operator
+   (or a real bettor) clicks CASH OUT to lock it. Harness-safe: runs on intervals/click only. */
+let coPos = null, coVal = 0, coArmAt = 0;
+const CO_STAKE = 5, CO_MARGIN = 0.05;
+function coFav(od){ if(!od||!od.odds) return "courier"; const g=od.odds.guard, c=od.odds.courier; return (g!=null && c!=null && g < c) ? "guard" : "courier"; }
+function coClientQuote(side, stake, entry, od){ const cur=(od&&od.odds&&typeof od.odds[side]==="number")?od.odds[side]:entry; return { value: Math.max(0, Math.min(stake*entry, stake*(entry/cur)*(1-CO_MARGIN))) }; }
+async function updateCashout(){
+  if(Date.now() < coArmAt) return;                         // brief cooldown after a cash-out
+  const od = lastOdds;
+  if(!coPos){
+    if(!od || !od.odds) return;
+    const side = coFav(od), entry = (typeof od.odds[side]==="number" ? od.odds[side] : 2);
+    coPos = { side, stake:CO_STAKE, entryOdds:+entry.toFixed(2) };
+    const p = $("co-pos"); if(p) p.textContent = `$${CO_STAKE} ${side.toUpperCase()} @ ${coPos.entryOdds}x`;
+  }
+  let q = await j(`/race/cashout?side=${coPos.side}&stake=${coPos.stake}&entry=${coPos.entryOdds}`);
+  if(!q || typeof q.value !== "number") q = coClientQuote(coPos.side, coPos.stake, coPos.entryOdds, od);  // standalone fallback
+  coVal = q.value;
+  const pnl = coVal - coPos.stake;
+  const v = $("co-val");  if(v){ v.textContent = "$" + coVal.toFixed(2); v.style.color = pnl>=0 ? "var(--teal)" : "var(--red-t)"; }
+  const pe = $("co-pnl"); if(pe){ pe.textContent = (pnl>=0?"▲ +$":"▼ −$") + Math.abs(pnl).toFixed(2) + " vs $" + coPos.stake + " stake"; pe.className = "co-pnl " + (pnl>=0?"up":"dn"); }
+  const b = $("co-btn");  if(b) b.textContent = "CASH OUT $" + coVal.toFixed(2);
+}
+function doCashout(){
+  if(!coPos) return;
+  const pnl = coVal - coPos.stake;
+  fireMoment("CASHED OUT", "$"+coVal.toFixed(2), (pnl>=0?"locked +$"+pnl.toFixed(2):"cut to −$"+Math.abs(pnl).toFixed(2))+" before the flag", coPos.side.toUpperCase()+" position closed · "+coPos.entryOdds+"x entry", null, { sound: pnl>=0?"cheer":"blip" });
+  shake();
+  coPos = null; coVal = 0; coArmAt = Date.now() + 5000;    // re-arm a fresh demo position in 5s
+  const p = $("co-pos");  if(p) p.textContent = "re-arming…";
+  const v = $("co-val");  if(v){ v.textContent = "$0.00"; v.style.color = ""; }
+  const pe = $("co-pnl"); if(pe){ pe.textContent = "next position arming…"; pe.className = "co-pnl"; }
+  const b = $("co-btn");  if(b) b.textContent = "CASH OUT";
+}
+{ const b = $("co-btn"); if(b) b.addEventListener("click", doCashout); }
+every(updateCashout, 1300);
 
 /* the bus feeds moments, the pilot credit, the bracket, bet reactions, the backers wall, and the juice */
 try{

@@ -71,6 +71,17 @@
   .top .hero .n{font-family:Impact,"Arial Narrow",sans-serif; font-style:italic; font-size:clamp(22px,2.6vw,46px);
     font-weight:900; color:var(--amber); text-shadow:0 0 26px var(--glow);}
   .top .hero .lbl{font-size:clamp(7px,.66vw,10px); color:var(--dim); letter-spacing:.2em; text-transform:uppercase; margin-top:4px;}
+  /* gambling-forward site nav — routes visitors to the full live betting board */
+  .sitenav{position:relative; z-index:5; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:9px clamp(10px,2vw,26px); border-bottom:1px solid var(--line); background:rgba(10,10,12,.6);}
+  .sitenav .navbtn{font-family:Impact,"Arial Narrow",sans-serif; font-style:italic; font-weight:900;
+    letter-spacing:.05em; text-transform:uppercase; text-decoration:none; padding:7px 16px; border-radius:5px;
+    font-size:clamp(12px,1.1vw,17px); border:1px solid var(--line); color:var(--txt); transition:transform .16s, box-shadow .16s;}
+  .sitenav .navbtn:hover{transform:translateY(-1px);}
+  .sitenav .navbtn.bet{background:var(--amber); color:#0a0a0c; border-color:var(--amber); box-shadow:0 0 22px var(--glow);}
+  .sitenav .navbtn.bet:hover{box-shadow:0 0 34px var(--glow);}
+  .sitenav .navnote{font-size:clamp(8px,.7vw,11px); color:var(--dim); letter-spacing:.16em; text-transform:uppercase; margin-left:auto;}
+  .sitenav .navnote b{color:var(--teal);}
 
   /* livedot — snappier pulse */
   .livedot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--red);
@@ -293,6 +304,12 @@
     <div class="lbl"><span class="livedot"></span><em id="txcount">0</em> LAPS SETTLED · USDC/ARC</div>
   </div>
 </div>
+
+<nav class="sitenav">
+  <a class="navbtn bet" href="./broadcast.html">🎰 Live Betting Board</a>
+  <a class="navbtn" href="./overlay.html">📺 OBS Overlay</a>
+  <span class="navnote"><b>Parimutuel</b> pools · <b>World&nbsp;ID</b> one&nbsp;human one&nbsp;bet · live odds on-chain</span>
+</nav>
 
 <div class="wall">
   <!-- GUARD cam -->

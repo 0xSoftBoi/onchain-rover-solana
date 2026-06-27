@@ -304,6 +304,20 @@
   #predict .qrwrap.sm{width:8vw; height:8vw; padding:.7vh; box-shadow:none;}
   #predict.locked .qrwrap{opacity:.25; filter:grayscale(1); transition:.3s;}
   .pr-foot{margin-top:1.1vh; font-size:1.15vh; letter-spacing:.1em; text-transform:uppercase; color:var(--teal); text-align:center;}
+  /* provably-fair card — betting-integrity trust panel (commit-reveal + oracle + proof) */
+  #predict .pf-card{margin-top:1vh; padding:1vh 1.1vw; border:1px solid var(--line); border-radius:.8vh; background:rgba(0,0,0,.34);}
+  .pf-h{font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; color:var(--teal); display:flex; align-items:center; gap:.5vw; font-size:1.7vh; margin-bottom:.6vh;}
+  .pf-badge{margin-left:auto; font-family:var(--mono); font-style:normal; font-size:1vh; font-weight:700; color:#0a0a0c; background:var(--amber); padding:.1vh .5vw; border-radius:.3vh; letter-spacing:.08em;}
+  .pf-badge.settled{background:var(--teal);}
+  .pf-row{display:flex; justify-content:space-between; gap:1vw; padding:.25vh 0; font-size:1.15vh; color:var(--dim); text-transform:uppercase; letter-spacing:.04em;}
+  .pf-row code,.pf-row a,.pf-row span:last-child{font-family:var(--mono); color:var(--txt); text-transform:none; letter-spacing:0;}
+  .pf-row a{color:var(--teal); text-decoration:none;}
+  .pf-reveal{display:none;} .pf-reveal.on{display:flex;}
+  .pf-verify{margin:.6vh 0 .3vh; width:100%; cursor:pointer; font-family:var(--disp); font-style:italic; font-weight:900; letter-spacing:.06em; font-size:1.4vh; color:#0a0a0c; background:var(--amber); border:none; border-radius:.5vh; padding:.5vh 0;}
+  .pf-out{font-family:var(--mono); font-size:1.1vh; color:var(--dim); text-align:center; padding:.2vh 0;}
+  .pf-out.ok{color:var(--teal);} .pf-out.bad{color:var(--red-t);}
+  .pf-tags{display:flex; flex-wrap:wrap; gap:.4vw; margin-top:.6vh;}
+  .pf-tags span{font-size:1vh; color:var(--teal); border:1px solid var(--line); border-radius:.3vh; padding:.1vh .4vw; text-transform:uppercase; letter-spacing:.05em;}
 
   /* ── floating bet reactions ── */
   #floats{position:fixed; inset:0; z-index:45; pointer-events:none; overflow:hidden;}
@@ -544,6 +558,17 @@
   <svg class="pr-spark" id="pr-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="pr-prob-line" points=""/></svg>
   <div class="pr-spark-lab">courier implied % over time</div>
   <div class="pr-foot">📲 scan · World ID · one human, one bet</div>
+  <div class="pf-card" id="pf-card">
+    <div class="pf-h">🛡 PROVABLY FAIR<span class="pf-badge" id="pf-status">COMMITTED</span></div>
+    <div class="pf-row"><span>commit · sha256</span><code id="pf-hash">—</code></div>
+    <div class="pf-row"><span>client seed</span><code id="pf-client">—</code></div>
+    <div class="pf-row pf-reveal" id="pf-reveal-row"><span>reveal · seed</span><code id="pf-seed">—</code></div>
+    <button class="pf-verify" id="pf-verify" type="button">↻ Verify in browser</button>
+    <div class="pf-out" id="pf-verify-out">sha256(seed) ?= commit</div>
+    <div class="pf-row"><span>settled by</span><a id="pf-oracle" target="_blank" rel="noopener">—</a></div>
+    <div class="pf-row"><span>photo-finish</span><a id="pf-proof" target="_blank" rel="noopener">— </a></div>
+    <div class="pf-tags" id="pf-tags"></div>
+  </div>
 </aside>
 
 <!-- pit reporter ticker -->
@@ -739,6 +764,49 @@ clk(); setInterval(clk, 1000);
 /* ─── poll loop: bind scorebug + scenes to live (mock) data ───────────────── */
 let widCfg = null;
 async function loadWid(){ widCfg = await j("/worldid/config"); }   // invariant — fetched rarely, not every tick
+
+/* ─── provably-fair card: commit-reveal seed + oracle settlement + photo-finish proof ───
+   The race outcome is settled by the Switchboard oracle + Walrus proof; the commit-reveal
+   serverSeed locks the pre-race RNG (grid/lane draw) so the operator can't change it after
+   bets are in. The Verify button re-derives sha256(serverSeed) in YOUR browser and checks it
+   equals the hash published before betting opened. Harness-safe: data renders are guarded for
+   empty responses, and the only crypto.subtle call runs on click (never auto-run). */
+let fairnessRec = null;
+const pfShort = (s)=> typeof s === "string" && s.length > 16 ? s.slice(0,10) + "…" + s.slice(-6) : (s ?? "—");
+async function loadFairness(){
+  const f = await j("/race/fairness");
+  if(!f || !f.commit) return;                 // {} (harness) / null (pure-mock standalone) → no-op
+  fairnessRec = f;
+  const set = (id,v)=>{ const e = $(id); if(e) e.textContent = v; };
+  set("pf-hash",   pfShort(f.commit.serverSeedHash));
+  set("pf-client", pfShort(f.commit.clientSeed));
+  set("pf-nonce",  f.commit.nonce);
+  const revealed = !!(f.reveal && f.reveal.serverSeed);
+  const revRow = $("pf-reveal-row"); if(revRow) revRow.classList.toggle("on", revealed);
+  if(revealed) set("pf-seed", pfShort(f.reveal.serverSeed));
+  const badge = $("pf-status");
+  if(badge){ badge.textContent = revealed ? "SETTLED" : "COMMITTED"; badge.classList.toggle("settled", revealed); }
+  const orc = $("pf-oracle");
+  if(orc && f.settlement){ orc.textContent = `${f.settlement.oracle} ${f.settlement.attestationScore}/${f.settlement.threshold} ✓`; if(f.settlement.explorer) orc.href = f.settlement.explorer; }
+  const proof = $("pf-proof");
+  if(proof && f.proof){ proof.textContent = `${f.proof.store} proof ↗`; if(f.proof.url) proof.href = f.proof.url; }
+  const tags = $("pf-tags");
+  if(tags && Array.isArray(f.integrity)){ tags.innerHTML = f.integrity.map(t=>`<span>${t}</span>`).join(""); }
+}
+async function verifyFairness(){
+  const out = $("pf-verify-out"); if(!out) return;
+  if(!fairnessRec || !fairnessRec.reveal || !fairnessRec.commit){ out.textContent = "awaiting reveal (settle)"; out.className = "pf-out"; return; }
+  if(!(window.crypto && window.crypto.subtle && window.TextEncoder)){ out.textContent = "crypto unavailable here"; out.className = "pf-out"; return; }
+  out.textContent = "hashing…"; out.className = "pf-out";
+  try{
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fairnessRec.reveal.serverSeed));
+    const hex = [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+    const ok = hex === fairnessRec.commit.serverSeedHash;
+    out.textContent = ok ? "✓ VERIFIED — commit matches reveal" : "✗ MISMATCH — do not trust";
+    out.className = "pf-out " + (ok ? "ok" : "bad");
+  }catch(e){ out.textContent = "verify error"; out.className = "pf-out bad"; }
+}
+{ const vb = $("pf-verify"); if(vb) vb.addEventListener("click", verifyFairness); }
 async function poll(){
   if(document.hidden) return;
   const [st, od, fe] = await Promise.all([j("/race/state"), j("/race/odds"), j("/onchain/feed")]);  // parallel: 1 RTT, not 3
@@ -875,6 +943,7 @@ function handlePredict(from, to, od){
 }
 
 loadWid().then(()=>{ poll(); every(poll, 1100); });
+loadFairness(); every(loadFairness, 12000);   // commit-reveal refreshes per round, not per tick
 pollCams(); every(pollCams, 2500);
 
 /* ─── betting countdown display (smooth, 250ms) ───────────────────────────── */

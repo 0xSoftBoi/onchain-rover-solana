@@ -15,6 +15,10 @@
     --amber:#ffd400; --amber-d:#e0a800; --amber-dim:#7a6400;
     --teal:#14f195;            /* Solana green */
     --green:#00d061; --red:#e10600; --violet:#9945ff; /* Solana purple */
+    /* AA text variants: base --red/--violet fail WCAG 1.4.3 (4.5:1) as normal text
+       on --panel (3.89 / 4.27); these clear it (5.64 / 5.42). Use for readable text;
+       keep the saturated base for glows/borders/shadows. Locked by tools/unit.cjs. */
+    --red-t:#ff4438; --violet-t:#a366ff;
     --txt:#f6f4ee; --dim:#8b8a82;
     --line:rgba(255,212,0,.22); --glow:rgba(255,212,0,.4); --chrome:#cfd2d6;
     --disp:Impact,"Arial Narrow Bold","Arial Narrow",sans-serif;
@@ -50,7 +54,7 @@
   #brandbug .stk .t1{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.5vh; text-transform:uppercase;
     letter-spacing:.04em;} #brandbug .stk .t1 b{color:var(--amber);}
   #brandbug .stk .t2{font-size:1.25vh; letter-spacing:.34em; color:var(--dim); text-transform:uppercase; margin-top:.5vh;}
-  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red); font-weight:700;}
+  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red-t); font-weight:700;}
   .live i{width:1.1vh; height:1.1vh; border-radius:50%; background:var(--red); box-shadow:0 0 1.4vh var(--red);
     animation:blink 1.1s infinite;}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
@@ -59,7 +63,7 @@
   #topright .clock{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.4vh; color:var(--txt);
     letter-spacing:.02em; font-variant-numeric:tabular-nums;}
   #topright .phase{margin-top:.7vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase;}
-  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
+  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet-t);}
 
   /* ── center stage ── */
   #stage{position:absolute; left:0; right:0; top:8.8vh; bottom:18vh; z-index:10;}
@@ -103,7 +107,7 @@
   .panel h2{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.6vh; text-transform:uppercase;
     line-height:.95; margin:.4vh 0 .2vh;}
   .panel.bet h2{color:var(--amber); text-shadow:.2vh .2vh 0 var(--red), 0 0 2.6vh var(--glow);}
-  .panel.drive h2{color:var(--violet); text-shadow:.2vh .2vh 0 #000, 0 0 2.6vh rgba(153,69,255,.5);}
+  .panel.drive h2{color:var(--violet-t); text-shadow:.2vh .2vh 0 #000, 0 0 2.6vh rgba(153,69,255,.5);}
   .panel .desc{font-size:1.6vh; color:var(--chrome); letter-spacing:.04em; margin-bottom:1.4vh; min-height:2vh;}
   .qrwrap{background:#fff; padding:1.4vh; border-radius:1vh; box-shadow:0 0 4vh rgba(255,212,0,.18);
     width:24vh; height:24vh; display:flex; align-items:center; justify-content:center; position:relative;}
@@ -121,7 +125,7 @@
   .odds .o.guard .x{color:var(--teal);} .odds .o.courier .x{color:var(--amber);}
   .badge{display:inline-block; font-size:1.25vh; letter-spacing:.18em; text-transform:uppercase; padding:.5vh 1vw;
     border:1px solid currentColor; border-radius:.5vh; margin-top:.4vh;}
-  .badge.world{color:var(--teal);} .badge.x402{color:var(--violet);}
+  .badge.world{color:var(--teal);} .badge.x402{color:var(--violet-t);}
   .drivekv{display:flex; justify-content:space-between; gap:1vw; font-size:1.5vh; padding:.7vh 0; border-bottom:1px solid rgba(255,212,0,.1);}
   .drivekv .k{color:var(--dim); letter-spacing:.1em; text-transform:uppercase; font-size:1.3vh;}
   .drivekv .v{color:var(--txt);} .drivekv .v.g{color:var(--green);}
@@ -187,14 +191,14 @@
   #ticker .tk-seg{padding-left:3vw; font-size:1.95vh; letter-spacing:.02em; color:var(--chrome);}
   #ticker .tk-seg .sp{font-weight:700; letter-spacing:.08em;}
   #ticker .tk-seg .sp.guard{color:var(--teal);} #ticker .tk-seg .sp.courier{color:var(--amber);}
-  #ticker .tk-seg .di{color:var(--red); margin:0 1.2vw;}
+  #ticker .tk-seg .di{color:var(--red-t); margin:0 1.2vw;}
   @keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   /* betting countdown on the bet panel */
   .betclock{display:flex; flex-direction:column; align-items:center; margin:.2vh 0 1.2vh;}
   .betclock .bc-lab{font-size:1.2vh; letter-spacing:.3em; text-transform:uppercase; color:var(--dim);}
   .betclock .bc-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--amber);
     font-variant-numeric:tabular-nums; line-height:1; text-shadow:0 0 2vh var(--glow);}
-  .betclock.closing .bc-val{color:var(--red); animation:blink .6s infinite;}
+  .betclock.closing .bc-val{color:var(--red-t); animation:blink .6s infinite;}
 
   /* ── scorebug (always on) ── */
   #scorebug{position:fixed; left:0; right:0; bottom:0; z-index:35; height:12vh;
@@ -213,7 +217,10 @@
   .runner .od{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; color:var(--txt); font-variant-numeric:tabular-nums;}
   .runner .od small{font-size:1.3vh; color:var(--dim);}
   .runner.lead{border-color:var(--amber); box-shadow:0 0 2.4vh rgba(255,212,0,.25);}
-  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red); font-size:2.4vh;}
+  .runner .fav-tag{display:none; margin-left:.5vw; font-size:1.2vh; font-weight:800; letter-spacing:.1em; color:#0a0a0c;
+    background:var(--amber); padding:.2vh .5vw; border-radius:.4vh;}
+  .runner.lead .fav-tag{display:inline-block;}
+  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red-t); font-size:2.4vh;}
   .sb-purse{align-items:flex-end; border-left:1px solid var(--line);}
   .sb-purse .p-lab{font-size:1.2vh; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;}
   .sb-purse .p-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.4vh; color:var(--amber);
@@ -264,10 +271,10 @@
   #predict.locked{border-top-color:var(--red);}
   .pr-head{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.4vh; text-transform:uppercase;
     color:var(--amber); letter-spacing:.03em; text-shadow:0 0 1.6vh var(--glow);}
-  #predict.locked .pr-head{color:var(--red); text-shadow:0 0 1.6vh rgba(225,6,0,.5);}
+  #predict.locked .pr-head{color:var(--red-t); text-shadow:0 0 1.6vh rgba(225,6,0,.5);}
   .pr-clock{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--txt);
     font-variant-numeric:tabular-nums; line-height:1; margin:.3vh 0 .5vh;}
-  .pr-clock.closing{color:var(--red); animation:blink .6s infinite;}
+  .pr-clock.closing{color:var(--red-t); animation:blink .6s infinite;}
   .pr-pool-row{font-size:1.4vh; color:var(--dim); margin-bottom:1.1vh;}
   .pr-pool-row span{color:var(--amber); font-weight:700;}
   .pr-prob{display:flex; justify-content:space-between; font-size:1.5vh; font-weight:700; margin-bottom:.4vh;}
@@ -278,13 +285,14 @@
 
   /* implied-probability % + movement arrows (shown alongside odds) */
   .prob{font-size:.66em; color:var(--teal); letter-spacing:.02em; font-weight:700;}
-  .prob .up{color:var(--green);} .prob .dn{color:var(--red);}
+  .prob .up{color:var(--green);} .prob .dn{color:var(--red-t);}
 
   /* live/mock connection badge */
   .conn{margin-top:.8vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700;}
-  .conn.live{color:var(--green);} .conn.mock{color:var(--dim);}
+  .conn.live{color:var(--green);} .conn.mock{color:var(--dim);} .conn.reconnecting{color:var(--amber);}
   .conn i{display:inline-block; width:.9vh; height:.9vh; border-radius:50%; margin-right:.4vw; vertical-align:middle;}
   .conn.live i{background:var(--green); box-shadow:0 0 1vh var(--green);} .conn.mock i{background:var(--dim);}
+  .conn.reconnecting i{background:var(--amber); box-shadow:0 0 1vh var(--amber); animation:blink 1s infinite;}
   .pr-sides{display:flex; gap:1vw;}
   .pr-side{flex:1; display:flex; flex-direction:column; gap:.7vh; align-items:center;}
   .pr-s-h{display:flex; justify-content:space-between; width:100%; font-family:var(--disp); font-style:italic; font-weight:900; font-size:1.9vh;}
@@ -312,9 +320,16 @@
   .season-bar .pt{display:flex; align-items:center; gap:.4vw; font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.2vh;}
   .season-bar .pt.guard{color:var(--teal);} .season-bar .pt.courier{color:var(--amber);}
   .season-bar .pt .u{font-size:1.2vh; color:var(--dim); font-family:var(--mono); font-style:normal; font-weight:400; letter-spacing:.08em;}
-  .season-bar .dash{color:var(--red); font-weight:900;}
+  .season-bar .dash{color:var(--red-t); font-weight:900;}
   .season-bar .meta{margin-left:auto; color:var(--dim); font-size:1.25vh; letter-spacing:.08em;}
   .backers-h{margin-top:1.4vh; font-size:1.4vh; letter-spacing:.18em; text-transform:uppercase; color:var(--teal); font-weight:700;}
+
+  /* race-control-offline banner (live mode, after consecutive failed polls) */
+  #offline{display:none; position:fixed; left:50%; top:42%; transform:translate(-50%,-50%); z-index:58; text-align:center;
+    padding:2vh 3vw; background:rgba(225,6,0,.16); border:1px solid var(--red); border-radius:1.2vh; backdrop-filter:blur(2px);}
+  body.offline #offline{display:block;}
+  #offline .o-h{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4vh; color:var(--red-t); text-transform:uppercase; text-shadow:0 0 2vh rgba(225,6,0,.5);}
+  #offline .o-s{font-size:1.6vh; color:var(--chrome); letter-spacing:.1em; margin-top:.6vh;}
 
   /* ── sponsor-rotation bug (top center) ── */
   #sponsors{position:fixed; top:3vh; left:50%; transform:translateX(-50%); z-index:40; display:flex; align-items:center; gap:.9vw;
@@ -406,6 +421,7 @@
 </div>
 
 <div id="sponsors"><span class="sp-lab">Powered by</span><span class="sp-name" id="sp-name">◎ Solana</span></div>
+<div id="offline"><div class="o-h">⚠ Race Control Offline</div><div class="o-s">reconnecting to the sidecar…</div></div>
 
 <div id="stage">
   <!-- GRID / RACE -->
@@ -540,9 +556,9 @@
 <div id="scorebug">
   <div class="sb-status"><span class="s-lab">Race Control</span><span class="s-val" id="sb-status">STANDBY</span></div>
   <div class="sb-grid">
-    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span></div>
+    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span><span class="fav-tag">★&nbsp;FAV</span></div>
     <span class="vs">VS</span>
-    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span></div>
+    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span><span class="fav-tag">★&nbsp;FAV</span></div>
   </div>
   <div class="sb-bets"><span class="b-val" id="sb-bets">0</span><span class="b-lab">verified<br>bets</span></div>
   <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><svg class="spark" id="purse-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="purse-line" points=""/></svg><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
@@ -630,13 +646,17 @@ const _qs = new URLSearchParams(location.search);
 const ACTIONS_BASE = (_qs.get("actions") || window.CLANKER_ACTIONS || "").replace(/\/$/, "");
 const BLINK_ON = _qs.get("blink") === "1" || !!ACTIONS_BASE;
 
-/* live/mock connection badge — sidecar via ?api / window.CLANKER_API, else mock feed */
-(function(){
-  const api = (_qs.get("api") || window.CLANKER_API || "").trim();
+/* live/mock connection badge — sidecar via ?api / window.CLANKER_API, else mock feed.
+   In live mode, flips to "Reconnecting…" after consecutive failed polls. */
+const API_MODE = !!(_qs.get("api") || window.CLANKER_API || "").trim();
+let connFail = 0;
+function updateConn(ok){
   const el = $("conn"); if(!el) return;
-  if(api){ el.className = "conn live"; el.innerHTML = "<i></i>Live sidecar"; }
-  else { el.className = "conn mock"; el.innerHTML = "<i></i>Mock feed"; }
-})();
+  if(!API_MODE){ el.className = "conn mock"; el.innerHTML = "<i></i>Mock feed"; return; }
+  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "<i></i>Live sidecar"; document.body.classList.remove("offline"); }
+  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "<i></i>Reconnecting…"; if(connFail >= 3) document.body.classList.add("offline"); }
+}
+updateConn(true);
 const BET_WINDOW = 18000;                            // synthesized betting window (ms)
 
 /* ─── QR codes (regenerated only when the encoded link changes) ───────────── */
@@ -721,9 +741,8 @@ let widCfg = null;
 async function loadWid(){ widCfg = await j("/worldid/config"); }   // invariant — fetched rarely, not every tick
 async function poll(){
   if(document.hidden) return;
-  const st = await j("/race/state");
-  const od = await j("/race/odds");
-  const fe = await j("/onchain/feed");
+  const [st, od, fe] = await Promise.all([j("/race/state"), j("/race/odds"), j("/onchain/feed")]);  // parallel: 1 RTT, not 3
+  updateConn(!!st);          // live-mode health: flips badge to "Reconnecting…" on failed polls
   const status = (st && st.status) || "betting";
   const prev = prevStatus;   // capture before reassignment, for prediction-alert transitions
 
@@ -751,7 +770,7 @@ async function poll(){
   phaseEl.className = "phase ph-" + status;
   if(status === "betting"){ phaseEl.textContent = "🟡 BETTING OPEN"; sbStatus.textContent="BETTING OPEN"; sbStatus.style.color="var(--amber)"; $("bet-desc").textContent="betting open — back a rover now"; }
   else if(status === "racing"){ phaseEl.textContent = "🟢 GREEN FLAG"; sbStatus.textContent="RACING"; sbStatus.style.color="var(--green)"; $("bet-desc").textContent="🔒 betting closed — cars are on track"; }
-  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = (st&&st.winner? sol(st.winner).toUpperCase()+" WINS":"FINISHED"); sbStatus.style.color="var(--violet)"; $("bet-desc").textContent="results in — next grid forming"; }
+  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = (st&&st.winner? sol(st.winner).toUpperCase()+" WINS":"FINISHED"); sbStatus.style.color="var(--violet-t)"; $("bet-desc").textContent="results in — next grid forming"; }
 
   // odds → scorebug + CTA (with implied probability % + movement arrows)
   if(od && od.odds){
@@ -931,6 +950,20 @@ function nextScene(){
   cycleTimer = setTimeout(nextScene, sc.ms);
 }
 
+/* operator hotkeys — n/→ next scene · p/← prev · m test alert · c clean · l lite */
+addEventListener("keydown", (e)=>{
+  const t = e.target;
+  if(t && /^(input|textarea|select)$/i.test(t.tagName || "")) return;
+  switch(e.key){
+    case "n": case "ArrowRight": clearTimeout(cycleTimer); nextScene(); break;
+    case "p": case "ArrowLeft":  clearTimeout(cycleTimer); si = (si - 2 + SCENES.length) % SCENES.length; nextScene(); break;
+    case "m": fireMoment("OPERATOR TEST", "✓", "hotkey-triggered alert", "verifying the takeover", null, {}); break;
+    case "c": document.body.classList.toggle("clean"); break;
+    case "l": document.body.classList.toggle("lite"); break;
+    default: return;
+  }
+});
+
 /* ─── money-moment takeover (driven by the live bus) ──────────────────────── */
 const cv = $("confetti"), cx = cv.getContext("2d");
 function sizeCanvas(){ cv.width = innerWidth; cv.height = innerHeight; }
@@ -1012,13 +1045,16 @@ function maybeMoment(e){
   }
   if(e.layer === "chain" && e.severity === "ok" && typeof e.usdc === "number" && e.usdc > 0){
     const isBet = e.kind === "BET", tx = (e.tx||"").slice(0,10) + "…", amt = "$" + e.usdc.toFixed(2);
+    const tier = betTier(e.usdc);
     let kind, sub, opts;
-    if(e.usdc >= 50){ kind = "🐋 WHALE BET"; sub = "biggest of the night"; opts = { sound:"cheer", cls:"champ", tier:2, ms:5000 }; }
-    else if(e.usdc >= 10){ kind = "💸 BIG BET"; sub = isBet ? "World-verified human" : "USDC"; opts = { tier:1, ms:4400 }; }
-    else { kind = isBet ? "BET PLACED" : "PAYMENT SETTLED"; sub = isBet ? "World-verified human" : "robot-to-robot · USDC"; opts = { tier:0 }; }
+    if(tier === 2){ kind = "🐋 WHALE BET"; sub = "biggest of the night"; opts = { sound:"cheer", cls:"champ", tier, ms:5000 }; }
+    else if(tier === 1){ kind = "💸 BIG BET"; sub = isBet ? "World-verified human" : "USDC"; opts = { tier, ms:4400 }; }
+    else { kind = isBet ? "BET PLACED" : "PAYMENT SETTLED"; sub = isBet ? "World-verified human" : "robot-to-robot · USDC"; opts = { tier }; }
     fireMoment(kind, amt, sub, sol(e.detail||""), tx, opts);
   }
 }
+/* alert tier by USDC size: 2 = whale (>=50), 1 = big (>=10), 0 = normal */
+function betTier(usdc){ return usdc >= 50 ? 2 : usdc >= 10 ? 1 : 0; }
 /* ─── "now driving" pilot lower-third (driven by the x402 pilot bus) ──────── */
 const HANDLES = ["@pixel_pilot","@gmgm_sol","@degen_dan","@vroomqueen","@boxbox","@solspeed","@apex_anon","@nitro_nat","@chainchaser","@pitlane_pat"];
 const pickHandle = ()=> HANDLES[(Math.random()*HANDLES.length)|0];

@@ -18,6 +18,9 @@
   :root{
     --amber:#ffd400; --amber-d:#e0a800; --teal:#14f195; --green:#00d061;
     --red:#e10600; --violet:#9945ff; --txt:#f6f4ee; --dim:#9b9a92; --chrome:#cfd2d6;
+    /* AA text variants (WCAG 1.4.3): base --red/--violet fail 4.5:1 as normal text
+       on the scorebug panel; these clear it. Text only — base stays for glows/borders. */
+    --red-t:#ff4438; --violet-t:#a366ff;
     --line:rgba(255,212,0,.28); --glow:rgba(255,212,0,.42);
     --disp:Impact,"Arial Narrow Bold","Arial Narrow",sans-serif;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -36,7 +39,7 @@
   #bug .t1{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.6vh; text-transform:uppercase;
     letter-spacing:.04em; text-shadow:var(--sh);} #bug .t1 b{color:var(--amber);}
   #bug .t2{font-size:1.3vh; letter-spacing:.3em; color:var(--chrome); text-transform:uppercase; margin-top:.6vh; text-shadow:var(--sh);}
-  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red); font-weight:800;}
+  .live{display:inline-flex; align-items:center; gap:.5vw; color:var(--red-t); font-weight:800;}
   .live i{width:1.1vh; height:1.1vh; border-radius:50%; background:var(--red); box-shadow:0 0 1.4vh var(--red);
     animation:blink 1.1s infinite;}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
@@ -47,11 +50,12 @@
   #clk .c{font-family:var(--disp); font-style:italic; font-weight:900; font-size:4.6vh; color:var(--txt);
     font-variant-numeric:tabular-nums; text-shadow:var(--sh);}
   #clk .p{margin-top:.6vh; font-size:1.5vh; letter-spacing:.26em; text-transform:uppercase; text-shadow:var(--sh);}
-  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet);}
+  .ph-betting{color:var(--amber);} .ph-racing{color:var(--green);} .ph-finished{color:var(--violet-t);}
   #clk .conn{margin-top:.7vh; font-size:1.2vh; letter-spacing:.18em; text-transform:uppercase; font-weight:700; text-shadow:var(--sh);}
-  #clk .conn.live{color:var(--green);} #clk .conn.mock{color:var(--dim);}
+  #clk .conn.live{color:var(--green);} #clk .conn.mock{color:var(--dim);} #clk .conn.reconnecting{color:var(--amber);}
   #clk .conn i{display:inline-block; width:.9vh; height:.9vh; border-radius:50%; margin-left:.5vw; vertical-align:middle;}
   #clk .conn.live i{background:var(--green); box-shadow:0 0 1vh var(--green);} #clk .conn.mock i{background:var(--dim);}
+  #clk .conn.reconnecting i{background:var(--amber); box-shadow:0 0 1vh var(--amber); animation:blink 1s infinite;}
   .prob{font-size:.62em; color:var(--teal); font-weight:700; text-shadow:var(--sh);}
 
   /* ── scorebug (lower-third, semi-opaque only on the bar itself) ── */
@@ -74,7 +78,10 @@
   .runner .od{font-family:var(--disp); font-style:italic; font-weight:900; font-size:2.8vh; color:var(--txt); font-variant-numeric:tabular-nums;}
   .runner .od small{font-size:1.3vh; color:var(--dim);}
   .runner.lead{border-color:var(--amber); box-shadow:0 0 2.4vh rgba(255,212,0,.3); background:rgba(40,32,0,.5);}
-  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red); font-size:2.6vh; text-shadow:var(--sh);}
+  .runner .fav-tag{display:none; margin-left:.5vw; font-size:1.2vh; font-weight:800; letter-spacing:.1em; color:#0a0a0c;
+    background:var(--amber); padding:.2vh .5vw; border-radius:.4vh; text-shadow:none;}
+  .runner.lead .fav-tag{display:inline-block;}
+  .vs{font-family:var(--disp); font-style:italic; font-weight:900; color:var(--red-t); font-size:2.6vh; text-shadow:var(--sh);}
   .sb-bets{align-items:flex-end; min-width:8vw;}
   .sb-bets .b-val{font-family:var(--disp); font-style:italic; font-weight:900; font-size:3.6vh; color:var(--teal); line-height:1; text-shadow:var(--sh);}
   .sb-bets .b-lab{font-size:1.2vh; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; text-align:right; text-shadow:var(--sh);}
@@ -100,7 +107,7 @@
   #ticker .tk-seg{padding-left:3vw; font-size:1.9vh; letter-spacing:.02em; color:var(--chrome); text-shadow:var(--sh);}
   #ticker .tk-seg .sp{font-weight:800; letter-spacing:.08em;}
   #ticker .tk-seg .sp.guard{color:var(--teal);} #ticker .tk-seg .sp.courier{color:var(--amber);}
-  #ticker .tk-seg .di{color:var(--red); margin:0 1.2vw;}
+  #ticker .tk-seg .di{color:var(--red-t); margin:0 1.2vw;}
   @keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   body.bartop #ticker{top:12.5vh; bottom:auto; border-top:none; border-bottom:1px solid var(--line);
     background:linear-gradient(0deg, rgba(10,10,12,0), rgba(10,10,12,.82));}
@@ -172,6 +179,12 @@
   /* OBS perf: pause decorative animation when source hidden; ?lite=1 strips it entirely */
   body.hidden-src .live i{ animation-play-state:paused; }
   body.lite .live i{ animation:none; opacity:1; }
+  /* race-control-offline banner (live mode, transparent-friendly pill) */
+  #offline{display:none; position:fixed; top:8vh; left:50%; transform:translateX(-50%); z-index:58;
+    padding:1vh 1.8vw; background:rgba(225,6,0,.22); border:1px solid var(--red); border-radius:99px;
+    font-family:var(--disp); font-style:italic; font-weight:900; font-size:2vh; color:#fff; text-transform:uppercase;
+    letter-spacing:.06em; filter:drop-shadow(0 .3vh .7vh rgba(0,0,0,.85));}
+  body.offline #offline{display:block;}
   /* ?cb=1 — colorblind-safe: guard/teal + success → blue */
   body.cb{ --teal:#3aa0ff; --green:#3aa0ff; }
   @media (prefers-reduced-motion:reduce){ *{animation:none !important;} #confetti{display:none;} }
@@ -196,15 +209,16 @@
 <div id="scorebug">
   <div class="sb-status"><span class="s-lab">Race Control</span><span class="s-val" id="sb-status">STANDBY</span></div>
   <div class="sb-grid">
-    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span></div>
+    <div class="runner guard" id="run-guard"><span class="car">00</span><span class="nm">GUARD</span><span class="od" id="sb-odds-guard">—<small>x</small></span><span class="fav-tag">★&nbsp;FAV</span></div>
     <span class="vs">VS</span>
-    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span></div>
+    <div class="runner courier" id="run-courier"><span class="car">01</span><span class="nm">COURIER</span><span class="od" id="sb-odds-courier">—<small>x</small></span><span class="fav-tag">★&nbsp;FAV</span></div>
   </div>
   <div class="sb-bets"><span class="b-val" id="sb-bets">0</span><span class="b-lab">verified<br>bets</span></div>
   <div class="sb-purse"><span class="p-lab">Purse Settled</span><span class="p-val" id="sb-purse">$0.00</span><svg class="spark" id="purse-spark" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline id="purse-line" points=""/></svg><span class="p-sub" id="sb-laps">0 laps · USDC</span></div>
 </div>
 
 <div id="sponsors"><span class="sp-lab">Powered by</span><span class="sp-name" id="sp-name">◎ Solana</span></div>
+<div id="offline">⚠ Race Control Offline</div>
 <div id="floats"></div>
 <button id="snd" title="toggle sound">🔊</button>
 
@@ -235,8 +249,8 @@ const Q = new URLSearchParams(location.search);
 
 /* ── query toggles ── */
 if(Q.get("bar") === "top") document.body.classList.add("bartop");
-if(Q.get("bug") === "0")  $("bug").style.display = "none";
-if(Q.get("clock") === "0") $("clk").style.display = "none";
+if(Q.get("bug") === "0")  { const el = $("bug"); if(el) el.style.display = "none"; }
+if(Q.get("clock") === "0") { const el = $("clk"); if(el) el.style.display = "none"; }
 
 /* ─── sound engine: synthesized cues (WebAudio, no asset files) ───────────── */
 const SOUND = (function(){
@@ -285,7 +299,7 @@ const SOUND = (function(){
   return api;
 })();
 (function(){
-  const b = $("snd");
+  const b = $("snd"); if(!b) return;
   const sync = ()=>{ b.textContent = SOUND.on() ? "🔊" : "🔈"; b.classList.toggle("off", !SOUND.on()); };
   b.addEventListener("click", ()=>{ SOUND.toggle(); sync(); });
   if(Q.get("sound") === "0") b.style.display = "none";
@@ -306,13 +320,16 @@ function impliedProb(od){
 }
 const fmtPct = p => p == null ? "—" : Math.round(p) + "%";
 
-/* live/mock connection badge */
-(function(){
-  const api = (Q.get("api") || window.CLANKER_API || "").trim();
+/* live/mock connection badge — flips to "Reconnecting…" after failed polls in live mode */
+const API_MODE = !!(Q.get("api") || window.CLANKER_API || "").trim();
+let connFail = 0;
+function updateConn(ok){
   const el = $("conn"); if(!el) return;
-  if(api){ el.className = "conn live"; el.innerHTML = "Live sidecar<i></i>"; }
-  else { el.className = "conn mock"; el.innerHTML = "Mock feed<i></i>"; }
-})();
+  if(!API_MODE){ el.className = "conn mock"; el.innerHTML = "Mock feed<i></i>"; return; }
+  if(ok){ connFail = 0; el.className = "conn live"; el.innerHTML = "Live sidecar<i></i>"; document.body.classList.remove("offline"); }
+  else if(++connFail >= 2){ el.className = "conn reconnecting"; el.innerHTML = "Reconnecting…<i></i>"; if(connFail >= 3) document.body.classList.add("offline"); }
+}
+updateConn(true);
 
 /* ── timer registry + visibility/perf controller (OBS-friendly) ── */
 const VIS = Q.get("freeze") !== "0";
@@ -331,7 +348,7 @@ function onVis(){
 document.addEventListener("visibilitychange", onVis);
 
 /* clock */
-function clk(){ $("clock").textContent = new Date().toTimeString().slice(0,8); }
+function clk(){ const el = $("clock"); if(el) el.textContent = new Date().toTimeString().slice(0,8); }
 clk(); setInterval(clk, 1000);
 
 /* ── poll: bind the scorebug to live (mock or ?api) data ── */
@@ -350,7 +367,8 @@ function drawSpark(arr, lineEl){
 async function j(u){ try{ return await (await fetch(u)).json(); }catch{ return null; } }
 async function poll(){
   if(document.hidden) return;
-  const st = await j("/race/state"), od = await j("/race/odds"), fe = await j("/onchain/feed");
+  const [st, od, fe] = await Promise.all([j("/race/state"), j("/race/odds"), j("/onchain/feed")]);  // parallel: 1 RTT, not 3
+  updateConn(!!st);
   const status = (st && st.status) || "betting";
 
   // betting-window countdown: (re)arm on entry to the betting phase
@@ -360,30 +378,34 @@ async function poll(){
   const rem = bettingDeadline ? Math.max(0, bettingDeadline - Date.now()) : 0;
 
   const phaseEl = $("phase"), sbStatus = $("sb-status");
-  phaseEl.className = "p ph-" + status;
-  if(status === "betting"){ phaseEl.textContent = rem > 0 ? ("🟡 BETTING · " + fmtClock(rem)) : "🟡 LOCKING…"; sbStatus.textContent = "BETTING OPEN"; sbStatus.style.color = "var(--amber)"; }
-  else if(status === "racing"){ phaseEl.textContent = "🟢 GREEN FLAG"; sbStatus.textContent = "RACING"; sbStatus.style.color = "var(--green)"; }
-  else { phaseEl.textContent = "🏁 CHECKERED FLAG"; sbStatus.textContent = st&&st.winner ? sol(st.winner).toUpperCase()+" WINS" : "FINISHED"; sbStatus.style.color = "var(--violet)"; }
+  if(phaseEl) phaseEl.className = "p ph-" + status;
+  if(status === "betting"){ if(phaseEl) phaseEl.textContent = rem > 0 ? ("🟡 BETTING · " + fmtClock(rem)) : "🟡 LOCKING…"; if(sbStatus){ sbStatus.textContent = "BETTING OPEN"; sbStatus.style.color = "var(--amber)"; } }
+  else if(status === "racing"){ if(phaseEl) phaseEl.textContent = "🟢 GREEN FLAG"; if(sbStatus){ sbStatus.textContent = "RACING"; sbStatus.style.color = "var(--green)"; } }
+  else { if(phaseEl) phaseEl.textContent = "🏁 CHECKERED FLAG"; if(sbStatus){ sbStatus.textContent = st&&st.winner ? sol(st.winner).toUpperCase()+" WINS" : "FINISHED"; sbStatus.style.color="var(--violet-t)"; } }
 
   if(od && od.odds){
     const g = od.odds.guard, c = od.odds.courier;
     const pr = impliedProb(od);
-    $("sb-odds-guard").innerHTML   = (g??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.guard)+'</span>';
-    $("sb-odds-courier").innerHTML = (c??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.courier)+'</span>';
+    const og = $("sb-odds-guard"), oc = $("sb-odds-courier"), rg = $("run-guard"), rc = $("run-courier");
+    if(og) og.innerHTML = (g??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.guard)+'</span>';
+    if(oc) oc.innerHTML = (c??"—")+'<small>x</small> <span class="prob">'+fmtPct(pr.courier)+'</span>';
     const gFav = (g!=null && c!=null) ? g < c : false;
-    $("run-guard").classList.toggle("lead", gFav);
-    $("run-courier").classList.toggle("lead", !gFav && c!=null);
+    if(rg) rg.classList.toggle("lead", gFav);
+    if(rc) rc.classList.toggle("lead", !gFav && c!=null);
   }
-  if(od && typeof od.count === "number") $("sb-bets").textContent = od.count;
+  if(od && typeof od.count === "number"){ const el = $("sb-bets"); if(el) el.textContent = od.count; }
 
   if(fe){
     if(typeof fe.settledUsdc === "number"){
-      $("sb-purse").textContent = "$" + fe.settledUsdc.toFixed(2);
-      if(fe.settledUsdc > lastPurse){ const el=$("sb-purse"); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      const el = $("sb-purse");
+      if(el){
+        el.textContent = "$" + fe.settledUsdc.toFixed(2);
+        if(fe.settledUsdc > lastPurse){ el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      }
       lastPurse = fe.settledUsdc;
       purseHist.push(fe.settledUsdc); if(purseHist.length > 40) purseHist.shift(); drawSpark(purseHist, $("purse-line"));
     }
-    if(typeof fe.count === "number") $("sb-laps").textContent = fe.count + " laps · USDC";
+    if(typeof fe.count === "number"){ const el = $("sb-laps"); if(el) el.textContent = fe.count + " laps · USDC"; }
   }
 }
 poll(); every(poll, 1100);
@@ -401,8 +423,9 @@ async function pollTicker(){
     const txt = (e.text || "").replace(/&/g,"&amp;").replace(/</g,"&lt;");
     return `<span class="sp ${e.robot||''}">${who}</span> ${txt}`;
   }).join('<span class="di">◆</span>') + '<span class="di">◆</span>';
-  $("tk-a").innerHTML = seg; $("tk-b").innerHTML = seg;
-  const track = $("tk-track");
+  const tkA = $("tk-a"), tkB = $("tk-b"), track = $("tk-track");
+  if(!track) return;
+  if(tkA) tkA.innerHTML = seg; if(tkB) tkB.innerHTML = seg;
   const dur = Math.max(16, (track.scrollWidth / 2) / 90);
   track.style.animation = "none"; void track.offsetWidth;
   track.style.animation = `marq ${dur.toFixed(1)}s linear infinite`;
@@ -410,13 +433,13 @@ async function pollTicker(){
 pollTicker(); every(pollTicker, 3000);
 
 /* ── confetti (transparent canvas) ── */
-const cv = $("confetti"), cx = cv.getContext("2d");
-function sizeCanvas(){ cv.width = innerWidth; cv.height = innerHeight; }
+const cv = $("confetti"), cx = cv && cv.getContext("2d");
+function sizeCanvas(){ if(cv){ cv.width = innerWidth; cv.height = innerHeight; } }
 sizeCanvas(); addEventListener("resize", sizeCanvas);
 let parts = [], raf = null;
 const COLORS = ["#ffd400","#14f195","#e10600","#9945ff","#f6f4ee"];
 function burst(){
-  if(document.hidden) return;
+  if(!cx || document.hidden) return;
   parts = [];
   for(let i=0;i<170;i++){
     parts.push({ x:innerWidth/2 + (Math.random()-.5)*innerWidth*.5, y:innerHeight*.5,
@@ -427,6 +450,7 @@ function burst(){
   if(!raf) raf = requestAnimationFrame(draw);
 }
 function draw(){
+  if(!cx) { raf = null; return; }
   if(document.hidden){ cx.clearRect(0,0,cv.width,cv.height); raf = null; return; }
   cx.clearRect(0,0,cv.width,cv.height);
   let alive = 0;
@@ -450,9 +474,10 @@ function renderMoment(item){
   if(opts.sound === "cheer" || /PHOTO|FINISH|WHALE/.test(kind)) SOUND.cheer();
   else if(/BET/.test(kind)) SOUND.blip();
   else SOUND.kaching();
-  $("m-kick").textContent = kind; $("m-big").textContent = big;
-  $("m-sub").textContent = sub || ""; $("m-det").textContent = det || "";
-  $("moment").classList.add("on"); burst();
+  const kE = $("m-kick"), bE = $("m-big"), sE = $("m-sub"), dE = $("m-det"), mE = $("moment");
+  if(kE) kE.textContent = kind; if(bE) bE.textContent = big;
+  if(sE) sE.textContent = sub || ""; if(dE) dE.textContent = det || "";
+  if(mE) mE.classList.add("on"); burst();
 }
 function drainQueue(){
   if(!momentQueue.length){ momentActive = false; return; }
@@ -460,7 +485,7 @@ function drainQueue(){
   const item = momentQueue.shift();
   renderMoment(item);
   clearTimeout(momentTimer);
-  momentTimer = setTimeout(()=>{ $("moment").classList.remove("on"); setTimeout(drainQueue, 400); }, (item.opts && item.opts.ms) || 4000);
+  momentTimer = setTimeout(()=>{ const mE = $("moment"); if(mE) mE.classList.remove("on"); setTimeout(drainQueue, 400); }, (item.opts && item.opts.ms) || 4000);
 }
 function fireMoment(kind, big, sub, det, opts){
   const item = { kind, big, sub, det, opts: opts || {} };
@@ -476,13 +501,16 @@ function maybeMoment(e){
   if(e.kind === "RACE SETTLE"){ fireMoment("PHOTO FINISH", "🏁 COURIER", "takes the checkered flag", "verdict on-chain · proof on Walrus", { sound:"cheer", priority:true }); return; }
   if(e.layer === "chain" && e.severity === "ok" && typeof e.usdc === "number" && e.usdc > 0){
     const isBet = e.kind === "BET", amt = "$" + e.usdc.toFixed(2);
+    const tier = betTier(e.usdc);
     let kind, sub, opts;
-    if(e.usdc >= 50){ kind = "🐋 WHALE BET"; sub = "biggest of the night"; opts = { sound:"cheer", tier:2, ms:4800 }; }
-    else if(e.usdc >= 10){ kind = "💸 BIG BET"; sub = isBet ? "World-verified human" : "USDC"; opts = { tier:1, ms:4200 }; }
-    else { kind = isBet ? "BET PLACED" : "PAYMENT SETTLED"; sub = isBet ? "World-verified human" : "robot-to-robot · USDC"; opts = { tier:0 }; }
+    if(tier === 2){ kind = "🐋 WHALE BET"; sub = "biggest of the night"; opts = { sound:"cheer", tier, ms:4800 }; }
+    else if(tier === 1){ kind = "💸 BIG BET"; sub = isBet ? "World-verified human" : "USDC"; opts = { tier, ms:4200 }; }
+    else { kind = isBet ? "BET PLACED" : "PAYMENT SETTLED"; sub = isBet ? "World-verified human" : "robot-to-robot · USDC"; opts = { tier }; }
     fireMoment(kind, amt, sub, sol(e.detail||""), opts);
   }
 }
+/* alert tier by USDC size: 2 = whale (>=50), 1 = big (>=10), 0 = normal */
+function betTier(usdc){ return usdc >= 50 ? 2 : usdc >= 10 ? 1 : 0; }
 /* ── "now driving" pilot lower-third (driven by the x402 pilot bus) ── */
 const HANDLES = ["@pixel_pilot","@gmgm_sol","@degen_dan","@vroomqueen","@boxbox","@solspeed","@apex_anon","@nitro_nat","@chainchaser","@pitlane_pat"];
 const pickHandle = ()=> HANDLES[(Math.random()*HANDLES.length)|0];
@@ -490,14 +518,16 @@ const PILOT_SECS = 120;
 let pilotEnd = 0, pilotIv = null, pilotCool = 0;
 function tickPilot(){
   const rem = Math.max(0, pilotEnd - Date.now()), s = Math.ceil(rem/1000);
-  $("pl-time").textContent = Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
-  $("pl-bar").style.width = (rem/(PILOT_SECS*1000)*100).toFixed(1) + "%";
-  if(rem <= 0){ clearInterval(pilotIv); $("pilot").classList.remove("on"); }
+  const tE = $("pl-time"), bE = $("pl-bar"), pE = $("pilot");
+  if(tE) tE.textContent = Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
+  if(bE) bE.style.width = (rem/(PILOT_SECS*1000)*100).toFixed(1) + "%";
+  if(rem <= 0){ clearInterval(pilotIv); if(pE) pE.classList.remove("on"); }
 }
 function showPilot(rover, handle){
-  $("pl-car").textContent = rover === "guard" ? "CAR 00 · GUARD" : "CAR 01 · COURIER";
-  $("pl-who").textContent = handle;
-  $("pilot").classList.add("on");
+  const cE = $("pl-car"), wE = $("pl-who"), pE = $("pilot");
+  if(cE) cE.textContent = rover === "guard" ? "CAR 00 · GUARD" : "CAR 01 · COURIER";
+  if(wE) wE.textContent = handle;
+  if(pE) pE.classList.add("on");
   pilotEnd = Date.now() + PILOT_SECS*1000;
   clearInterval(pilotIv); pilotIv = setInterval(tickPilot, 1000); tickPilot();
 }
@@ -540,10 +570,10 @@ if(Q.get("demo") === "1"){ setTimeout(()=> showPilot("courier", pickHandle()), 4
 
 /* sponsor-rotation bug (opt-in: ?sponsors=1) */
 if(Q.get("sponsors") === "1"){
-  $("sponsors").classList.add("show");
+  const spBox = $("sponsors"); if(spBox) spBox.classList.add("show");
   const SPONSORS = ["◎ Solana","x402 · USDC","World ID","Walrus","Switchboard","SNS · .sol","Helius","Kora relayer","ERC-8004","Ledger","Privy TEE"];
   let spi = 0;
-  every(()=>{ const el = $("sp-name"); el.style.opacity = 0; setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400); }, 2600);
+  every(()=>{ const el = $("sp-name"); if(!el) return; el.style.opacity = 0; setTimeout(()=>{ spi = (spi+1) % SPONSORS.length; el.textContent = SPONSORS[spi]; el.style.opacity = 1; }, 400); }, 2600);
 }
 
 /* ?demo=1 — fire a test moment every 12s so you can frame the graphic in OBS */

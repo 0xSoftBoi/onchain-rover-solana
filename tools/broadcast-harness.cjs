@@ -66,6 +66,13 @@ const DATA = {
   "/status": { robots: { guard: { ok: true, ens: "guard.roverfleet.eth", feed: "x", battery_v: 12.4 }, courier: { ok: true, ens: "courier.roverfleet.eth", feed: "y", battery_v: 12.1 } } },
   "/worldid/config": { configured: true, action: "rover-gp-bet", appId: "app_clanker500" },
   "/leaderboard/network": { configured: true, rows: [{ agent: "vroom.eth", feedback: 142 }] },
+  "/race/markets": { roundId: "clanker-500", status: "open", markets: [
+    { id: "winner-clanker-500", type: "WINNER", label: "Race Winner", outcomes: ["guard", "courier"], pools: { guard: 13, courier: 5 }, total: 18, odds: { guard: 1.38, courier: 3.6 }, status: "open", winningOutcome: null },
+    { id: "margin-clanker-500", type: "MARGIN", label: "Winning Margin", outcomes: ["blowout", "photo"], pools: { blowout: 2, photo: 2 }, total: 4, odds: { blowout: 2, photo: 2 }, status: "open", winningOutcome: null },
+  ] },
+  "/wager-race": { weekId: "DEMO-1", startsAt: 1, endsAt: 99999999999, now: 1, prizePool: 10.1, currency: "USDC", prizeSplit: [0.5, 0.3, 0.2], standings: [{ rank: 1, handle: "0xdemo…ce", wagered: 40, net: 6, prize: 5.05 }], myRank: null, seeded: true },
+  "/player/quests": { points: 60, resetsAt: {}, quests: [{ id: "daily_place_3", cadence: "daily", desc: "Place 3 bets", target: 3, progress: 3, complete: true, claimed: true, reward: { type: "points", amount: 50 } }] },
+  "/player/achievements": { points: 60, streak: { current: 1, best: 1 }, unlocked: [{ id: "first_bet", name: "First Bet", icon: "🎟️", tier: "bronze", at: 1, points: 10 }], locked: [{ id: "high_roller", name: "High Roller", icon: "💎", tier: "gold", hint: "Wager $100 total", points: 100 }] },
 };
 global.fetch = (u) => {
   const p = String(u).replace(global.location.origin, "").split("?")[0];

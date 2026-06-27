@@ -1,0 +1,12 @@
+# Keep the build context small and let the image install deps fresh.
+**/node_modules
+**/.git
+**/.anchor
+**/test-ledger
+solana/target
+**/dist
+web/
+mini-plus-agent-kit/
+**/*.log
+**/.env
+**/.env.*

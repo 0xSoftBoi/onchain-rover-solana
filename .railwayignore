@@ -1,0 +1,7 @@
+# Only sidecar/ and site/ are needed by the Dockerfile build; trim everything else.
+web/
+solana/
+docs/
+.github/
+tools/
+.claude/

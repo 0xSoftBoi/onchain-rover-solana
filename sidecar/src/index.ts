@@ -8,6 +8,7 @@
 import express from "express";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { solanaPaymentGate, x402SolanaPublicConfig } from "./solana-x402.js";
 import { installActions } from "./solana-actions.js";
 import * as clawpump from "./clawpump.js";
@@ -499,7 +500,13 @@ app.get("/reputation", async (_req, res) => {
   }
   res.json(out);
 });
-app.get("/race/state", (_req, res) => res.json(race.raceState()));
+app.get("/race/state", (_req, res) => {
+  const s = race.raceState();
+  // In DEMO_MOCK there is no live race between rounds; 404 lets the page's
+  // clanker-mock.js fall back to its animated demo race (see site serving below).
+  if (MOCK && !s) return res.status(404).end();
+  res.json(s);
+});
 app.post("/race/arm", (_req, res) => res.json(race.armRace()));
 app.post("/race/start", (_req, res) => res.json(race.startRace()));
 app.post("/race/finish", async (req, res) => {
@@ -1260,6 +1267,26 @@ app.get("/field/preflight", async (req, res) => {
   }));
 });
 
+// ── Public demo site (../../site): the polished landing + OBS broadcast/overlay
+// pages. Served ahead of ../public so they are the default face of the deploy.
+// The three HTML entrypoints get window.CLANKER_API injected so clanker-mock.js
+// talks to THIS sidecar (live data) instead of its built-in client mock; the
+// static site/ files stay pure-mock when opened standalone or on GitHub Pages. ─
+const SITE_DIR = new URL("../../site", import.meta.url).pathname;
+function sitePage(file: string) {
+  let html = "";
+  try {
+    html = readFileSync(`${SITE_DIR}/${file}`, "utf8").replace(
+      '<script src="./clanker-mock.js"></script>',
+      '<script>window.CLANKER_API=location.origin;</script>\n<script src="./clanker-mock.js"></script>'
+    );
+  } catch { /* file missing → handler defers to the next matcher */ }
+  return (_req: any, res: any, next: any) => (html ? res.type("html").send(html) : next());
+}
+app.get(["/", "/index.html"], sitePage("index.html"));
+app.get("/broadcast.html", sitePage("broadcast.html"));
+app.get("/overlay.html", sitePage("overlay.html"));
+app.use(express.static(SITE_DIR, { index: false })); // clanker-mock.js, qrcode.js, mock-cam.svg
 app.use(express.static(new URL("../public", import.meta.url).pathname));
 
 // Express error middleware — any thrown/rejected handler returns 500, no crash.

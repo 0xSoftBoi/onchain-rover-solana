@@ -1278,7 +1278,10 @@ function sitePage(file: string) {
   try {
     html = readFileSync(`${SITE_DIR}/${file}`, "utf8").replace(
       '<script src="./clanker-mock.js"></script>',
-      '<script>window.CLANKER_API=location.origin;</script>\n<script src="./clanker-mock.js"></script>'
+      // CLANKER_API → clanker-mock.js hits THIS sidecar (live data); CLANKER_ACTIONS
+      // → broadcast.html renders the Solana Blink bet/tip QRs (the gambling flow),
+      // since the /api/actions/* routes are mounted on this same origin.
+      '<script>window.CLANKER_API=location.origin;window.CLANKER_ACTIONS=location.origin;</script>\n<script src="./clanker-mock.js"></script>'
     );
   } catch { /* file missing → handler defers to the next matcher */ }
   return (_req: any, res: any, next: any) => (html ? res.type("html").send(html) : next());

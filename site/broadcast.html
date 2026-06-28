@@ -505,6 +505,41 @@
   .cam .osd b{ color:var(--amber); } .cam .osd .est{ color:var(--dim); }
 
   @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important;} }
+
+  /* ════ premium broadcast visual layer (additive; CSS-only, layout untouched) ════ */
+  /* layered depth: warm top bloom, cool floor glow, faint broadcast grid */
+  body::before{ content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(130% 90% at 50% -15%, rgba(255,212,0,.07), transparent 60%),
+      radial-gradient(120% 100% at 50% 118%, rgba(153,69,255,.06), transparent 55%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.022) 0 1px, transparent 1px 3.4vh),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3.4vw); }
+  /* cinematic vignette over the whole frame (under HUD chrome) */
+  body::after{ content:""; position:fixed; inset:0; z-index:1; pointer-events:none;
+    box-shadow:inset 0 0 24vh rgba(0,0,0,.55), inset 0 0 6vh rgba(0,0,0,.35); }
+  /* (existing HUD elements already sit at z-index ≥10, above the z-0/z-1 backdrop) */
+  /* glassmorphism on panels + boards: blur, depth shadow, top sheen */
+  .panel, .board, .pm-card, .pf-card, #predict, .cashout{
+    backdrop-filter:blur(7px) saturate(1.18); -webkit-backdrop-filter:blur(7px) saturate(1.18);
+    box-shadow:0 1.6vh 3.4vh rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.07); }
+  .scene{ transition:opacity .6s cubic-bezier(.22,.61,.36,1), transform .6s cubic-bezier(.22,.61,.36,1); }
+  /* brushed-gold metallic numerals on the headline static-amber figures */
+  .sb-purse .p-val, #wr-pool, .bb-foot .bb-row.big b{
+    background:linear-gradient(177deg,#fff7d2 0%, var(--amber) 46%, var(--amber-d) 100%);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 .15vh .1vh rgba(0,0,0,.6)) drop-shadow(0 0 1.2vh var(--glow)); }
+  .pm-out .o-odds{ background:linear-gradient(177deg,#d6fff0 0%, var(--teal) 60%, #0fb87a 100%);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 1vh rgba(20,241,149,.4)); }
+  /* live betting board emphasis */
+  #predict{ box-shadow:0 1.6vh 4vh rgba(0,0,0,.55), 0 0 6vh rgba(255,212,0,.08), inset 0 1px 0 rgba(255,255,255,.07); }
+  .pm-out{ transition:border-color .15s, background .15s, transform .12s, box-shadow .15s; }
+  .pm-out:hover{ transform:translateY(-1px); box-shadow:0 .6vh 1.6vh rgba(0,0,0,.4); }
+  .pm-out.picked{ box-shadow:0 0 2vh rgba(255,212,0,.35), inset 0 0 0 1px var(--amber); }
+  .bb-submit, .co-btn, .pf-verify{ box-shadow:0 .6vh 1.8vh rgba(255,212,0,.28); }
+  /* keep lite/reduced-motion cheap for weak encoders */
+  body.lite::before, body.lite::after{ display:none; }
+  body.lite .panel, body.lite .board, body.lite .pm-card, body.lite .pf-card, body.lite #predict, body.lite .cashout{ backdrop-filter:none; -webkit-backdrop-filter:none; }
 </style>
 </head>
 <body>

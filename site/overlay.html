@@ -188,6 +188,19 @@
   /* ?cb=1 — colorblind-safe: guard/teal + success → blue */
   body.cb{ --teal:#3aa0ff; --green:#3aa0ff; }
   @media (prefers-reduced-motion:reduce){ *{animation:none !important;} #confetti{display:none;} }
+
+  /* ════ premium overlay polish (transparent-safe — no page background) ════ */
+  /* deeper, softer lift on the lower-third + brand so they read over any footage */
+  #scorebug{ box-shadow:0 -2vh 5vh rgba(0,0,0,.5); }
+  #scorebug::after{ content:""; position:absolute; left:0; right:0; top:0; height:1px; background:linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); pointer-events:none; }
+  .runner{ backdrop-filter:blur(4px) saturate(1.15); -webkit-backdrop-filter:blur(4px) saturate(1.15); box-shadow:0 .6vh 1.6vh rgba(0,0,0,.4); }
+  .runner.lead{ box-shadow:0 0 2.4vh rgba(255,212,0,.4), inset 0 0 0 1px var(--amber); }
+  /* brushed-gold purse numeral */
+  .sb-purse .p-val{ background:linear-gradient(177deg,#fff7d2 0%, var(--amber) 46%, var(--amber-d) 100%);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(.1vh .1vh .1vh #000) drop-shadow(0 0 1.2vh var(--glow)); }
+  #moment .mbig, #m-big{ filter:drop-shadow(0 0 2.4vh var(--glow)); }
+  body.lite .runner{ backdrop-filter:none; -webkit-backdrop-filter:none; }
 </style>
 </head>
 <body>
